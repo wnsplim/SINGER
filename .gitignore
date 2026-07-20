@@ -6,15 +6,6 @@
 build/
 cmake-build-*/
 
-# Compiled binaries
-SINGER/SINGER/singer
-SINGER/SINGER/singer_debug
-
-# Release outputs
-releases/singer-*-beta-*-x86_64/
-releases/singer-*-beta-*-arm64/
-releases/*.tar.gz
-
 # Editor/OS cruft
 .DS_Store
 *.swp
