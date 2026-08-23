@@ -660,7 +660,7 @@ int TSP_smc::get_prev_breakpoint(int x) {
 
 Interval *TSP_smc::sample_curr_interval(int x) {
     vector<Interval *> intervals = get_state_space(x);
-    double ws = accumulate(forward_probs[x].begin(), forward_probs[x].end(), 0.0f);
+    double ws = accumulate(forward_probs[x].begin(), forward_probs[x].end(), 0.0);
     double q = random();
     double w = ws*q;
     for (int i = 0; i < intervals.size(); i++) {

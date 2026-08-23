@@ -339,7 +339,7 @@ void sub_BSP::compute_interval_info() {
             join_weights[i] = p;
         }
     }
-    reduced_sum = accumulate(join_weights.begin(), join_weights.end(), 0.0f);
+    reduced_sum = accumulate(join_weights.begin(), join_weights.end(), 0.0);
     all_join_times[curr_index] = join_times;
     all_join_weights[curr_index] = join_weights;
 }
@@ -359,7 +359,7 @@ void sub_BSP::get_full_branches(Recombination &r) {
         const Branch &b = x.first.branch;
         lb = x.first.lb;
         ub = x.first.ub;
-        p = accumulate(x.second.begin(), x.second.end(), 0.0f);
+        p = accumulate(x.second.begin(), x.second.end(), 0.0);
         if (lb == max(cut_time, b.lower_node->time) and ub == b.upper_node->time and p > 0) {
             full_branches.insert(b);
         }

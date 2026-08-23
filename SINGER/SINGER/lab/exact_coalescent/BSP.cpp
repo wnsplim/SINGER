@@ -117,7 +117,7 @@ void BSP::null_emit(double theta, Node_ptr query_node) {
         forward_probs[curr_index][i] *= null_emit_probs[i];
         // ws += forward_probs[curr_index][i];
     }
-    ws = accumulate(forward_probs[curr_index].begin(), forward_probs[curr_index].end(), 0.0f);
+    ws = accumulate(forward_probs[curr_index].begin(), forward_probs[curr_index].end(), 0.0);
     assert(ws > 0);
     for (int i = 0; i < dim; i++) {
         forward_probs[curr_index][i] /= ws;

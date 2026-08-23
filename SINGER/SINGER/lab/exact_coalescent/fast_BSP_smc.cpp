@@ -353,7 +353,7 @@ void fast_BSP_smc::transfer_helper(Interval_info next_interval) {
 double fast_BSP_smc::compute_transfer_prob() {
     double p = 0;
     for (auto &x : transfer_weights) {
-        p += accumulate(x.second.begin(), x.second.end(), 0.0f);
+        p += accumulate(x.second.begin(), x.second.end(), 0.0);
     }
     return p;
 }

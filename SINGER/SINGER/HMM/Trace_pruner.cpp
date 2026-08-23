@@ -422,7 +422,7 @@ void Trace_pruner::forward_transition(Recombination &r, const Interval_info &int
     Interval_info new_interval;
     Branch b;
     double p = curr_scores[interval];
-    p = max(p, cutoff*0.1f);
+    p = max(p, cutoff*0.1);
     double l = interval.lb;
     double u = interval.ub;
     if (!r.affect(interval.branch)) {
@@ -477,7 +477,7 @@ void Trace_pruner::backward_transition(Recombination &r, const Interval_info &in
     Interval_info new_interval;
     Branch b;
     double p = curr_scores[interval];
-    p = max(p, cutoff*0.1f);
+    p = max(p, cutoff*0.1);
     double l = interval.lb;
     double u = interval.ub;
     double x = r.pos;

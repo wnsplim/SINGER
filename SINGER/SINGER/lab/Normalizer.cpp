@@ -13,7 +13,7 @@ Normalizer::~Normalizer() {}
 
 void Normalizer::compute_max_time(ARG &a) {
     double num_muts = a.mutation_sites.size();
-    double theta = accumulate(a.thetas.begin(), a.thetas.end(), 0.0f);
+    double theta = accumulate(a.thetas.begin(), a.thetas.end(), 0.0);
     double last_mut_pos = *prev(a.mutation_sites.end(), 2);
     double first_mut_pos = *a.mutation_sites.begin();
     double q = (last_mut_pos - first_mut_pos)/a.sequence_length;
@@ -234,7 +234,7 @@ void Normalizer::count_recombinations(ARG &a) {
             add_recombination(lb, ub);
         }
     }
-    double num_recs = accumulate(observed_recombination_counts.begin(), observed_recombination_counts.end(), 0.0f);
+    double num_recs = accumulate(observed_recombination_counts.begin(), observed_recombination_counts.end(), 0.0);
     num_recs /= observed_recombination_counts.size();
     recombination_density.resize(observed_recombination_counts.size());
     for (int i = 0; i < observed_recombination_counts.size(); i++) {
