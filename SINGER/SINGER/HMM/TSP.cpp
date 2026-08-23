@@ -14,7 +14,7 @@ TSP::TSP() {
 
 TSP::~TSP() {
     vector<vector<double>>().swap(forward_probs);
-    map<Interval *, Interval *>().swap(source_interval);
+    unordered_map<Interval *, Interval *>().swap(source_interval);
     map<int, vector<Interval *>>().swap(state_spaces);
 }
 
@@ -274,14 +274,26 @@ void TSP::null_emit(double theta, Node *query_node) {
     assert(dim == forward_probs[curr_index].size());
     double *curr_probs = forward_probs[curr_index].data();
     const double *emit_probs = null_emit_probs.data();
-    for (int i = 0; i < dim; i++) {
+    double s0 = 0, s1 = 0, s2 = 0, s3 = 0;
+    int i = 0;
+    for (; i + 3 < dim; i += 4) {
+        assert(curr_probs[i] >= 0 and curr_probs[i+1] >= 0);
+        assert(curr_probs[i+2] >= 0 and curr_probs[i+3] >= 0);
+        curr_probs[i] *= emit_probs[i];     curr_probs[i+1] *= emit_probs[i+1];
+        curr_probs[i+2] *= emit_probs[i+2]; curr_probs[i+3] *= emit_probs[i+3];
+        s0 += curr_probs[i];     s1 += curr_probs[i+1];
+        s2 += curr_probs[i+2];   s3 += curr_probs[i+3];
+    }
+    for (; i < dim; i++) {
         assert(curr_probs[i] >= 0);
         curr_probs[i] *= emit_probs[i];
-        ws += curr_probs[i];
+        s0 += curr_probs[i];
     }
+    ws = (s0 + s1) + (s2 + s3);
     if (ws > 0) {
-        for (int i = 0; i < dim; i++) {
-            curr_probs[i] /= ws;
+        double inv_ws = 1.0/ws;
+        for (int j = 0; j < dim; j++) {
+            curr_probs[j] *= inv_ws;
         }
     } else {
         for (int i = 0; i < dim; i++) {
@@ -295,13 +307,23 @@ void TSP::mut_emit(double theta, double bin_size, vector<double> &mut_set, Node 
     double ws = 0;
     double *curr_probs = forward_probs[curr_index].data();
     const double *emit_probs = mut_emit_probs.data();
-    for (int i = 0; i < dim; i++) {
-        curr_probs[i] *= emit_probs[i];
-        ws += curr_probs[i];
+    double s0 = 0, s1 = 0, s2 = 0, s3 = 0;
+    int i = 0;
+    for (; i + 3 < dim; i += 4) {
+        curr_probs[i] *= emit_probs[i];     curr_probs[i+1] *= emit_probs[i+1];
+        curr_probs[i+2] *= emit_probs[i+2]; curr_probs[i+3] *= emit_probs[i+3];
+        s0 += curr_probs[i];     s1 += curr_probs[i+1];
+        s2 += curr_probs[i+2];   s3 += curr_probs[i+3];
     }
+    for (; i < dim; i++) {
+        curr_probs[i] *= emit_probs[i];
+        s0 += curr_probs[i];
+    }
+    ws = (s0 + s1) + (s2 + s3);
     assert(ws > 0);
-    for (int i = 0; i < dim; i++) {
-        curr_probs[i] /= ws;
+    double inv_ws = 1.0/ws;
+    for (int j = 0; j < dim; j++) {
+        curr_probs[j] *= inv_ws;
     }
 }
 
@@ -455,7 +477,7 @@ void TSP::transfer_intervals(Recombination &r, Branch &prev_branch, Branch &next
     double lb;
     double ub;
     double p;
-    vector<Interval *> prev_intervals = get_state_space(curr_index - 1);
+    vector<Interval *> &prev_intervals = get_state_space(curr_index - 1);
     Interval *interval = nullptr;
     Interval *new_interval = nullptr;
     for (int i = 0; i < prev_intervals.size(); i++) {
@@ -669,7 +691,7 @@ void TSP::sanity_check(Recombination &r) {
     }
 }
 
-vector<Interval *> TSP::get_state_space(int x) {
+vector<Interval *> &TSP::get_state_space(int x) {
     auto state_it = state_spaces.upper_bound(x);
     state_it--;
     return state_it->second;
@@ -688,7 +710,7 @@ int TSP::get_prev_breakpoint(int x) {
 }
 
 Interval *TSP::sample_curr_interval(int x) {
-    vector<Interval *> intervals = get_state_space(x);
+    vector<Interval *> &intervals = get_state_space(x);
     double ws = accumulate(forward_probs[x].begin(), forward_probs[x].end(), 0.0);
     double q = random();
     double w = ws*q;
@@ -704,7 +726,7 @@ Interval *TSP::sample_curr_interval(int x) {
 }
 
 Interval *TSP::sample_prev_interval(Interval *interval, int x) {
-    vector<Interval *> intervals = get_state_space(x);
+    vector<Interval *> &intervals = get_state_space(x);
     lower_bound = intervals.front()->lb;
     double ws = 0;
     double rho = rhos[x];
@@ -734,7 +756,7 @@ Interval *TSP::sample_prev_interval(Interval *interval, int x) {
 Interval *TSP::sample_source_interval(Interval *interval, int x) {
     assert(source_interval.count(interval) > 0);
     Interval *sample_interval = source_interval[interval];
-    vector<Interval *> intervals = get_state_space(x);
+    vector<Interval *> &intervals = get_state_space(x);
     sample_index = get_interval_index(sample_interval, intervals);
     return sample_interval;
 }
@@ -743,7 +765,7 @@ Interval *TSP::sample_recomb_interval(Interval *interval, int x) {
     if (interval->lb == interval->ub) { // handles point mass case nicely
         return sample_curr_interval(x);
     }
-    vector<Interval *> intervals = get_state_space(x);
+    vector<Interval *> &intervals = get_state_space(x);
     double ws = 0;
     Interval *prev_interval = nullptr;
     for (int i = 0; i < intervals.size(); i++) {
@@ -773,7 +795,7 @@ int TSP::trace_back_helper(Interval *interval, int x) {
     double p = 1;
     double shrinkage;
     double rho;
-    vector<Interval *> intervals = get_state_space(x);
+    vector<Interval *> &intervals = get_state_space(x);
     lower_bound = intervals.front()->lb;
     trace_back_probs = vector<double>(intervals.size());
     while (p > q and x > y) {
@@ -797,7 +819,7 @@ int TSP::trace_back_helper(Interval *interval, int x) {
 }
 
 void TSP::set_interval_constraint(Recombination &r) {
-    vector<Interval *> intervals = get_state_space(curr_index - 1);
+    vector<Interval *> &intervals = get_state_space(curr_index - 1);
     Interval *interval;
     for (int i = 0; i < intervals.size(); i++) {
         interval = intervals[i];
@@ -813,7 +835,7 @@ void TSP::set_interval_constraint(Recombination &r) {
 void TSP::set_point_constraint(Recombination &r) {
     Interval *interval;
     Interval *point_interval = search_point_interval(r);
-    vector<Interval *> intervals = get_state_space(curr_index - 1);
+    vector<Interval *> &intervals = get_state_space(curr_index - 1);
     for (int i = 0; i < intervals.size(); i++) {
         interval = intervals[i];
         if (interval == point_interval) {

@@ -166,7 +166,21 @@ void approx_BSP::forward(double rho) {
     compute_recomb_weights(rho);
     prev_rho = rho;
     curr_index += 1;
-    recomb_sum = inner_product(recomb_probs.begin(), recomb_probs.end(), forward_probs[curr_index - 1].begin(), 0.0);
+    {
+        const double *rp = recomb_probs.data();
+        const double *fp = forward_probs[curr_index - 1].data();
+        int n = (int) recomb_probs.size();
+        double a0 = 0, a1 = 0, a2 = 0, a3 = 0;
+        int k = 0;
+        for (; k + 3 < n; k += 4) {
+            a0 += rp[k]*fp[k];     a1 += rp[k+1]*fp[k+1];
+            a2 += rp[k+2]*fp[k+2]; a3 += rp[k+3]*fp[k+3];
+        }
+        for (; k < n; k++) {
+            a0 += rp[k]*fp[k];
+        }
+        recomb_sum = (a0 + a1) + (a2 + a3);
+    }
     push_row(recomb_probs);
     double *curr_probs = forward_probs[curr_index].data();
     const double *prev_probs = forward_probs[curr_index - 1].data();
@@ -214,15 +228,30 @@ void approx_BSP::null_emit(double theta, Node *query_node) {
     double ws = 0;
     double *curr_probs = forward_probs[curr_index].data();
     const double *emit_probs = null_emit_probs.data();
-    for (int i = 0; i < dim; i++) {
-        if (curr_probs[i] > 0) {
-            curr_probs[i] = max(epsilon, curr_probs[i]*emit_probs[i]);
-            ws += curr_probs[i];
-        }
+    double s0 = 0, s1 = 0, s2 = 0, s3 = 0;
+    int i = 0;
+    for (; i + 3 < dim; i += 4) {
+        double p0 = curr_probs[i], p1 = curr_probs[i+1];
+        double p2 = curr_probs[i+2], p3 = curr_probs[i+3];
+        p0 = (p0 > 0) ? max(epsilon, p0*emit_probs[i]) : 0.0;
+        p1 = (p1 > 0) ? max(epsilon, p1*emit_probs[i+1]) : 0.0;
+        p2 = (p2 > 0) ? max(epsilon, p2*emit_probs[i+2]) : 0.0;
+        p3 = (p3 > 0) ? max(epsilon, p3*emit_probs[i+3]) : 0.0;
+        curr_probs[i] = p0; curr_probs[i+1] = p1;
+        curr_probs[i+2] = p2; curr_probs[i+3] = p3;
+        s0 += p0; s1 += p1; s2 += p2; s3 += p3;
     }
+    for (; i < dim; i++) {
+        double p = curr_probs[i];
+        p = (p > 0) ? max(epsilon, p*emit_probs[i]) : 0.0;
+        curr_probs[i] = p;
+        s0 += p;
+    }
+    ws = (s0 + s1) + (s2 + s3);
     assert(ws > 0);
-    for (int i = 0; i < dim; i++) {
-        curr_probs[i] /= ws;
+    double inv_ws = 1.0/ws;
+    for (int j = 0; j < dim; j++) {
+        curr_probs[j] *= inv_ws;
     }
 }
 
@@ -231,15 +260,30 @@ void approx_BSP::mut_emit(double theta, double bin_size, vector<double> &mut_set
     double ws = 0;
     double *curr_probs = forward_probs[curr_index].data();
     const double *emit_probs = mut_emit_probs.data();
-    for (int i = 0; i < dim; i++) {
-        if (curr_probs[i] > 0) {
-            curr_probs[i] = max(epsilon, curr_probs[i]*emit_probs[i]);
-            ws += curr_probs[i];
-        }
+    double s0 = 0, s1 = 0, s2 = 0, s3 = 0;
+    int i = 0;
+    for (; i + 3 < dim; i += 4) {
+        double p0 = curr_probs[i], p1 = curr_probs[i+1];
+        double p2 = curr_probs[i+2], p3 = curr_probs[i+3];
+        p0 = (p0 > 0) ? max(epsilon, p0*emit_probs[i]) : 0.0;
+        p1 = (p1 > 0) ? max(epsilon, p1*emit_probs[i+1]) : 0.0;
+        p2 = (p2 > 0) ? max(epsilon, p2*emit_probs[i+2]) : 0.0;
+        p3 = (p3 > 0) ? max(epsilon, p3*emit_probs[i+3]) : 0.0;
+        curr_probs[i] = p0; curr_probs[i+1] = p1;
+        curr_probs[i+2] = p2; curr_probs[i+3] = p3;
+        s0 += p0; s1 += p1; s2 += p2; s3 += p3;
     }
+    for (; i < dim; i++) {
+        double p = curr_probs[i];
+        p = (p > 0) ? max(epsilon, p*emit_probs[i]) : 0.0;
+        curr_probs[i] = p;
+        s0 += p;
+    }
+    ws = (s0 + s1) + (s2 + s3);
     assert(ws > 0);
-    for (int i = 0; i < dim; i++) {
-        curr_probs[i] /= ws;
+    double inv_ws = 1.0/ws;
+    for (int j = 0; j < dim; j++) {
+        curr_probs[j] *= inv_ws;
     }
 }
 
