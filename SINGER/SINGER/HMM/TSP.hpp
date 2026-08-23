@@ -40,6 +40,7 @@ public:
     size_t n_rows = 0;
 
     deque<Interval> arena = {};
+    size_t n_arena = 0;
 
     vector<Node_ptr> node_owner = {};
 

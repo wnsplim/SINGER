@@ -36,7 +36,11 @@ approx_BSP::~approx_BSP() {
 
 void approx_BSP::push_row(const vector<double> &v) {
     if (n_rows < forward_probs.size()) {
-        forward_probs[n_rows].assign(v.begin(), v.end());
+        vector<double> &row = forward_probs[n_rows];
+        if (row.capacity() < v.size()) {
+            row.reserve(max(v.size(), row.capacity() + row.capacity()/2));
+        }
+        row.assign(v.begin(), v.end());
     } else {
         forward_probs.push_back(v);
     }
@@ -69,7 +73,7 @@ void approx_BSP::reset() {
     sample_index = -1;
     states_change = false;
     cc = nullptr;
-    arena.clear();
+    n_arena = 0;
 }
 
 void approx_BSP::reserve_memory(int length) {
@@ -164,8 +168,12 @@ void approx_BSP::forward(double rho) {
     curr_index += 1;
     recomb_sum = inner_product(recomb_probs.begin(), recomb_probs.end(), forward_probs[curr_index - 1].begin(), 0.0);
     push_row(recomb_probs);
+    double *curr_probs = forward_probs[curr_index].data();
+    const double *prev_probs = forward_probs[curr_index - 1].data();
+    const double *rprobs = recomb_probs.data();
+    const double *rweights = recomb_weights.data();
     for (int i = 0; i < dim; i++) {
-        forward_probs[curr_index][i] = forward_probs[curr_index - 1][i]*(1 - recomb_probs[i]) + recomb_sum*recomb_weights[i];
+        curr_probs[i] = prev_probs[i]*(1 - rprobs[i]) + recomb_sum*rweights[i];
     }
     recomb_sums.push_back(recomb_sum);
     weight_sums.push_back(weight_sum);
@@ -204,13 +212,13 @@ void approx_BSP::null_emit(double theta, Node *query_node) {
     prev_theta = theta;
     prev_node = query_node;
     double ws = 0;
-    auto &curr_probs = forward_probs[curr_index];
+    double *curr_probs = forward_probs[curr_index].data();
+    const double *emit_probs = null_emit_probs.data();
     for (int i = 0; i < dim; i++) {
         if (curr_probs[i] > 0) {
-            curr_probs[i] = max(epsilon, curr_probs[i]*null_emit_probs[i]);
+            curr_probs[i] = max(epsilon, curr_probs[i]*emit_probs[i]);
             ws += curr_probs[i];
         }
-        // ws += curr_probs[i];
     }
     assert(ws > 0);
     for (int i = 0; i < dim; i++) {
@@ -221,13 +229,13 @@ void approx_BSP::null_emit(double theta, Node *query_node) {
 void approx_BSP::mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node) {
     compute_mut_emit_probs(theta, bin_size, mut_set, query_node);
     double ws = 0;
-    auto &curr_probs = forward_probs[curr_index];
+    double *curr_probs = forward_probs[curr_index].data();
+    const double *emit_probs = mut_emit_probs.data();
     for (int i = 0; i < dim; i++) {
         if (curr_probs[i] > 0) {
-            curr_probs[i] = max(epsilon, curr_probs[i]*mut_emit_probs[i]);
+            curr_probs[i] = max(epsilon, curr_probs[i]*emit_probs[i]);
             ws += curr_probs[i];
         }
-        // ws += curr_probs[i];
     }
     assert(ws > 0);
     for (int i = 0; i < dim; i++) {
@@ -269,8 +277,26 @@ map<double, Branch> approx_BSP::sample_joining_branches(int start_index, vector<
 }
 
 Interval_ptr approx_BSP::make_interval(Branch b, double tl, double tu, int init_pos) {
-    arena.emplace_back(b, tl, tu, init_pos);
-    return &arena.back();
+    if (n_arena == arena.size()) {
+        arena.emplace_back(b, tl, tu, init_pos);
+        n_arena++;
+        return &arena.back();
+    }
+    Interval &x = arena[n_arena++];
+    assert(tl <= tu);
+    assert(b.lower_node->time <= tl and b.upper_node->time >= tu);
+    x.branch = b;
+    x.lb = tl;
+    x.ub = tu;
+    x.start_pos = init_pos;
+    x.weight = 0.0;
+    x.time = 0.0;
+    x.source_pos = 0;
+    x.node = nullptr;
+    x.reduction = 1.0;
+    x.source_weights.clear();
+    x.source_intervals.clear();
+    return &x;
 }
 
 void approx_BSP::set_dimensions() {
@@ -427,16 +453,16 @@ void approx_BSP::generate_intervals(Recombination &r) {
             temp_intervals.push_back(new_interval);
             temp.push_back(p);
             if (weights.size() > 0) {
-                new_interval->source_weights = move(weights);
-                new_interval->source_intervals = move(intervals);
+                new_interval->source_weights.assign(weights.begin(), weights.end());
+                new_interval->source_intervals.assign(intervals.begin(), intervals.end());
             }
         } else if (p > cutoff) { // partial intervals
             new_interval = make_interval(b, lb, ub, curr_index);
             temp_intervals.push_back(new_interval);
             temp.push_back(p);
             if (weights.size() > 0) {
-                new_interval->source_weights = move(weights);
-                new_interval->source_intervals = move(intervals);
+                new_interval->source_weights.assign(weights.begin(), weights.end());
+                new_interval->source_intervals.assign(intervals.begin(), intervals.end());
             }
             if (lb == ub) { // Need to find out where the point mass is from
                 if (b == r.merging_branch and lb == r.deleted_node->time) {

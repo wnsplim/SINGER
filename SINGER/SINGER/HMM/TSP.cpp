@@ -31,13 +31,35 @@ void TSP::set_check_points(set<double> &p) {
 }
 
 Interval *TSP::make_interval(Branch b, double tl, double tu, int init_pos) {
-    arena.emplace_back(b, tl, tu, init_pos);
-    return &arena.back();
+    if (n_arena == arena.size()) {
+        arena.emplace_back(b, tl, tu, init_pos);
+        n_arena++;
+        return &arena.back();
+    }
+    Interval &x = arena[n_arena++];
+    assert(tl <= tu);
+    assert(b.lower_node->time <= tl and b.upper_node->time >= tu);
+    x.branch = b;
+    x.lb = tl;
+    x.ub = tu;
+    x.start_pos = init_pos;
+    x.weight = 0.0;
+    x.time = 0.0;
+    x.source_pos = 0;
+    x.node = nullptr;
+    x.reduction = 1.0;
+    x.source_weights.clear();
+    x.source_intervals.clear();
+    return &x;
 }
 
 void TSP::push_row(const vector<double> &v) {
     if (n_rows < forward_probs.size()) {
-        forward_probs[n_rows].assign(v.begin(), v.end());
+        vector<double> &row = forward_probs[n_rows];
+        if (row.capacity() < v.size()) {
+            row.reserve(max(v.size(), row.capacity() + row.capacity()/2));
+        }
+        row.assign(v.begin(), v.end());
     } else {
         forward_probs.push_back(v);
     }
@@ -71,7 +93,7 @@ void TSP::reset() {
     dim = 0;
     sample_index = -1;
     lower_bound = 0;
-    arena.clear();
+    n_arena = 0;
 }
 
 void TSP::reserve_memory(int length) {
@@ -250,18 +272,20 @@ void TSP::null_emit(double theta, Node *query_node) {
     prev_node = query_node;
     double ws = 0;
     assert(dim == forward_probs[curr_index].size());
+    double *curr_probs = forward_probs[curr_index].data();
+    const double *emit_probs = null_emit_probs.data();
     for (int i = 0; i < dim; i++) {
-        assert(forward_probs[curr_index][i] >= 0);
-        forward_probs[curr_index][i] *= null_emit_probs[i];
-        ws += forward_probs[curr_index][i];
+        assert(curr_probs[i] >= 0);
+        curr_probs[i] *= emit_probs[i];
+        ws += curr_probs[i];
     }
     if (ws > 0) {
         for (int i = 0; i < dim; i++) {
-            forward_probs[curr_index][i] /= ws;
+            curr_probs[i] /= ws;
         }
     } else {
         for (int i = 0; i < dim; i++) {
-            forward_probs[curr_index][i] = 1.0/forward_probs[curr_index].size();
+            curr_probs[i] = 1.0/forward_probs[curr_index].size();
         }
     }
 }
@@ -269,13 +293,15 @@ void TSP::null_emit(double theta, Node *query_node) {
 void TSP::mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node) {
     compute_mut_emit_probs(theta, bin_size, mut_set, query_node);
     double ws = 0;
+    double *curr_probs = forward_probs[curr_index].data();
+    const double *emit_probs = mut_emit_probs.data();
     for (int i = 0; i < dim; i++) {
-        forward_probs[curr_index][i] *= mut_emit_probs[i];
-        ws += forward_probs[curr_index][i];
+        curr_probs[i] *= emit_probs[i];
+        ws += curr_probs[i];
     }
     assert(ws > 0);
     for (int i = 0; i < dim; i++) {
-        forward_probs[curr_index][i] /= ws;
+        curr_probs[i] /= ws;
     }
 }
 

@@ -160,6 +160,7 @@ public:
     void simplify(map<double, Branch> &joining_branches);
     
     deque<Interval> arena = {};
+    size_t n_arena = 0;
 
     Interval_ptr make_interval(Branch b, double tl, double tu, int init_pos);
 
