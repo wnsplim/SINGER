@@ -840,8 +840,8 @@ double ARG::data_likelihood(double m) {
             recomb_it++;
             tree.forward_update(r);
         }
-        while (mut_it != mutation_sites.end()) {
-            next_mut_pos = min(sequence_length, *mut_it);
+        while (mut_it != mutation_sites.end() and *mut_it < bin_end) {
+            next_mut_pos = *mut_it;
             theta = m*Ne;
             log_likelihood += tree.data_likelihood(theta, next_mut_pos);
             theta = (next_mut_pos - prev_mut_pos - 1)*m*Ne;
@@ -850,6 +850,8 @@ double ARG::data_likelihood(double m) {
             mut_it++;
         }
     }
+    theta = (sequence_length - prev_mut_pos)*m*Ne;
+    log_likelihood += tree.null_likelihood(theta);
     return log_likelihood;
 }
 

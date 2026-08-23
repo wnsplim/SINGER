@@ -87,18 +87,20 @@ void Node::move_iterator(double m) {
     if (it->first == m) {
         return;
     }
-    double next_pos = next(it)->first;
-    double prev_pos = prev(it)->first;
     if (it->first < m) {
+        double next_pos = next(it)->first;
         if (next_pos == m) {
             ++it;
             return;
         } else if (next_pos > m) {
             return;
         }
-    } else if (it->first > m and prev_pos <= m) {
-        --it;
-        return;
+    } else if (it->first > m) {
+        double prev_pos = prev(it)->first;
+        if (prev_pos <= m) {
+            --it;
+            return;
+        }
     }
     if (abs(it->first - m) < 20) {
         while (it != mutation_sites.begin() and it->first > m) {

@@ -205,7 +205,7 @@ double Tree::prior_likelihood() {
     }
     vector<double> sorted_coalescence_times = vector(coalescence_times.begin(), coalescence_times.end());
     for (int i = 0; i < num_leaves - 1; i++) {
-        double lambda = (num_leaves - i)*(num_leaves - i - 1);
+        double lambda = 0.5*(num_leaves - i)*(num_leaves - i - 1);
         double t = sorted_coalescence_times[i+1] - sorted_coalescence_times[i];
         log_likelihood += log_exp(lambda, t);
     }
