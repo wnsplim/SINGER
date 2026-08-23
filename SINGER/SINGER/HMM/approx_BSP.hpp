@@ -78,10 +78,16 @@ public:
     bool states_change = false;
     set<Branch> valid_branches = {};
     
+    size_t n_rows = 0;
+
     approx_BSP();
-    
+
     ~approx_BSP();
-    
+
+    void push_row(const vector<double> &v);
+
+    void reset();
+
     void reserve_memory(int length);
     
     void start(set<Branch> &branches, double t);

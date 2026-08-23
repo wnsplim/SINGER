@@ -36,8 +36,14 @@ public:
     
     void set_check_points(set<double> &p);
     
+    size_t n_rows = 0;
+
+    void push_row(const vector<double> &v);
+
+    void reset();
+
     void reserve_memory(int length);
-    
+
     void start(Branch &branch, double t);
     
     void set_interval_constraint(Recombination &r);

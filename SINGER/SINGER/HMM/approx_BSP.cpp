@@ -34,6 +34,43 @@ approx_BSP::~approx_BSP() {
     vector<pair<int, vector<double>>>().swap(weights);
 }
 
+void approx_BSP::push_row(const vector<double> &v) {
+    if (n_rows < forward_probs.size()) {
+        forward_probs[n_rows].assign(v.begin(), v.end());
+    } else {
+        forward_probs.push_back(v);
+    }
+    n_rows++;
+}
+
+void approx_BSP::reset() {
+    n_rows = 0;
+    curr_index = 0;
+    state_spaces.assign(1, {INT_MAX, {}});
+    times.assign(1, {INT_MAX, {}});
+    weights.assign(1, {INT_MAX, {}});
+    curr_intervals.clear();
+    temp_intervals.clear();
+    rhos.clear();
+    recomb_sums.clear();
+    weight_sums.clear();
+    transfer_intervals.clear();
+    transfer_weights.clear();
+    temp.clear();
+    trace_back_probs.clear();
+    valid_branches.clear();
+    check_points.clear();
+    prev_rho = -1;
+    prev_theta = -1;
+    prev_node = nullptr;
+    dim = 0;
+    recomb_sum = 0;
+    weight_sum = 0;
+    sample_index = -1;
+    states_change = false;
+    cc = nullptr;
+}
+
 void approx_BSP::reserve_memory(int length) {
     forward_probs.reserve(length);
 }
@@ -64,7 +101,7 @@ void approx_BSP::start(set<Branch> &branches, double t) {
         }
     }
     cutoff = min(0.01, cutoff/curr_intervals.size()); // adjust cutoff based on number of states;
-    forward_probs.push_back(temp);
+    push_row(temp);
     weight_sums.push_back(0.0);
     set_dimensions();
     compute_interval_info();
@@ -98,7 +135,7 @@ void approx_BSP::start(Tree &tree, double t) {
         }
     }
     cutoff = min(0.01, cutoff/curr_intervals.size()); // adjust cutoff based on number of states;
-    forward_probs.push_back(temp);
+    push_row(temp);
     weight_sums.push_back(0.0);
     set_dimensions();
     compute_interval_info();
@@ -125,7 +162,7 @@ void approx_BSP::forward(double rho) {
     prev_rho = rho;
     curr_index += 1;
     recomb_sum = inner_product(recomb_probs.begin(), recomb_probs.end(), forward_probs[curr_index - 1].begin(), 0.0);
-    forward_probs.push_back(recomb_probs);
+    push_row(recomb_probs);
     for (int i = 0; i < dim; i++) {
         forward_probs[curr_index][i] = forward_probs[curr_index - 1][i]*(1 - recomb_probs[i]) + recomb_sum*recomb_weights[i];
     }
@@ -410,7 +447,7 @@ void approx_BSP::generate_intervals(Recombination &r) {
             }
         }
     }
-    forward_probs.push_back(temp);
+    push_row(temp);
     curr_intervals = move(temp_intervals);
 }
 

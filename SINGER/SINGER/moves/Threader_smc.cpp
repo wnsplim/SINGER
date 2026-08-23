@@ -15,6 +15,18 @@ Threader_smc::Threader_smc(double c, double q) {
 Threader_smc::~Threader_smc() {
 }
 
+void Threader_smc::reset() {
+    bsp.reset();
+    tsp.reset();
+    new_joining_branches.clear();
+    added_branches.clear();
+    cut_time = 0;
+    start = 0;
+    end = 0;
+    start_index = 0;
+    end_index = 0;
+}
+
 void Threader_smc::thread(ARG &a, Node_ptr n) {
     cout << "Iteration: " << a.sample_nodes.size() << endl;
     cut_time = 0;

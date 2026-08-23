@@ -406,9 +406,10 @@ void Sampler::iterative_start() {
     build_singleton_arg();
     auto it = ordered_sample_nodes.begin();
     it++;
+    Threader_smc threader = Threader_smc(bsp_c, tsp_q);
     while (it != ordered_sample_nodes.end()) {
         random_engine.seed(random_seed);
-        Threader_smc threader = Threader_smc(bsp_c, tsp_q);
+        threader.reset();
         threader.pe->penalty = penalty;
         threader.pe->ancestral_prob = polar;
         Node_ptr n = *it;
@@ -617,13 +618,14 @@ void Sampler::fast_terminal_sample(int num_iters) {
 */
 
 void Sampler::internal_sample(int num_iters, int spacing) {
+    Threader_smc threader = Threader_smc(bsp_c, tsp_q);
     while (sample_index < num_iters) {
         cout << get_time() << " Iteration: " << to_string(sample_index) << endl;
         double updated_length = 0;
         cout << "Random seed: " << random_seed << endl;
         random_engine.seed(random_seed);
         while (updated_length < spacing*arg.sequence_length) {
-            Threader_smc threader = Threader_smc(bsp_c, tsp_q);
+            threader.reset();
             threader.pe->penalty = penalty;
             threader.pe->ancestral_prob = polar;
             tuple<double, Branch, double> cut_point = arg.sample_internal_cut();

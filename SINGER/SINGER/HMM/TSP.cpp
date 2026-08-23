@@ -35,6 +35,49 @@ void TSP::set_check_points(set<double> &p) {
     check_points = p;
 }
 
+void TSP::push_row(const vector<double> &v) {
+    if (n_rows < forward_probs.size()) {
+        forward_probs[n_rows].assign(v.begin(), v.end());
+    } else {
+        forward_probs.push_back(v);
+    }
+    n_rows++;
+}
+
+void TSP::reset() {
+    for (auto &x : state_spaces) {
+        for (Interval *interval : x.second) {
+            delete interval;
+        }
+    }
+    state_spaces.clear();
+    state_spaces[INT_MAX] = {};
+    source_interval.clear();
+    n_rows = 0;
+    curr_index = 0;
+    curr_branch = Branch();
+    curr_intervals.clear();
+    rhos.clear();
+    thetas.clear();
+    lower_sums.clear();
+    upper_sums.clear();
+    diagonals.clear();
+    factors.clear();
+    lower_diagonals.clear();
+    upper_diagonals.clear();
+    temp.clear();
+    null_emit_probs.clear();
+    mut_emit_probs.clear();
+    trace_back_probs.clear();
+    check_points.clear();
+    prev_rho = -1;
+    prev_theta = -1;
+    prev_node = nullptr;
+    dim = 0;
+    sample_index = -1;
+    lower_bound = 0;
+}
+
 void TSP::reserve_memory(int length) {
     forward_probs.reserve(length);
     rhos.reserve(length);
@@ -52,7 +95,7 @@ void TSP::start(Branch &branch, double t) {
         temp[i] = exp(-curr_intervals[i]->lb) - exp(-curr_intervals[i]->ub);
     }
     state_spaces[0] = curr_intervals;
-    forward_probs.emplace_back(temp);
+    push_row(temp);
     temp.clear();
 }
 
@@ -98,7 +141,7 @@ void TSP::transfer(Recombination &r, Branch &prev_branch, Branch &next_branch) {
         generate_intervals(next_branch, lb, ub);
     }
     state_spaces[curr_index] = curr_intervals;
-    forward_probs.emplace_back(temp);
+    push_row(temp);
     temp.clear();
     set_dimensions();
     compute_factors();
@@ -116,7 +159,7 @@ void TSP::recombine(Branch &prev_branch, Branch &next_branch) {
     curr_index += 1;
     lower_bound = max(cut_time, next_branch.lower_node->time);
     generate_intervals(next_branch, next_branch.lower_node->time, next_branch.upper_node->time);
-    forward_probs.emplace_back(temp);
+    push_row(temp);
     state_spaces[curr_index] = curr_intervals;
     set_dimensions();
     compute_factors();
@@ -195,7 +238,7 @@ void TSP::forward(double rho) {
     compute_upper_sums();
     curr_index += 1;
     prev_rho = rho;
-    forward_probs.emplace_back(lower_sums);
+    push_row(lower_sums);
     for (int i = 0; i < dim; i++) {
         assert(forward_probs[curr_index][i] >= 0);
         forward_probs[curr_index][i] += diagonals[i]*forward_probs[curr_index-1][i] + lower_diagonals[i]*upper_sums[i];
