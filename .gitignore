@@ -12,6 +12,12 @@ cmake-build-*/
 *.swo
 *~
 
+# Local notes
+CODEMAP.txt
+
+# Agetns
+.claude/
+
 # Python
 __pycache__/
 *.py[cod]

@@ -17,7 +17,7 @@ clang++ -std=c++17 -g -c *.cpp -o ../../releases/singer_debug
 
 # Copy additional files
 cp singer_master ../../releases/singer_master
-cp convert_to_tskit ../../releases/convert_to_tskit
+cp convert_to_tskit.py ../../releases/convert_to_tskit.py
 
 # Change directory to releases
 cd ../../releases
@@ -27,5 +27,5 @@ cd ../../releases
 tar -cvzf singer-$VERSION-beta-mac-arm64.tar.gz \
     singer_debug \
     singer \
-    convert_to_tskit \
+    convert_to_tskit.py \
     singer_master

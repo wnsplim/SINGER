@@ -70,7 +70,7 @@ prefix_of_output_files_nodes_{i}.txt, prefix_of_output_files_branches_{i}.txt, p
 with `i` from `0` to `num_samples - 1`. We recommend converting these files to tree sequence format in tskit, with this function:
 
 ```
-path_to_singer/convert_to_tskit -input prefix_of_arg_files -output prefix_of_tskit_files
+path_to_singer/convert_to_tskit.py -input prefix_of_arg_files -output prefix_of_tskit_files
 -start start_index -end end_index -step step_size
 ```
 

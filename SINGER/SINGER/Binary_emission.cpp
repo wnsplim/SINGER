@@ -69,6 +69,12 @@ double Binary_emission::calculate_prob(double theta, double bin_size, int s) {
         return 1.0;
     }
     double unit_theta = theta/bin_size;
+    if (s == 0) {
+        return exp(-theta);
+    }
+    if (s == 1) {
+        return exp(-theta)*unit_theta;
+    }
     return exp(-theta)*pow(unit_theta, s);
 }
 

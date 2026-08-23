@@ -42,11 +42,11 @@ public:
     
     // hmm states
     int curr_index = 0;
-    map<int, vector<Interval_ptr>>  state_spaces = {{INT_MAX, {}}};
+    vector<pair<int, vector<Interval_ptr>>>  state_spaces = {{INT_MAX, {}}};
     vector<Interval_ptr> curr_intervals = {};
     vector<Interval_ptr> temp_intervals = {};
-    map<int, vector<double>> times = {{INT_MAX, {}}};
-    map<int, vector<double>> weights = {{INT_MAX, {}}};
+    vector<pair<int, vector<double>>> times = {{INT_MAX, {}}};
+    vector<pair<int, vector<double>>> weights = {{INT_MAX, {}}};
     
     // coalescent computation
     shared_ptr<approx_coalescent_calculator> cc;

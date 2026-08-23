@@ -127,7 +127,14 @@ double Polar_emission::mut_prob(double theta, double bin_size, int s) {
         return 1.0;
     }
     double unit_theta = theta/bin_size;
-    return pow(unit_theta, abs(s));
+    int e = abs(s);
+    if (e == 0) {
+        return 1.0;
+    }
+    if (e == 1) {
+        return unit_theta;
+    }
+    return pow(unit_theta, e);
 }
 
 double Polar_emission::null_prob(double theta) {

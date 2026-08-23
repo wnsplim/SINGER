@@ -7,13 +7,31 @@
 
 #include "approx_BSP.hpp"
 
+template <class V>
+static typename V::value_type::second_type &keyed_slot(V &v, int key) {
+    auto it = lower_bound(v.begin(), v.end(), key,
+                          [](const typename V::value_type &e, int k) { return e.first < k; });
+    if (it != v.end() and it->first == key) {
+        return it->second;
+    }
+    return v.insert(it, {key, {}})->second;
+}
+
+template <class V>
+static typename V::value_type::second_type &keyed_lookup(V &v, int key) {
+    auto it = upper_bound(v.begin(), v.end(), key,
+                          [](int k, const typename V::value_type &e) { return k < e.first; });
+    --it;
+    return it->second;
+}
+
 approx_BSP::approx_BSP() {}
 
 approx_BSP::~approx_BSP() {
     vector<vector<double>>().swap(forward_probs);
-    map<int, vector<Interval_ptr>>().swap(state_spaces);
-    map<int, vector<double>>().swap(times);
-    map<int, vector<double>>().swap(weights);
+    vector<pair<int, vector<Interval_ptr>>>().swap(state_spaces);
+    vector<pair<int, vector<double>>>().swap(times);
+    vector<pair<int, vector<double>>>().swap(weights);
 }
 
 void approx_BSP::reserve_memory(int length) {
@@ -50,7 +68,7 @@ void approx_BSP::start(set<Branch> &branches, double t) {
     weight_sums.push_back(0.0);
     set_dimensions();
     compute_interval_info();
-    state_spaces[curr_index] = curr_intervals;
+    keyed_slot(state_spaces, curr_index) = curr_intervals;
     temp.clear();
 }
 
@@ -84,7 +102,7 @@ void approx_BSP::start(Tree &tree, double t) {
     weight_sums.push_back(0.0);
     set_dimensions();
     compute_interval_info();
-    state_spaces[curr_index] = curr_intervals;
+    keyed_slot(state_spaces, curr_index) = curr_intervals;
     temp.clear();
 }
 
@@ -135,7 +153,7 @@ void approx_BSP::transfer(Recombination &r) {
     set_dimensions();
     cc->update(r);
     compute_interval_info();
-    state_spaces[curr_index] = curr_intervals;
+    keyed_slot(state_spaces, curr_index) = curr_intervals;
 }
 
 double approx_BSP::get_recomb_prob(double rho, double t) {
@@ -304,8 +322,8 @@ void approx_BSP::compute_interval_info() {
         raw_weights[i] = p;
         time_points[i] = t;
     }
-    times[curr_index] = time_points;
-    weights[curr_index] = raw_weights;
+    keyed_slot(times, curr_index) = time_points;
+    keyed_slot(weights, curr_index) = raw_weights;
 }
  */
 
@@ -326,8 +344,8 @@ void approx_BSP::compute_interval_info() {
             time_points[i] = interval->time;
         }
     }
-    times[curr_index] = time_points;
-    weights[curr_index] = raw_weights;
+    keyed_slot(times, curr_index) = time_points;
+    keyed_slot(weights, curr_index) = raw_weights;
 }
 
 void approx_BSP::sanity_check(Recombination &r) {
@@ -550,27 +568,22 @@ double approx_BSP::random() {
 }
 
 int approx_BSP::get_prev_breakpoint(int x) {
-    auto state_it = state_spaces.upper_bound(x);
+    auto state_it = upper_bound(state_spaces.begin(), state_spaces.end(), x,
+                                [](int k, const pair<int, vector<Interval_ptr>> &e) { return k < e.first; });
     state_it--;
     return state_it->first;
 }
 
 vector<Interval_ptr> &approx_BSP::get_state_space(int x) {
-    auto state_it = state_spaces.upper_bound(x);
-    state_it--;
-    return state_it->second;
+    return keyed_lookup(state_spaces, x);
 }
 
 vector<double> &approx_BSP::get_time_points(int x) {
-    auto time_it = times.upper_bound(x);
-    time_it--;
-    return time_it->second;
+    return keyed_lookup(times, x);
 }
 
 vector<double> &approx_BSP::get_raw_weights(int x) {
-    auto weight_it = weights.upper_bound(x);
-    weight_it--;
-    return weight_it->second;
+    return keyed_lookup(weights, x);
 }
 
 int approx_BSP::get_interval_index(Interval_ptr interval, vector<Interval_ptr > &intervals) {
@@ -696,7 +709,7 @@ double approx_BSP::avg_num_states() {
     auto x = state_spaces.begin();
     ++x;
     while (x->first != INT_MAX) {
-        count += x->second.size()*(x->first - prev(x)->first);
+        count += x->second.size()*(x->first - (x - 1)->first);
         span = x->first;
         ++x;
     }

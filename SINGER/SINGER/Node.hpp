@@ -26,8 +26,8 @@ using namespace std;
 class Node {
     
 public:
-    map<double, double> mutation_sites = {{-1, 0}, {INT_MAX, 0}};
-    map<double, double>::iterator it = next(mutation_sites.begin());
+    vector<pair<double, double>> mutation_sites = {{-1, 0}, {(double) INT_MAX, 0}};
+    vector<pair<double, double>>::iterator it = next(mutation_sites.begin());
     
     int index = 0;
     
@@ -46,7 +46,9 @@ public:
     void write_state(double pos, double s);
     
     void read_mutation(string filename);
-    
+
+    void set_site(double pos, double s);
+
     void move_iterator(double m);
 
 /*

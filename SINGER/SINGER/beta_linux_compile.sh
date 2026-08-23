@@ -35,7 +35,7 @@ g++ -std=c++17 -g "$BUILD_DIR"/debug/*.o -o "$VERSION_DIR/singer_debug"
 
 # Copy additional files
 cp singer_master "$VERSION_DIR/singer_master"
-cp convert_to_tskit "$VERSION_DIR/convert_to_tskit"
+cp convert_to_tskit.py "$VERSION_DIR/convert_to_tskit.py"
 cp index_vcf.py "$VERSION_DIR/index_vcf.py"
 cp merge_ARG.py "$VERSION_DIR/merge_ARG.py"
 cp convert_long_ARG.py "$VERSION_DIR/convert_long_ARG.py"

@@ -15,10 +15,26 @@ void Node::set_index(int index) {
     this->index = index;
 }
 
-void Node::add_mutation(double pos) {
-    mutation_sites[pos] = 1;
+static inline bool site_less(const pair<double, double> &e, double p) {
+    return e.first < p;
 }
- 
+
+void Node::set_site(double pos, double s) {
+    auto lo = lower_bound(mutation_sites.begin(), mutation_sites.end(), pos, site_less);
+    if (lo != mutation_sites.end() and lo->first == pos) {
+        lo->second = s;
+        return;
+    }
+    size_t at = lo - mutation_sites.begin();
+    size_t cur = it - mutation_sites.begin();
+    mutation_sites.insert(lo, {pos, s});
+    it = mutation_sites.begin() + (cur >= at ? cur + 1 : cur);
+}
+
+void Node::add_mutation(double pos) {
+    set_site(pos, 1);
+}
+
 double Node::get_state(double pos) {
     move_iterator(pos);
     if (it->first == pos) {
@@ -31,13 +47,22 @@ double Node::get_state(double pos) {
 
 void Node::write_state(double pos, double s) {
     if (s == 0) {
-        mutation_sites.erase(pos);
-        if (it->first == pos) {
+        auto lo = lower_bound(mutation_sites.begin(), mutation_sites.end(), pos, site_less);
+        if (lo == mutation_sites.end() or lo->first != pos) {
+            return;
+        }
+        bool on_it = (it == lo);
+        size_t at = lo - mutation_sites.begin();
+        size_t cur = it - mutation_sites.begin();
+        mutation_sites.erase(lo);
+        if (on_it) {
             it = mutation_sites.begin();
+        } else {
+            it = mutation_sites.begin() + (cur > at ? cur - 1 : cur);
         }
         return;
     } else if (s == 1) {
-        mutation_sites[pos] = s;
+        set_site(pos, s);
     }
     return;
 }
@@ -83,7 +108,8 @@ void Node::move_iterator(double m) {
             ++it;
         }
     } else {
-        it = mutation_sites.upper_bound(m);
+        it = upper_bound(mutation_sites.begin(), mutation_sites.end(), m,
+                         [](double p, const pair<double, double> &e) { return p < e.first; });
         --it;
     }
     assert(it->first <= m and next(it)->first > m);

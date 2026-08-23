@@ -7,8 +7,8 @@ import numpy as np
 import tskit
 
 def read_ts(node_file, edge_file):
-    node_time = np.loadtxt(node_file)
-    edge_span = np.loadtxt(edge_file)
+    node_time = np.atleast_1d(np.loadtxt(node_file))
+    edge_span = np.loadtxt(edge_file, ndmin=2)
     edge_span = edge_span[edge_span[:, 2] >= 0, :]
     length = max(edge_span[:, 1])
     tables = tskit.TableCollection(sequence_length=length)
@@ -37,15 +37,16 @@ def read_ts(node_file, edge_file):
     return tables
 
 def read_mutation(tables, mutation_file):
-    mutations = np.loadtxt(mutation_file)
-    n = mutations.shape[0]
-    mut_pos = 0
-    for i in range(n):
-        if mutations[i, 0] != mut_pos:
-            tables.sites.add_row(position=mutations[i, 0], ancestral_state='0')
-            mut_pos = mutations[i, 0]
-        site_id = tables.sites.num_rows - 1
-        tables.mutations.add_row(site=site_id, node=int(mutations[i, 1]), derived_state=str(int(mutations[i, 3])))
+    mutations = np.loadtxt(mutation_file, ndmin=2)
+    site_ids = {}
+    for i in range(mutations.shape[0]):
+        mut_pos = mutations[i, 0]
+        if mut_pos >= tables.sequence_length:
+            continue
+        if mut_pos not in site_ids:
+            tables.sites.add_row(position=mut_pos, ancestral_state='0')
+            site_ids[mut_pos] = tables.sites.num_rows - 1
+        tables.mutations.add_row(site=site_ids[mut_pos], node=int(mutations[i, 1]), derived_state=str(int(mutations[i, 3])))
     return
 
 def read_ARG(node_file, branch_file, mutation_file):

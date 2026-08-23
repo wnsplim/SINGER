@@ -21,7 +21,7 @@ def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates):
     
     for node_file_index, (node_file, branch_file, mutation_file) in enumerate(zip(node_files, branch_files, mutation_files)):
         print(f"Processing segment {node_file_index}")
-        node_time = np.loadtxt(node_file)
+        node_time = np.atleast_1d(np.loadtxt(node_file))
         node_num = node_table.num_rows - sample_num
         min_time = 0
         
@@ -39,7 +39,7 @@ def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates):
         if node_file_index == 0:
             time_zero_nodes_added = True
         
-        edge_span = np.loadtxt(branch_file)
+        edge_span = np.loadtxt(branch_file, ndmin=2)
         edge_span = edge_span[edge_span[:, 2] >= 0, :]
         
         length = max(edge_span[:, 1])
@@ -57,19 +57,19 @@ def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates):
             parent=parent_indices,
             child=child_indices
         )
-        mutations = np.loadtxt(mutation_file)
-        mut_num = mutations.shape[0]
-        mut_pos = 0
-        for i in range(mut_num):
-            if mutations[i, 0] != mut_pos and mutations[i, 0] < length:
-                tables.sites.add_row(position=mutations[i, 0] + block_coordinates[node_file_index], ancestral_state='0')
-                mut_pos = mutations[i, 0]
-            site_id = tables.sites.num_rows - 1
+        mutations = np.loadtxt(mutation_file, ndmin=2)
+        site_ids = {}
+        for i in range(mutations.shape[0]):
+            mut_pos = mutations[i, 0]
+            if mut_pos >= length:
+                continue
+            if mut_pos not in site_ids:
+                tables.sites.add_row(position=mut_pos + block_coordinates[node_file_index], ancestral_state='0')
+                site_ids[mut_pos] = tables.sites.num_rows - 1
             mut_node = int(mutations[i, 1])
-            if (mut_node < sample_num):
-                tables.mutations.add_row(site=site_id, node=int(mutations[i, 1]), derived_state=str(int(mutations[i, 3]))) 
-            else:
-                tables.mutations.add_row(site=site_id, node=int(mutations[i, 1]) + node_num, derived_state=str(int(mutations[i, 3])))    
+            if mut_node >= sample_num:
+                mut_node += node_num
+            tables.mutations.add_row(site=site_ids[mut_pos], node=mut_node, derived_state=str(int(mutations[i, 3])))
     
     tables.sort()
     tables.build_index()
