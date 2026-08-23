@@ -12,8 +12,6 @@
 #include "Tree.hpp"
 #include "Emission.hpp"
 #include "Interval.hpp"
-#include "Coalescent_calculator.hpp"
-#include "fast_coalescent_calculator.hpp"
 #include "approx_coalescent_calculator.hpp"
 
 using Interval_ptr = shared_ptr<Interval>;

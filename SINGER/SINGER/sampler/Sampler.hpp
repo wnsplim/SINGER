@@ -15,7 +15,6 @@
 #include "Threader_smc.hpp"
 #include "Binary_emission.hpp"
 #include "Emission.hpp"
-#include "Normalizer.hpp"
 #include "Scaler.hpp"
 #include "Rate_map.hpp"
 
@@ -43,6 +42,8 @@ public:
     int random_seed = 0;
     double penalty = 0.01;
     double polar = 0.99;
+    int scaling_rep = 5;
+    int scaling_bin = 100;
     int sample_index = 0;
     set<Node_ptr, compare_node> sample_nodes = {};
     vector<Node_ptr> ordered_sample_nodes = {};
@@ -114,8 +115,6 @@ public:
     void resume_fast_internal_sample(int num_iters, int spacing);
     
     void debug_resume_fast_internal_sample(int num_iters, int spacing);
-    
-    void normalize();
     
     void rescale();
     

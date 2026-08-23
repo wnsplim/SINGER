@@ -10,10 +10,13 @@ fi
 VERSION=$1
 
 # Compile the program with optimizations and debugging information
-clang++ -std=c++17 -O3 -g -c *.cpp -o ../../releases/singer
+INCLUDES="-I. -IARG -IHMM -Imoves -Isampler -Iutils"
+SOURCES=$(find . -path ./lab -prune -o -name '*.cpp' -print)
+
+clang++ -std=c++17 -O3 -g $INCLUDES $SOURCES -o ../../releases/singer
 
 # Compile the debug version of the program
-clang++ -std=c++17 -g -c *.cpp -o ../../releases/singer_debug
+clang++ -std=c++17 -g $INCLUDES $SOURCES -o ../../releases/singer_debug
 
 # Copy additional files
 cp singer_master ../../releases/singer_master

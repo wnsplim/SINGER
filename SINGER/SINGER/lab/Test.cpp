@@ -200,7 +200,6 @@ void test_normalization() {
 
 void test_normalizer() {
     ARG a = ARG(8e4, 1e6);
-    // a.read("/Users/yun_deng/Desktop/SINGER/arg_files/african_16_start_nodes_0.txt", "/Users/yun_deng/Desktop/SINGER/arg_files/african_16_start_branches_0.txt", "/Users/yun_deng/Desktop/SINGER/arg_files/african_16_start_recombs_0.txt", "/Users/yun_deng/Desktop/SINGER/arg_files/african_16_start_muts_0.txt");
     a.read("/Users/yun_deng/Desktop/SINGER/arg_files/debug_fts_nodes.txt", "/Users/yun_deng/Desktop/SINGER/arg_files/debug_fts_branches.txt", "/Users/yun_deng/Desktop/SINGER/arg_files/debug_fts_recombs.txt", "/Users/yun_deng/Desktop/SINGER/arg_files/debug_fts_muts.txt");
     for (int i = 0; i < 10; i++) {
         Normalizer nm = Normalizer();

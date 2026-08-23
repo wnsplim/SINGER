@@ -6,7 +6,7 @@
 //
 
 #include <iostream>
-#include "Test.hpp"
+#include "Sampler.hpp"
 
 int main(int argc, const char * argv[]) {
     bool fast = false;
@@ -20,6 +20,8 @@ int main(int argc, const char * argv[]) {
     string recomb_map_filename = "", mut_map_filename = "";
     double penalty = 0.01;
     double polar = 0.5;
+    int scaling_rep = 5;
+    int scaling_bin = 100;
     double epsilon_hmm = 0.1;
     double epsilon_psmc = 0.05;
     int ploidy = 2;
@@ -105,6 +107,30 @@ int main(int argc, const char * argv[]) {
                 polar = stod(argv[++i]);
             } catch (const invalid_argument&) {
                 cerr << "Error: -polar flag expects a number. " << endl;
+                exit(1);
+            }
+        }
+        else if (arg == "-scaling_rep") {
+            if (i + 1 >= argc || argv[i+1][0] == '-') {
+                cerr << "Error: -scaling_rep flag cannot be empty. " << endl;
+                exit(1);
+            }
+            try {
+                scaling_rep = stoi(argv[++i]);
+            } catch (const invalid_argument&) {
+                cerr << "Error: -scaling_rep flag expects a number. " << endl;
+                exit(1);
+            }
+        }
+        else if (arg == "-scaling_bin") {
+            if (i + 1 >= argc || argv[i+1][0] == '-') {
+                cerr << "Error: -scaling_bin flag cannot be empty. " << endl;
+                exit(1);
+            }
+            try {
+                scaling_bin = stoi(argv[++i]);
+            } catch (const invalid_argument&) {
+                cerr << "Error: -scaling_bin flag expects a number. " << endl;
                 exit(1);
             }
         }
@@ -283,6 +309,8 @@ int main(int argc, const char * argv[]) {
     }
     sampler.penalty = penalty;
     sampler.polar = polar;
+    sampler.scaling_rep = scaling_rep;
+    sampler.scaling_bin = scaling_bin;
     sampler.set_precision(epsilon_hmm, epsilon_psmc);
     sampler.set_input_file_prefix(input_filename);
     sampler.set_output_file_prefix(output_prefix);

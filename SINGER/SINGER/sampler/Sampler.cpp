@@ -6,6 +6,7 @@
 //
 
 #include "Sampler.hpp"
+#include "TSP.hpp"
 
 Sampler::Sampler() {}
 
@@ -776,14 +777,13 @@ void Sampler::debug_resume_fast_internal_sample(int num_iters, int spacing) {
     }
 }
 
-void Sampler::normalize() {
-    Normalizer nm = Normalizer();
-    nm.normalize(arg, mut_rate);
-}
 
 void Sampler::rescale() {
-    Scaler scaler = Scaler();
-    scaler.rescale(arg, mut_rate);
+    for (int i = 0; i < scaling_rep; i++) {
+        Scaler scaler = Scaler();
+        scaler.num_windows = scaling_bin;
+        scaler.rescale(arg, mut_rate);
+    }
 }
 
 void Sampler::start_log() {
@@ -819,7 +819,7 @@ void Sampler::write_iterative_start() {
     << setprecision(numeric_limits<double>::max_digits10)
     << arg.end << "\t"
     << random_seed << "\t"
-    << TSP_smc::counter << endl;
+    << TSP::counter << endl;
 }
 
 void Sampler::write_sample() {

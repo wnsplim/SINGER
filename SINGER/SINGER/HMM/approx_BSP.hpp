@@ -11,7 +11,6 @@
 #include <stdio.h>
 #include <fstream>
 #include "Tree.hpp"
-#include "Coalescent_calculator.hpp"
 #include "approx_coalescent_calculator.hpp"
 #include "Interval.hpp"
 #include "Emission.hpp"

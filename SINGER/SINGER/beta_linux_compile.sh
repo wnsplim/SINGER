@@ -23,15 +23,20 @@ mkdir -p "$VERSION_DIR" "$BUILD_DIR/release" "$BUILD_DIR/debug"
 
 cd "$SRC_DIR"
 
-# Compile the program with optimizations and debugging information
-printf '%s\n' *.cpp | xargs -P "$JOBS" -I CPPFILE \
-    g++ -std=c++17 -O3 -g -c CPPFILE -o "$BUILD_DIR/release/CPPFILE.o"
-g++ -std=c++17 -O3 -g "$BUILD_DIR"/release/*.o -o "$VERSION_DIR/singer"
+SRC_DIRS="ARG HMM moves sampler utils"
+INCLUDES="-I."
+for d in $SRC_DIRS; do INCLUDES="$INCLUDES -I$d"; done
+SOURCES=$(find . -path ./lab -prune -o -name '*.cpp' -print)
 
-# Compile the debug version of the program
-printf '%s\n' *.cpp | xargs -P "$JOBS" -I CPPFILE \
-    g++ -std=c++17 -g -c CPPFILE -o "$BUILD_DIR/debug/CPPFILE.o"
-g++ -std=c++17 -g "$BUILD_DIR"/debug/*.o -o "$VERSION_DIR/singer_debug"
+for d in $SRC_DIRS; do mkdir -p "$BUILD_DIR/release/$d" "$BUILD_DIR/debug/$d"; done
+
+printf '%s\n' $SOURCES | xargs -P "$JOBS" -I CPPFILE \
+    g++ -std=c++17 -O3 -g $INCLUDES -c CPPFILE -o "$BUILD_DIR/release/CPPFILE.o"
+g++ -std=c++17 -O3 -g $(find "$BUILD_DIR/release" -name '*.o') -o "$VERSION_DIR/singer"
+
+printf '%s\n' $SOURCES | xargs -P "$JOBS" -I CPPFILE \
+    g++ -std=c++17 -g $INCLUDES -c CPPFILE -o "$BUILD_DIR/debug/CPPFILE.o"
+g++ -std=c++17 -g $(find "$BUILD_DIR/debug" -name '*.o') -o "$VERSION_DIR/singer_debug"
 
 # Copy additional files
 cp singer_master "$VERSION_DIR/singer_master"

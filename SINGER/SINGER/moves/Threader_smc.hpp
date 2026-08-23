@@ -12,16 +12,9 @@
 #include <chrono>
 #include <sstream>
 #include "ARG.hpp"
-#include "BSP.hpp"
-#include "succint_BSP.hpp"
-#include "BSP_smc.hpp"
-#include "fast_BSP.hpp"
-#include "fast_BSP_smc.hpp"
-#include "reduced_BSP.hpp"
-#include "sub_BSP.hpp"
+#include "Polar_emission.hpp"
 #include "fast_BSP.hpp"
 #include "approx_BSP.hpp"
-#include "TSP_smc.hpp"
 #include "TSP.hpp"
 #include "Trace_pruner.hpp"
 
