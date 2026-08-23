@@ -923,7 +923,7 @@ void Sampler::read_resume_point(string filename) {
     sample_index = stoi(words[1]);
     load_resume_arg();
     arg.sequence_length = sequence_length;
-    arg.end = stof(words[log_length - 3]);
+    arg.end = stod(words[log_length - 3]);
     arg.end_tree = arg.get_tree_at(arg.end);
 }
 

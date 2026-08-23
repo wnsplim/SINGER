@@ -7,11 +7,11 @@
 
 #include "approx_BSP.hpp"
 
-template <class V>
-static typename V::value_type::second_type &keyed_slot(V &v, int key) {
+template <class V, class K>
+static typename V::value_type::second_type &keyed_slot(V &v, const K &key) {
     auto it = lower_bound(v.begin(), v.end(), key,
-                          [](const typename V::value_type &e, int k) { return e.first < k; });
-    if (it != v.end() and it->first == key) {
+                          [](const typename V::value_type &e, const K &k) { return e.first < k; });
+    if (it != v.end() and !(key < it->first)) {
         return it->second;
     }
     return v.insert(it, {key, {}})->second;
@@ -69,6 +69,7 @@ void approx_BSP::reset() {
     sample_index = -1;
     states_change = false;
     cc = nullptr;
+    arena.clear();
 }
 
 void approx_BSP::reserve_memory(int length) {
@@ -94,7 +95,7 @@ void approx_BSP::start(set<Branch> &branches, double t) {
             lb = max(b.lower_node->time, cut_time);
             ub = b.upper_node->time;
             p = cc->prob(lb, ub);
-            new_interval = create_interval(b, lb, ub, curr_index);
+            new_interval = make_interval(b, lb, ub, curr_index);
             new_interval->source_pos = curr_index;
             curr_intervals.push_back(new_interval);
             temp.push_back(p);
@@ -128,7 +129,7 @@ void approx_BSP::start(Tree &tree, double t) {
             lb = max(x.first->time, cut_time);
             ub = x.second->time;
             p = cc->prob(lb, ub);
-            new_interval = create_interval(Branch(x.first, x.second), lb, ub, curr_index);
+            new_interval = make_interval(Branch(x.first, x.second), lb, ub, curr_index);
             new_interval->source_pos = curr_index;
             curr_intervals.push_back(new_interval);
             temp.push_back(p);
@@ -198,7 +199,7 @@ double approx_BSP::get_recomb_prob(double rho, double t) {
     return p;
 }
 
-void approx_BSP::null_emit(double theta, Node_ptr query_node) {
+void approx_BSP::null_emit(double theta, Node *query_node) {
     compute_null_emit_prob(theta, query_node);
     prev_theta = theta;
     prev_node = query_node;
@@ -217,7 +218,7 @@ void approx_BSP::null_emit(double theta, Node_ptr query_node) {
     }
 }
 
-void approx_BSP::mut_emit(double theta, double bin_size, set<double> &mut_set, Node_ptr query_node) {
+void approx_BSP::mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node) {
     compute_mut_emit_probs(theta, bin_size, mut_set, query_node);
     double ws = 0;
     auto &curr_probs = forward_probs[curr_index];
@@ -267,6 +268,11 @@ map<double, Branch> approx_BSP::sample_joining_branches(int start_index, vector<
     return joining_branches;
 }
 
+Interval_ptr approx_BSP::make_interval(Branch b, double tl, double tu, int init_pos) {
+    arena.emplace_back(b, tl, tu, init_pos);
+    return &arena.back();
+}
+
 void approx_BSP::set_dimensions() {
     dim = (int) curr_intervals.size();
     time_points.resize(dim); time_points.assign(dim, 0);
@@ -303,7 +309,7 @@ void approx_BSP::compute_recomb_weights(double rho) {
     }
 }
 
-void approx_BSP::compute_null_emit_prob(double theta, Node_ptr query_node) {
+void approx_BSP::compute_null_emit_prob(double theta, Node *query_node) {
     if (theta == prev_theta and query_node == prev_node) {
         return;
     }
@@ -312,20 +318,20 @@ void approx_BSP::compute_null_emit_prob(double theta, Node_ptr query_node) {
     }
 }
 
-void approx_BSP::compute_mut_emit_probs(double theta, double bin_size, set<double> &mut_set, Node_ptr query_node) {
+void approx_BSP::compute_mut_emit_probs(double theta, double bin_size, vector<double> &mut_set, Node *query_node) {
     for (int i = 0; i < dim; i++) {
         mut_emit_probs[i] = eh->mut_emit(curr_intervals[i]->branch, time_points[i], theta, bin_size, mut_set, query_node);
     }
 }
 
 void approx_BSP::transfer_helper(Interval_info &next_interval, Interval_ptr &prev_interval, double w) {
-    transfer_weights[next_interval].push_back(w);
-    transfer_intervals[next_interval].push_back(prev_interval);
+    keyed_slot(transfer_weights, next_interval).push_back(w);
+    keyed_slot(transfer_intervals, next_interval).push_back(prev_interval);
 }
 
 void approx_BSP::transfer_helper(Interval_info &next_interval) {
-    transfer_weights[next_interval];
-    transfer_intervals[next_interval];
+    keyed_slot(transfer_weights, next_interval);
+    keyed_slot(transfer_intervals, next_interval);
 }
 
 void approx_BSP::add_new_branches(Recombination &r) { // add recombined branch and merging branch, if legal
@@ -417,27 +423,27 @@ void approx_BSP::generate_intervals(Recombination &r) {
         p = accumulate(weights.begin(), weights.end(), 0.0);
         assert(!isnan(p));
         if (lb == max(cut_time, b.lower_node->time)) { // full intervals
-            new_interval = create_interval(b, lb, ub, curr_index);
+            new_interval = make_interval(b, lb, ub, curr_index);
             temp_intervals.push_back(new_interval);
             temp.push_back(p);
             if (weights.size() > 0) {
                 new_interval->source_weights = move(weights);
-                new_interval->intervals = move(intervals);
+                new_interval->source_intervals = move(intervals);
             }
         } else if (p > cutoff) { // partial intervals
-            new_interval = create_interval(b, lb, ub, curr_index);
+            new_interval = make_interval(b, lb, ub, curr_index);
             temp_intervals.push_back(new_interval);
             temp.push_back(p);
             if (weights.size() > 0) {
                 new_interval->source_weights = move(weights);
-                new_interval->intervals = move(intervals);
+                new_interval->source_intervals = move(intervals);
             }
             if (lb == ub) { // Need to find out where the point mass is from
                 if (b == r.merging_branch and lb == r.deleted_node->time) {
                     new_interval->node = r.deleted_node; // creation of a new point mass
                 } else {
-                    assert(new_interval->intervals.size() == 1);
-                    new_interval->node = new_interval->intervals.front()->node;
+                    assert(new_interval->source_intervals.size() == 1);
+                    new_interval->node = new_interval->source_intervals.front()->node;
                 }
             }
             if (new_interval->lb < new_interval->ub) {
@@ -680,7 +686,7 @@ Interval_ptr approx_BSP::sample_prev_interval(int x) {
 }
 
 Interval_ptr approx_BSP::sample_source_interval(Interval_ptr interval, int x) {
-    vector<Interval_ptr> &intervals = interval->intervals;
+    vector<Interval_ptr> &intervals = interval->source_intervals;
     vector<double> &weights = interval->source_weights;
     vector<Interval_ptr> &prev_intervals = get_state_space(x);
     if (x == interval->start_pos - 1) {

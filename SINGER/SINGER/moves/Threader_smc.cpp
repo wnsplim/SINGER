@@ -187,10 +187,10 @@ void Threader_smc::run_BSP(ARG &a) {
     auto mut_it = a.mutation_sites.lower_bound(start);
     auto query_it = a.removed_branches.begin();
     vector<double> mutations;
-    set<double> mut_set = {};
+    vector<double> mut_set = {};
     set<Branch> deletions = {};
     set<Branch> insertions = {};
-    Node_ptr query_node = nullptr;
+    Node *query_node = nullptr;
     for (int i = start_index; i < end_index; i++) {
         if (a.coordinates[i] == query_it->first) {
             query_node = query_it->second.lower_node;
@@ -203,9 +203,9 @@ void Threader_smc::run_BSP(ARG &a) {
         } else if (a.coordinates[i] != start) {
             bsp.forward(a.rhos[i - 1]);
         }
-        mut_set = {};
+        mut_set.clear();
         while (*mut_it < a.coordinates[i + 1]) {
-            mut_set.insert(*mut_it);
+            mut_set.push_back(*mut_it);
             mut_it++;
         }
         if (mut_set.size() > 0) {
@@ -233,8 +233,8 @@ void Threader_smc::run_fast_BSP(ARG &a) {
     auto delete_it = pruner.deletions.upper_bound(start);
     auto insert_it = pruner.insertions.upper_bound(start);
     vector<double> mutations;
-    set<double> mut_set = {};
-    Node_ptr query_node = nullptr;
+    vector<double> mut_set = {};
+    Node *query_node = nullptr;
     for (int i = start_index; i < end_index; i++) {
         if (a.coordinates[i] == query_it->first) {
             query_node = query_it->second.lower_node;
@@ -252,9 +252,9 @@ void Threader_smc::run_fast_BSP(ARG &a) {
         } else if (a.coordinates[i] != start) {
             fbsp.forward(a.rhos[i - 1]);
         }
-        mut_set = {};
+        mut_set.clear();
         while (*mut_it < a.coordinates[i+1]) {
-            mut_set.insert(*mut_it);
+            mut_set.push_back(*mut_it);
             mut_it++;
         }
         if (mut_set.size() > 0) {
@@ -281,8 +281,8 @@ void Threader_smc::run_TSP(ARG &a) {
     auto query_it = a.removed_branches.lower_bound(start);
     Branch prev_branch = start_branch;
     Branch next_branch = start_branch;
-    Node_ptr query_node = nullptr;
-    set<double> mut_set = {};
+    Node *query_node = nullptr;
+    vector<double> mut_set = {};
     for (int i = start_index; i < end_index; i++) {
         if (a.coordinates[i] == query_it->first) {
             query_node = query_it->second.lower_node;
@@ -306,7 +306,7 @@ void Threader_smc::run_TSP(ARG &a) {
         }
         mut_set.clear();
         while (*mut_it < a.coordinates[i+1]) {
-            mut_set.insert(*mut_it);
+            mut_set.push_back(*mut_it);
             mut_it++;
         }
         if (mut_set.size() > 0) {
@@ -330,11 +330,13 @@ void Threader_smc::sample_fast_joining_branches(ARG &a) {
 }
 
 void Threader_smc::sample_joining_points(ARG &a) {
-    map<double, Node_ptr> added_nodes = tsp.sample_joining_nodes(start_index, a.coordinates);
+    map<double, Node *> added_nodes = tsp.sample_joining_nodes(start_index, a.coordinates);
+    a.node_owner.insert(a.node_owner.end(), tsp.node_owner.begin(), tsp.node_owner.end());
+    tsp.node_owner.clear();
     auto add_it = added_nodes.begin();
     auto end_it = added_nodes.end();
-    Node_ptr query_node = nullptr;
-    Node_ptr added_node = nullptr;
+    Node *query_node = nullptr;
+    Node *added_node = nullptr;
     double x;
     while (add_it != end_it) {
         x = add_it->first;
@@ -357,10 +359,10 @@ double Threader_smc::acceptance_ratio(ARG &a) {
     old_add_it--;
     auto new_add_it = added_branches.upper_bound(a.cut_pos);
     new_add_it--;
-    if (old_join_it->second.upper_node == a.root) {
+    if (old_join_it->second.upper_node == a.root.get()) {
         old_height = old_add_it->second.upper_node->time;
     }
-    if (new_join_it->second.upper_node == a.root) {
+    if (new_join_it->second.upper_node == a.root.get()) {
         new_height = new_add_it->second.upper_node->time;
     }
     return old_height/new_height;

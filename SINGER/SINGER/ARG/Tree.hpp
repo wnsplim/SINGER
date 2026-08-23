@@ -20,8 +20,8 @@ class Tree {
 
 public:
     
-    map<Node_ptr, Node_ptr, compare_node> parents = {};
-    unordered_map<Node_ptr, unordered_set<Node_ptr>> children = {};
+    map<Node *, Node *, compare_node> parents = {};
+    unordered_map<Node *, unordered_set<Node *>> children = {};
     
     Tree();
     
@@ -39,11 +39,11 @@ public:
     
     void backward_update(Recombination &r);
     
-    void remove(Branch b, Node_ptr n);
+    void remove(Branch b, Node *n);
     
-    void add(Branch added_branch, Branch joining_branch, Node_ptr n);
+    void add(Branch added_branch, Branch joining_branch, Node *n);
     
-    Node_ptr find_sibling(Node_ptr n);
+    Node *find_sibling(Node *n);
     
     Branch find_joining_branch(Branch removed_branch);
     
@@ -71,15 +71,15 @@ public:
     
     double log_exp(double lambda, double x);
     
-    int depth(Node_ptr n);
+    int depth(Node *n);
     
-    Node_ptr LCA(Node_ptr n1, Node_ptr n2);
+    Node *LCA(Node *n1, Node *n2);
     
-    int distance(Node_ptr n1, Node_ptr n2);
+    int distance(Node *n1, Node *n2);
     
     void impute_states(double m, set<Branch> &mutation_branches);
     
-    void impute_states_helper(Node_ptr n, map<Node_ptr, double> &states);
+    void impute_states_helper(Node *n, map<Node *, double> &states);
     
     double random();
     

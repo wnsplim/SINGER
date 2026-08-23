@@ -106,7 +106,7 @@ double succint_BSP::get_recomb_prob(double rho, double t) {
     return p;
 }
 
-void succint_BSP::null_emit(double theta, Node_ptr query_node) {
+void succint_BSP::null_emit(double theta, Node *query_node) {
     compute_null_emit_prob(theta, query_node);
     prev_theta = theta;
     prev_node = query_node;
@@ -122,7 +122,7 @@ void succint_BSP::null_emit(double theta, Node_ptr query_node) {
     }
 }
 
-void succint_BSP::mut_emit(double theta, double bin_size, set<double> &mut_set, Node_ptr query_node) {
+void succint_BSP::mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node) {
     compute_mut_emit_probs(theta, bin_size, mut_set, query_node);
     double ws = 0;
     for (int i = 0; i < dim; i++) {
@@ -241,7 +241,7 @@ void succint_BSP::compute_recomb_weights(double rho) {
     }
 }
 
-void succint_BSP::compute_null_emit_prob(double theta, Node_ptr query_node) {
+void succint_BSP::compute_null_emit_prob(double theta, Node *query_node) {
     if (theta == prev_theta and query_node == prev_node) {
         return;
     }
@@ -250,7 +250,7 @@ void succint_BSP::compute_null_emit_prob(double theta, Node_ptr query_node) {
     }
 }
 
-void succint_BSP::compute_mut_emit_probs(double theta, double bin_size, set<double> &mut_set, Node_ptr query_node) {
+void succint_BSP::compute_mut_emit_probs(double theta, double bin_size, vector<double> &mut_set, Node *query_node) {
     for (int i = 0; i < dim; i++) {
         mut_emit_probs[i] = eh->mut_emit(curr_intervals[i]->branch, time_points[i], theta, bin_size, mut_set, query_node);
     }

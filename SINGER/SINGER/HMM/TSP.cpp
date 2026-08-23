@@ -13,11 +13,6 @@ TSP::TSP() {
 }
 
 TSP::~TSP() {
-    for (auto &x : state_spaces) {
-        for (Interval *interval : x.second) {
-            delete interval;
-        }
-    }
     vector<vector<double>>().swap(forward_probs);
     map<Interval *, Interval *>().swap(source_interval);
     map<int, vector<Interval *>>().swap(state_spaces);
@@ -35,6 +30,11 @@ void TSP::set_check_points(set<double> &p) {
     check_points = p;
 }
 
+Interval *TSP::make_interval(Branch b, double tl, double tu, int init_pos) {
+    arena.emplace_back(b, tl, tu, init_pos);
+    return &arena.back();
+}
+
 void TSP::push_row(const vector<double> &v) {
     if (n_rows < forward_probs.size()) {
         forward_probs[n_rows].assign(v.begin(), v.end());
@@ -45,11 +45,6 @@ void TSP::push_row(const vector<double> &v) {
 }
 
 void TSP::reset() {
-    for (auto &x : state_spaces) {
-        for (Interval *interval : x.second) {
-            delete interval;
-        }
-    }
     state_spaces.clear();
     state_spaces[INT_MAX] = {};
     source_interval.clear();
@@ -76,6 +71,7 @@ void TSP::reset() {
     dim = 0;
     sample_index = -1;
     lower_bound = 0;
+    arena.clear();
 }
 
 void TSP::reserve_memory(int length) {
@@ -248,7 +244,7 @@ void TSP::forward(double rho) {
     }
 }
 
-void TSP::null_emit(double theta, Node_ptr query_node) {
+void TSP::null_emit(double theta, Node *query_node) {
     compute_null_emit_probs(theta, query_node);
     prev_theta = theta;
     prev_node = query_node;
@@ -270,7 +266,7 @@ void TSP::null_emit(double theta, Node_ptr query_node) {
     }
 }
 
-void TSP::mut_emit(double theta, double bin_size, set<double> &mut_set, Node_ptr query_node) {
+void TSP::mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node) {
     compute_mut_emit_probs(theta, bin_size, mut_set, query_node);
     double ws = 0;
     for (int i = 0; i < dim; i++) {
@@ -283,13 +279,13 @@ void TSP::mut_emit(double theta, double bin_size, set<double> &mut_set, Node_ptr
     }
 }
 
-map<double, Node_ptr > TSP::sample_joining_nodes(int start_index, vector<double> &coordinates) {
+map<double, Node *> TSP::sample_joining_nodes(int start_index, vector<double> &coordinates) {
     prev_rho = -1;
-    map<double, Node_ptr > joining_nodes = {};
+    map<double, Node *> joining_nodes = {};
     int x = curr_index;
     double pos = coordinates[x + start_index + 1];
     Interval *interval = sample_curr_interval(x);
-    Node_ptr n = sample_joining_node(interval);
+    Node *n = sample_joining_node(interval);
     joining_nodes[pos] = nullptr;
     while (x >= 0) {
         x = trace_back_helper(interval, x);
@@ -409,7 +405,7 @@ void TSP::generate_intervals(Branch &next_branch, double lb, double ub) {
             return;
         }
         else {
-            new_interval = new Interval(next_branch, lb, ub, curr_index);
+            new_interval = make_interval(next_branch, lb, ub, curr_index);
             new_interval->fill_time();
             curr_intervals.emplace_back(new_interval);
             temp.emplace_back(0);
@@ -422,7 +418,7 @@ void TSP::generate_intervals(Branch &next_branch, double lb, double ub) {
     for (int i = 0; i < points.size() - 1; i++) {
         l = points[i];
         u = points[i+1];
-        new_interval = new Interval(next_branch, l, u, curr_index);
+        new_interval = make_interval(next_branch, l, u, curr_index);
         new_interval->fill_time();
         curr_intervals.emplace_back(new_interval);
         temp.emplace_back(0);
@@ -460,7 +456,7 @@ void TSP::transfer_intervals(Recombination &r, Branch &prev_branch, Branch &next
                 p = 0;
             }
             assert(!isnan(p));
-            new_interval = new Interval(next_branch, lb, ub, curr_index);
+            new_interval = make_interval(next_branch, lb, ub, curr_index);
             new_interval->fill_time();
             new_interval->node = interval->node;
             new_interval->node = interval->node;
@@ -500,7 +496,7 @@ double TSP::get_prop(double lb1, double ub1, double lb2, double ub2) {
     return p;
 }
 
-void TSP::compute_null_emit_probs(double theta, Node_ptr query_node) {
+void TSP::compute_null_emit_probs(double theta, Node *query_node) {
     if (theta == prev_theta and query_node == prev_node) {
         return;
     }
@@ -509,7 +505,7 @@ void TSP::compute_null_emit_probs(double theta, Node_ptr query_node) {
     }
 }
 
-void TSP::compute_mut_emit_probs(double theta, double bin_size, set<double> &mut_set, Node_ptr query_node) {
+void TSP::compute_mut_emit_probs(double theta, double bin_size, vector<double> &mut_set, Node *query_node) {
     compute_emissions(mut_set, curr_branch, query_node);
     for (int i = 0; i < dim; i++) {
         mut_emit_probs[i] = eh->emit(curr_branch, curr_intervals[i]->time, theta, bin_size, emissions, query_node);
@@ -602,7 +598,7 @@ void TSP::compute_factors() {
     }
 }
 
-void TSP::compute_emissions(set<double> &mut_set, Branch branch, Node_ptr node) {
+void TSP::compute_emissions(vector<double> &mut_set, const Branch &branch, Node *node) {
     fill(emissions.begin(), emissions.end(), 0);
     double sl, su, s0, sm = 0;
     for (double x : mut_set) {
@@ -860,14 +856,15 @@ double TSP::exp_median(double lb, double ub) {
 }
 
 
-Node_ptr TSP::sample_joining_node(Interval *interval) {
-    Node_ptr n = nullptr;
+Node *TSP::sample_joining_node(Interval *interval) {
+    Node *n = nullptr;
     double t;
     if (interval->node != nullptr) {
         n = interval->node;
     } else {
         t = sample_time(interval->lb, interval->ub);
-        n = new_node(t);
+        node_owner.push_back(new_node(t));
+        n = node_owner.back().get();
         n->set_index(counter);
         counter += 1;
     }

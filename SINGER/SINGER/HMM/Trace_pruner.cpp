@@ -37,7 +37,7 @@ void Trace_pruner::set_check_points(set<double> &p) {
 
 void Trace_pruner::start_search(ARG &a, double m) {
     seed_scores.clear();
-    Node_ptr n = get_node_at(m);
+    Node *n = get_node_at(m);
     double mismatch = 0;
     double lb, ub;
     Interval_info interval;
@@ -115,7 +115,7 @@ void Trace_pruner::write_reduction_size(string filename) {
 double Trace_pruner::min_reduction_error() {
     double error = 0;
     set<Branch> &reduced_set = reductions.begin()->second;
-    Node_ptr node;
+    Node *node;
     auto reduced_it = reductions.begin();
     for (auto x : match_map) {
         double m = x.first;
@@ -167,13 +167,13 @@ void Trace_pruner::write_reductions(ARG &a) {
     reductions[a.sequence_length] = {};
 }
 
-Node_ptr Trace_pruner::get_node_at(double x) {
+Node *Trace_pruner::get_node_at(double x) {
     auto query_it = queries.upper_bound(x);
     query_it--;
     return query_it->second.lower_node;
 }
 
-double Trace_pruner::count_mismatch(Branch branch, Node_ptr n, double m) {
+double Trace_pruner::count_mismatch(const Branch &branch, Node *n, double m) {
     double s0 = n->get_state(m);
     double sl = branch.lower_node->get_state(m);
     double su = branch.upper_node->get_state(m);
@@ -195,7 +195,7 @@ double Trace_pruner::count_mismatch(Branch branch, Node_ptr n, double m) {
 }
 
 /*
-double Trace_pruner::count_mismatch(Branch branch, Node_ptr n, double m) {
+double Trace_pruner::count_mismatch(const Branch &branch, Node *n, double m) {
     if (private_mutations.count(m) > 0) {
         return 0.3;
     }
@@ -225,7 +225,7 @@ void Trace_pruner::build_match_map(ARG &a) {
     double inf = INT_MAX;
     double lb = 0;
     auto mb_it = a.mutation_branches.lower_bound(start);
-    Node_ptr n = nullptr;
+    Node *n = nullptr;
     while (mb_it->first < end) {
         m = mb_it->first;
         n = get_node_at(m);
@@ -286,7 +286,7 @@ void Trace_pruner::extend_forward(ARG &a, double x) {
     auto used_it = used_seeds.upper_bound(x);
     match_it++;
     double ub = *used_it;
-    Node_ptr n;
+    Node *n;
     double bin_start = 0;
     double bin_end = 0;
     set<double> mutations = {};
@@ -336,7 +336,7 @@ void Trace_pruner::extend_backward(ARG &a, double x) {
     --recomb_it;
     --used_it;
     double lb = *used_it;
-    Node_ptr n;
+    Node *n;
     double bin_start = 0;
     double bin_end = 0;
     set<double> mutations = {};
@@ -385,7 +385,7 @@ void Trace_pruner::extend(ARG &a, double x) {
     used_seeds.insert(x); // when extending later seeds, don't go beyond previous seeds (to save computation)
 }
 
-void Trace_pruner::mutation_update(Node_ptr n, double m) {
+void Trace_pruner::mutation_update(Node *n, double m) {
     if (n == nullptr) {
         return;
     }
@@ -691,7 +691,7 @@ void Trace_pruner::remove_segment(double x, double y) {
     }
 }
 
-double Trace_pruner::get_match_time(set<Branch> &branches, double m, Node_ptr n) {
+double Trace_pruner::get_match_time(set<Branch> &branches, double m, Node *n) {
     double state = n->get_state(m);
     assert(state == 0 or state == 1);
     int valid_count = 0;
@@ -718,7 +718,7 @@ double Trace_pruner::get_match_time(set<Branch> &branches, double m, Node_ptr n)
 }
 
 /*
-double Trace_pruner::get_match_time(set<Branch> &branches, double m, Node_ptr n) {
+double Trace_pruner::get_match_time(set<Branch> &branches, double m, Node *n) {
     double state = n->get_state(m);
     assert(state == 0 or state == 1);
     int valid_count = 0;

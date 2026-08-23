@@ -11,11 +11,13 @@ void test_read_arg() {
     ARG a = ARG(2e4, 1e6);
     a.read("/Users/yun_deng/Desktop/SINGER/arg_files/continuous_ts_nodes.txt", "/Users/yun_deng/Desktop/SINGER/arg_files/continuous_ts_branches.txt");
     a.discretize(10);
-    for (Node_ptr n : a.sample_nodes) {
+    for (Node *n : a.sample_nodes) {
         int index = n->index;
         string mutation_file = "/Users/yun_deng/Desktop/SINGER/arg_files/continuous_sample_" + to_string(index) + ".txt";
         n->read_mutation(mutation_file);
-        a.add_sample(n);
+        Node_ptr owner = *find_if(a.node_owner.begin(), a.node_owner.end(),
+                                  [n](const Node_ptr &p) { return p.get() == n; });
+        a.add_sample(owner);
     }
     a.impute_nodes(0, 1e6);
     a.map_mutations(0, 1e6);
@@ -30,11 +32,13 @@ void test_trace_pruner() {
     a.read("/Users/yun_deng/Desktop/SINGER/arg_files/continuous_ts_100_nodes.txt", "/Users/yun_deng/Desktop/SINGER/arg_files/continuous_ts_100_branches.txt");
     a.discretize(100);
     a.smc_sample_recombinations();
-    for (Node_ptr n : a.sample_nodes) {
+    for (Node *n : a.sample_nodes) {
         int index = n->index;
         string mutation_file = "/Users/yun_deng/Desktop/SINGER/arg_files/continuous_sample_100_" + to_string(index) + ".txt";
         n->read_mutation(mutation_file);
-        a.add_sample(n);
+        Node_ptr owner = *find_if(a.node_owner.begin(), a.node_owner.end(),
+                                  [n](const Node_ptr &p) { return p.get() == n; });
+        a.add_sample(owner);
     }
     a.impute_nodes(0, 1e6);
     a.map_mutations(0, 1e6);
@@ -252,7 +256,7 @@ void test_tsp() {
     a.compute_rhos_thetas(4e-4, 0.0);
     shared_ptr<Binary_emission> e = make_shared<Binary_emission>();
     Threader_smc threader = Threader_smc(0.01, 0.05);
-    Node_ptr n = a.removed_branches.begin()->second.lower_node;
+    Node *n = a.removed_branches.begin()->second.lower_node;
     threader.end_index = (int) a.coordinates.size();
     threader.new_joining_branches = a.joining_branches;
     threader.bsp.simplify(threader.new_joining_branches);

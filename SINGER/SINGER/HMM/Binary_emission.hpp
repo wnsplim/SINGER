@@ -27,17 +27,17 @@ public:
     
     ~Binary_emission();
     
-    double null_emit(Branch &branch, double time, double theta, Node_ptr node) override;
+    double null_emit(Branch &branch, double time, double theta, Node *node) override;
     
-    double mut_emit(Branch &branch, double time, double theta, double bin_size, set<double> &mut_set, Node_ptr node) override;
+    double mut_emit(Branch &branch, double time, double theta, double bin_size, vector<double> &mut_set, Node *node) override;
     
-    double emit(Branch &branch, double time, double theta, double bin_size, vector<double> &emissions, Node_ptr node) override;
+    double emit(Branch &branch, double time, double theta, double bin_size, vector<double> &emissions, Node *node) override;
     
     double calculate_prob(double theta, double bin_size, double ll, double lu, double l0, int sl, int su, int s0);
     
     double calculate_prob(double theta, double bin_size, int s);
     
-    void get_diff(set<double> &mut_set, Branch branch, Node_ptr node);
+    void get_diff(vector<double> &mut_set, const Branch &branch, Node *node);
 };
 
 #endif /* Binary_emission_hpp */

@@ -9,6 +9,7 @@
 #define approx_BSP_hpp
 
 #include <stdio.h>
+#include <deque>
 #include <fstream>
 #include "Tree.hpp"
 #include "approx_coalescent_calculator.hpp"
@@ -16,7 +17,7 @@
 #include "Emission.hpp"
 #include "Binary_emission.hpp"
 
-using Interval_ptr = shared_ptr<Interval>;
+using Interval_ptr = Interval *;
 
 class approx_BSP {
     
@@ -51,13 +52,13 @@ public:
     shared_ptr<approx_coalescent_calculator> cc;
     
     // transfer at recombinations
-    map<Interval_info, vector<Interval_ptr>> transfer_intervals = {};
-    map<Interval_info, vector<double>> transfer_weights = {};
+    vector<pair<Interval_info, vector<Interval_ptr>>> transfer_intervals = {};
+    vector<pair<Interval_info, vector<double>>> transfer_weights = {};
     
     // cache:
     double prev_rho = -1;
     double prev_theta = -1;
-    Node_ptr prev_node = nullptr;
+    Node *prev_node = nullptr;
     
     // vector computation:
     int dim = 0;
@@ -106,9 +107,9 @@ public:
 
     double get_recomb_prob(double rho, double t);
     
-    void null_emit(double theta, Node_ptr query_node);
+    void null_emit(double theta, Node *query_node);
     
-    void mut_emit(double theta, double bin_size, set<double> &mut_set, Node_ptr query_node);
+    void mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
     
     map<double, Branch> sample_joining_branches(int start_index, vector<double> &coordinates);
     
@@ -118,9 +119,9 @@ public:
     
     void compute_recomb_weights(double rho);
     
-    void compute_null_emit_prob(double theta, Node_ptr query_node);
+    void compute_null_emit_prob(double theta, Node *query_node);
     
-    void compute_mut_emit_probs(double theta, double bin_size, set<double> &mut_set, Node_ptr query_node);
+    void compute_mut_emit_probs(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
     
     void transfer_helper(Interval_info &next_interval, Interval_ptr &prev_interval, double w);
     
@@ -158,6 +159,10 @@ public:
     
     void simplify(map<double, Branch> &joining_branches);
     
+    deque<Interval> arena = {};
+
+    Interval_ptr make_interval(Branch b, double tl, double tu, int init_pos);
+
     Interval_ptr sample_curr_interval(int x);
     
     Interval_ptr sample_prev_interval(int x);

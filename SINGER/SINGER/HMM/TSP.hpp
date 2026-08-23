@@ -9,6 +9,7 @@
 #define TSP_hpp
 
 #include <stdio.h>
+#include <deque>
 #include "random_utils.hpp"
 #include "Interval.hpp"
 #include "Emission.hpp"
@@ -38,6 +39,12 @@ public:
     
     size_t n_rows = 0;
 
+    deque<Interval> arena = {};
+
+    vector<Node_ptr> node_owner = {};
+
+    Interval *make_interval(Branch b, double tl, double tu, int init_pos);
+
     void push_row(const vector<double> &v);
 
     void reset();
@@ -58,11 +65,11 @@ public:
     
     void forward(double rho);
     
-    void null_emit(double theta, Node_ptr query_node);
+    void null_emit(double theta, Node *query_node);
     
-    void mut_emit(double theta, double bin_size, set<double> &mut_set, Node_ptr query_node);
+    void mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
     
-    map<double, Node_ptr > sample_joining_nodes(int start_index, vector<double> &coordinates);
+    map<double, Node *> sample_joining_nodes(int start_index, vector<double> &coordinates);
     
 // private:
 
@@ -84,7 +91,7 @@ public:
     
     double prev_rho = -1;
     double prev_theta = -1;
-    Node_ptr prev_node = nullptr;
+    Node *prev_node = nullptr;
     
     int dim = 0;
     vector<double> temp = {};
@@ -117,9 +124,9 @@ public:
     
     void set_dimensions();
     
-    void compute_null_emit_probs(double theta, Node_ptr query_node);
+    void compute_null_emit_probs(double theta, Node *query_node);
     
-    void compute_mut_emit_probs(double theta, double bin_size, set<double> &mut_set, Node_ptr query_node);
+    void compute_mut_emit_probs(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
     
     void compute_diagonals(double rho);
     
@@ -133,7 +140,7 @@ public:
     
     void compute_factors();
     
-    void compute_emissions(set<double> &mut_set, Branch branch, Node_ptr node);
+    void compute_emissions(vector<double> &mut_set, const Branch &branch, Node *node);
     
     void compute_trace_back_probs(double rho, Interval *interval, vector<Interval *> &intervals);
     
@@ -163,7 +170,7 @@ public:
     
     double exp_median(double lb, double ub);
     
-    Node_ptr sample_joining_node(Interval *interval);
+    Node *sample_joining_node(Interval *interval);
 };
 
 

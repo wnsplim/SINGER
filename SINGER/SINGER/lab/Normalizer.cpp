@@ -24,8 +24,8 @@ void Normalizer::compute_max_time(ARG &a) {
 }
 
 void Normalizer::get_root_span(ARG &a) {
-    map<Node_ptr, double, compare_node> root_start = {};
-    map<Node_ptr, double, compare_node> root_span = {};
+    map<Node *, double, compare_node> root_start = {};
+    map<Node *, double, compare_node> root_span = {};
     Branch prev_branch;
     Branch next_branch;
     Recombination &r = a.recombinations.begin()->second;
@@ -36,22 +36,22 @@ void Normalizer::get_root_span(ARG &a) {
         Recombination &r = r_it->second;
         prev_branch = *r.deleted_branches.rbegin();
         next_branch = *r.inserted_branches.rbegin();
-        if (prev_branch.upper_node == a.root) {
-            Node_ptr dn = prev_branch.lower_node;
-            Node_ptr in = next_branch.lower_node;
+        if (prev_branch.upper_node == a.root.get()) {
+            Node *dn =prev_branch.lower_node;
+            Node *in =next_branch.lower_node;
             assert(dn != in);
-            assert(next_branch.upper_node == a.root);
+            assert(next_branch.upper_node == a.root.get());
             assert(root_start.count(dn) > 0);
             root_span[dn] += r.pos - root_start[dn];
             root_start.erase(dn);
             root_start[in] = r.pos;
         } else {
-            assert(next_branch.upper_node != a.root);
+            assert(next_branch.upper_node != a.root.get());
         }
         r_it++;
     }
     for (auto &x : root_start) {
-        Node_ptr n = x.first;
+        Node *n = x.first;
         root_span[n] += a.sequence_length - x.second;
     }
     all_root_nodes.resize(root_span.size());
@@ -65,16 +65,16 @@ void Normalizer::get_root_span(ARG &a) {
 }
 
 void Normalizer::get_node_span(ARG &a) {
-    map<Node_ptr, double, compare_node> node_start = {};
-    map<Node_ptr, double, compare_node> node_span = {};
+    map<Node *, double, compare_node> node_start = {};
+    map<Node *, double, compare_node> node_span = {};
     for (const Branch &b : a.recombinations.begin()->second.inserted_branches) {
         node_start[b.upper_node] = 0;
     }
-    node_start.erase(a.root);
+    node_start.erase(a.root.get());
     auto r_it = next(a.recombinations.begin());
     while (next(r_it) != a.recombinations.end()) {
-        Node_ptr dn = r_it->second.deleted_node;
-        Node_ptr in = r_it->second.inserted_node;
+        Node *dn = r_it->second.deleted_node;
+        Node *in = r_it->second.inserted_node;
         assert(node_start.count(dn) > 0);
         node_span[dn] += r_it->first - node_start[dn];
         node_start.erase(dn);
@@ -82,7 +82,7 @@ void Normalizer::get_node_span(ARG &a) {
         r_it++;
     }
     for (auto &x : node_start) {
-        Node_ptr n = x.first;
+        Node *n = x.first;
         node_span[n] += a.sequence_length - node_start[n];
     }
     all_nodes.resize(node_span.size());
@@ -99,7 +99,7 @@ void Normalizer::randomize_mutation_ages(ARG &a) {
     double lb, ub, m;
     for (auto &x : a.mutation_branches) {
         for (auto &y : x.second) {
-            if (y.upper_node != a.root) {
+            if (y.upper_node != a.root.get()) {
                 lb = y.lower_node->time;
                 ub = y.upper_node->time;
                 m = uniform_random()*(ub - lb) + lb;
@@ -137,7 +137,7 @@ void Normalizer::normalize(ARG &a, double theta) {
     k = 0;
     while (k < new_grid.size() - 1) {
         while (i < all_nodes.size() and all_nodes[i]->time <= old_grid[k+1]) {
-            Node_ptr node = all_nodes[i];
+            Node *node = all_nodes[i];
             p = (node->time - old_grid[k])/(old_grid[k+1] - old_grid[k]);
             t = (1 - p)*new_grid[k] + p*new_grid[k+1];
             if (i > 0 and t <= all_nodes[i-1]->time) {
@@ -156,12 +156,12 @@ void Normalizer::normalize(ARG &a, double theta) {
 }
 
 void Normalizer::partition_arg(ARG &a) {
-    double active_lineages = accumulate(all_spans.begin(), all_spans.end(), 0);
-    active_lineages += accumulate(all_root_spans.begin(), all_root_spans.end(), 0);
+    double active_lineages = accumulate(all_spans.begin(), all_spans.end(), 0.0);
+    active_lineages += accumulate(all_root_spans.begin(), all_root_spans.end(), 0.0);
     double t = 0;
     int j = 0;
     for (int i = 0; i < all_spans.size(); i++) {
-        Node_ptr n = all_nodes[i];
+        Node *n = all_nodes[i];
         ls += (n->time - t)*active_lineages;
         active_lineages -= all_spans[i];
         if (all_root_nodes[j] == n) {
@@ -175,11 +175,11 @@ void Normalizer::partition_arg(ARG &a) {
     t = 0;
     j = 0;
     int k = 1;
-    active_lineages = accumulate(all_spans.begin(), all_spans.end(), 0);
-    active_lineages += accumulate(all_root_spans.begin(), all_root_spans.end(), 0);
+    active_lineages = accumulate(all_spans.begin(), all_spans.end(), 0.0);
+    active_lineages += accumulate(all_root_spans.begin(), all_root_spans.end(), 0.0);
     old_grid.push_back(0);
     for (int i = 0; i < all_spans.size(); i++) {
-        Node_ptr n = all_nodes[i];
+        Node *n = all_nodes[i];
         l += (n->time - t)*active_lineages;
         while (l > k*ls/num_windows and k <= num_windows - 1) {
             x = n->time - (l - k*ls/num_windows)/active_lineages;
@@ -208,7 +208,7 @@ void Normalizer::count_mutations(ARG &a) {
     double lb, ub;
     for (auto &x : a.mutation_branches) {
         for (auto &y : x.second) {
-            if (y.upper_node != a.root) {
+            if (y.upper_node != a.root.get()) {
                 lb = y.lower_node->time;
                 ub = y.upper_node->time;
                 add_mutation(lb, ub);
@@ -276,12 +276,12 @@ void Normalizer::add_recombination(double lb, double ub) {
 void Normalizer::calculate_branch_length(ARG &a, double Ne) {
     observed_branch_length.resize(expected_mutation_counts.size());
     expected_branch_length.resize(expected_mutation_counts.size());
-    double all_lineages = accumulate(all_spans.begin(), all_spans.end(), 0);
+    double all_lineages = accumulate(all_spans.begin(), all_spans.end(), 0.0);
     double t = 0;
     int k = 0;
     double lb = 0, ub = 0;
     for (int i = 0; i < all_spans.size(); i++) {
-        Node_ptr n = all_nodes[i];
+        Node *n = all_nodes[i];
         lb = max(t, old_grid[k]);
         ub = min(n->time, old_grid[k+1]);
         observed_branch_length[k] += (ub - lb)*all_lineages;

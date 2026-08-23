@@ -52,15 +52,16 @@ public:
     
     void forward(double rho);
     
-    void null_emit(double theta, Node_ptr query_node);
+    void null_emit(double theta, Node *query_node);
     
-    void mut_emit(double theta, double bin_size, set<double> &mut_set, Node_ptr query_node);
+    void mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
     
-    map<double, Node_ptr > sample_joining_nodes(int start_index, vector<double> &coordinates);
+    map<double, Node *> sample_joining_nodes(int start_index, vector<double> &coordinates);
     
 // private:
 
     int curr_index = 0;
+    vector<Node_ptr> node_owner = {};
     Branch curr_branch = Branch();
     vector<Interval *> curr_intervals = {};
     map<int, vector<Interval *>>  state_spaces = {{INT_MAX, {}}};
@@ -78,7 +79,7 @@ public:
     
     double prev_rho = -1;
     double prev_theta = -1;
-    Node_ptr prev_node = nullptr;
+    Node *prev_node = nullptr;
     
     int dim = 0;
     vector<double> temp = {};
@@ -111,9 +112,9 @@ public:
     
     void set_dimensions();
     
-    void compute_null_emit_probs(double theta, Node_ptr query_node);
+    void compute_null_emit_probs(double theta, Node *query_node);
     
-    void compute_mut_emit_probs(double theta, double bin_size, set<double> &mut_set, Node_ptr query_node);
+    void compute_mut_emit_probs(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
     
     void compute_diagonals(double rho);
     
@@ -127,7 +128,7 @@ public:
     
     void compute_factors();
     
-    void compute_emissions(set<double> &mut_set, Branch branch, Node_ptr node);
+    void compute_emissions(vector<double> &mut_set, Branch branch, Node *node);
     
     void compute_trace_back_probs(double rho, Interval *interval, vector<Interval *> &intervals);
     
@@ -159,9 +160,9 @@ public:
     
     double exp_median(double lb, double ub);
     
-    Node_ptr sample_joining_node(Interval *interval);
-    
-    Node_ptr sample_joining_node(Interval *interval, Node_ptr n);
+    Node *sample_joining_node(Interval *interval);
+
+    Node *sample_joining_node(Interval *interval, Node *n);
     
     void write_mean_time(string filename);
 };

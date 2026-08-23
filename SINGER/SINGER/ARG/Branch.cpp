@@ -12,11 +12,17 @@ Branch::Branch() {
     upper_node = nullptr;
 }
 
-Branch::Branch(Node_ptr l, Node_ptr u) {
+Branch::Branch(Node *l, Node *u) {
     assert((l == nullptr and u == nullptr) or l->time < u->time);
     lower_node = l;
     upper_node = u;
 }
+
+Branch::Branch(const Node_ptr &l, const Node_ptr &u) : Branch(l.get(), u.get()) {}
+
+Branch::Branch(Node *l, const Node_ptr &u) : Branch(l, u.get()) {}
+
+Branch::Branch(const Node_ptr &l, Node *u) : Branch(l.get(), u) {}
 
 double Branch::length() {
     return upper_node->time - lower_node->time;

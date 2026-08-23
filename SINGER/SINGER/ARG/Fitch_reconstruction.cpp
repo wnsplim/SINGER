@@ -16,10 +16,10 @@ void Fitch_reconstruction::reconstruct(double pos) {
     recon_pos = pos;
     pruning_node_states.clear();
     peeling_node_states.clear();
-    for (Node_ptr n : node_set) {
+    for (Node *n : node_set) {
         pruning_pass(n);
     }
-    for (Node_ptr n : node_set) {
+    for (Node *n : node_set) {
         peeling_pass(n);
     }
     for (auto x : peeling_node_states) {
@@ -40,8 +40,8 @@ void Fitch_reconstruction::fill_tree_info(Tree tree) {
     children_nodes.clear();
     parent_node.clear();
     for (auto &x : tree.parents) {
-        Node_ptr u = x.second;
-        Node_ptr l = x.first;
+        Node *u = x.second;
+        Node *l = x.first;
         node_set.insert(l);
         parent_node.insert({l, u});
         if (children_nodes.count(u) > 0) {
@@ -60,7 +60,7 @@ void Fitch_reconstruction::update_tree_info(Recombination &r) {
     fill_tree_info(base_tree);
 }
 
-void Fitch_reconstruction::Fitch_up(Node_ptr c1, Node_ptr c2, Node_ptr p) {
+void Fitch_reconstruction::Fitch_up(Node *c1, Node *c2, Node *p) {
     if (c1 == nullptr or c2 == nullptr) {
         return;
     }
@@ -80,7 +80,7 @@ void Fitch_reconstruction::Fitch_up(Node_ptr c1, Node_ptr c2, Node_ptr p) {
     return;
 }
 
-void Fitch_reconstruction::Fitch_down(Node_ptr u, Node_ptr l) {
+void Fitch_reconstruction::Fitch_down(Node *u, Node *l) {
     if (u->index == -1) {
         double top_state = pruning_node_states.at(l);
         if (top_state == 0.5) {
@@ -105,7 +105,7 @@ void Fitch_reconstruction::Fitch_down(Node_ptr u, Node_ptr l) {
 
 // going up
 
-void Fitch_reconstruction::pruning_pass(Node_ptr n) {
+void Fitch_reconstruction::pruning_pass(Node *n) {
     if (pruning_node_states.count(n) > 0) {
         return;
     }
@@ -115,8 +115,8 @@ void Fitch_reconstruction::pruning_pass(Node_ptr n) {
         pruning_node_states.insert({n, s});
         return;
     }
-    Node_ptr c1;
-    Node_ptr c2;
+    Node *c1;
+    Node *c2;
     tie(c1, c2) = children_nodes.at(n);
     pruning_pass(c1);
     pruning_pass(c2);
@@ -124,7 +124,7 @@ void Fitch_reconstruction::pruning_pass(Node_ptr n) {
 }
 
 // going down
-void Fitch_reconstruction::peeling_pass(Node_ptr n) {
+void Fitch_reconstruction::peeling_pass(Node *n) {
     if (peeling_node_states.count(n) > 0) {
         return;
     }
@@ -134,7 +134,7 @@ void Fitch_reconstruction::peeling_pass(Node_ptr n) {
         peeling_node_states.insert({n, s});
         return;
     }
-    Node_ptr p = parent_node.at(n);
+    Node *p = parent_node.at(n);
     if (p->index == -1) {
         double top_state = pruning_node_states.at(n);
         if (top_state == 0.5) {

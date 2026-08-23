@@ -81,6 +81,20 @@ shared_ptr<Node> new_node(double t);
 
 struct compare_node {
     
+    bool operator() (const Node *n1, const Node *n2) const {
+        if (n1->time != n2->time) {
+            return n1->time < n2->time;
+        } else if (n1->index != n2->index) {
+            return n1->index < n2->index;
+        } else {
+            if (n1 != n2) {
+                cerr << "bad comparison" << endl;
+                exit(1);
+            }
+            return n1 < n2;
+        }
+    }
+
     bool operator() (const shared_ptr<Node> n1, const shared_ptr<Node> n2) const {
         if (n1->time != n2->time) {
             return n1->time < n2->time;

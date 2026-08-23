@@ -65,7 +65,7 @@ public:
     
     void extend_backward(ARG &a, double x);
     
-    void mutation_update(Node_ptr n, double m);
+    void mutation_update(Node *n, double m);
 
     void recombination_forward(Recombination &r);
     
@@ -79,9 +79,9 @@ public:
     
     void write_reductions(ARG &a);
     
-    Node_ptr get_node_at(double x);
+    Node *get_node_at(double x);
     
-    double get_match_time(set<Branch> &branches, double m, Node_ptr n);
+    double get_match_time(set<Branch> &branches, double m, Node *n);
     
     void build_match_map(ARG &a);
     
@@ -89,7 +89,7 @@ public:
     
     double find_minimum_match();
     
-    double count_mismatch(Branch branch, Node_ptr n, double m);
+    double count_mismatch(const Branch &branch, Node *n, double m);
     
     void forward_prune_states(double x);
     

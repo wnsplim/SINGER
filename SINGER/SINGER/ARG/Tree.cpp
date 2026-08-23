@@ -23,7 +23,7 @@ double Tree::length() {
 void Tree::delete_branch(const Branch &b) {
     assert(b.upper_node != nullptr and b.lower_node != nullptr);
     parents.erase(b.lower_node);
-    unordered_set<Node_ptr> &children_nodes = children[b.upper_node];
+    unordered_set<Node *> &children_nodes = children[b.upper_node];
     if (children_nodes.size() == 1) {
         children.erase(b.upper_node);
     } else {
@@ -50,7 +50,7 @@ void Tree::internal_delete_branch(const Branch &b, double cut_time) {
         return;
     }
     parents.erase(b.lower_node);
-    unordered_set<Node_ptr> &children_nodes = children[b.upper_node];
+    unordered_set<Node *> &children_nodes = children[b.upper_node];
     if (children_nodes.size() == 1) {
         children.erase(b.upper_node);
     } else {
@@ -82,12 +82,12 @@ void Tree::backward_update(Recombination &r) {
     assert(prev_size == after_size or r.pos == 0);
 }
 
-void Tree::remove(Branch b, Node_ptr n) {
+void Tree::remove(Branch b, Node *n) {
     // assert(branches.count(b) > 0);
     assert(b.upper_node->index >= 0);
     Branch joining_branch = find_joining_branch(b);
-    Node_ptr sibling = find_sibling(b.lower_node);
-    Node_ptr parent = parents[b.upper_node];
+    Node *sibling = find_sibling(b.lower_node);
+    Node *parent = parents[b.upper_node];
     Branch sibling_branch = Branch(sibling, b.upper_node);
     Branch parent_branch = Branch(b.upper_node, parent);
     Branch cut_branch = Branch(b.lower_node, n);
@@ -100,7 +100,7 @@ void Tree::remove(Branch b, Node_ptr n) {
     insert_branch(cut_branch);
 }
 
-void Tree::add(Branch added_branch, Branch joining_branch, Node_ptr n) {
+void Tree::add(Branch added_branch, Branch joining_branch, Node *n) {
     Branch lower_branch = Branch(joining_branch.lower_node, added_branch.upper_node);
     Branch upper_branch = Branch(added_branch.upper_node, joining_branch.upper_node);
     delete_branch(joining_branch);
@@ -114,8 +114,8 @@ void Tree::add(Branch added_branch, Branch joining_branch, Node_ptr n) {
 }
 
 /*
-Node_ptr Tree::find_sibling(Node_ptr n) {
-    Node_ptr p = parents[n];
+Node *Tree::find_sibling(Node *n) {
+    Node *p = parents[n];
     Branch b = Branch(n, p);
     set<Branch>::iterator branch_it = branches.find(b);
     branch_it++;
@@ -130,10 +130,10 @@ Node_ptr Tree::find_sibling(Node_ptr n) {
 }
  */
 
-Node_ptr Tree::find_sibling(Node_ptr n) {
-    Node_ptr p = parents[n];
-    unordered_set<Node_ptr> &candidates = children[p];
-    Node_ptr c;
+Node *Tree::find_sibling(Node *n) {
+    Node *p = parents[n];
+    unordered_set<Node *> &candidates = children[p];
+    Node *c;
     auto c_it = candidates.begin();
     if (*c_it != n) {
         c = *c_it;
@@ -147,8 +147,8 @@ Branch Tree::find_joining_branch(Branch removed_branch) {
     if (removed_branch == Branch()) {
         return Branch();
     }
-    Node_ptr p = parents[removed_branch.upper_node];
-    Node_ptr c = find_sibling(removed_branch.lower_node);
+    Node *p = parents[removed_branch.upper_node];
+    Node *c = find_sibling(removed_branch.lower_node);
     assert(parents[c] == removed_branch.upper_node);
     return Branch(c, p);
 }
@@ -277,7 +277,7 @@ double Tree::log_exp(double lambda, double x) {
     return -lambda*x + log(lambda);
 }
 
-int Tree::depth(Node_ptr n) {
+int Tree::depth(Node *n) {
     int depth = 0;
     while (!isinf(n->time)) {
         depth += 1;
@@ -286,8 +286,8 @@ int Tree::depth(Node_ptr n) {
     return depth;
 }
 
-Node_ptr Tree::LCA(Node_ptr n1, Node_ptr n2) {
-    set<Node_ptr > ancestors = {};
+Node *Tree::LCA(Node *n1, Node *n2) {
+    set<Node *> ancestors = {};
     while (!isinf(n1->time)) {
         ancestors.insert(n1);
         n1 = parents[n1];
@@ -301,18 +301,18 @@ Node_ptr Tree::LCA(Node_ptr n1, Node_ptr n2) {
     return n1;
 }
 
-int Tree::distance(Node_ptr n1, Node_ptr n2) {
+int Tree::distance(Node *n1, Node *n2) {
     if (n1 == n2) {
         return 0;
     }
-    Node_ptr lca = LCA(n1, n2);
+    Node *lca = LCA(n1, n2);
     int depth1 = depth(n1) - depth(lca);
     int depth2 = depth(n2) - depth(lca);
     return depth1 + depth2;
 }
 
 void Tree::impute_states(double m, set<Branch> &mutation_branches) {
-    map<Node_ptr, double> states = {};
+    map<Node *, double> states = {};
     for (const Branch &b : mutation_branches) {
         states[b.lower_node] = b.lower_node->get_state(m);
         states[b.upper_node] = b.upper_node->get_state(m);
@@ -325,7 +325,7 @@ void Tree::impute_states(double m, set<Branch> &mutation_branches) {
     }
 }
 
-void Tree::impute_states_helper(Node_ptr n, map<Node_ptr, double> &states) {
+void Tree::impute_states_helper(Node *n, map<Node *, double> &states) {
     if (n->index == -1) {
         states[n] = 0;
         return;
@@ -333,7 +333,7 @@ void Tree::impute_states_helper(Node_ptr n, map<Node_ptr, double> &states) {
     if (states.count(n) > 0) {
         return;
     }
-    Node_ptr p = parents[n];
+    Node *p = parents[n];
     impute_states_helper(p, states);
     states[n] = states[p];
 }

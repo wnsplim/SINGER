@@ -96,7 +96,7 @@ Branch Recombination::prev_joining_branch(Branch removed_branch, Branch joining_
     return Branch();
 }
 
-void Recombination::remove(Branch prev_removed_branch, Branch next_removed_branch, Branch prev_split_branch, Branch next_split_branch, Node_ptr cut_node) {
+void Recombination::remove(Branch prev_removed_branch, Branch next_removed_branch, Branch prev_split_branch, Branch next_split_branch, Node *cut_node) {
     if (deleted_branches.size() == 0 and inserted_branches.size() == 0) {
         return;
     }
@@ -153,7 +153,7 @@ void Recombination::remove(Branch prev_removed_branch, Branch next_removed_branc
     find_recomb_info();
 }
 
-void Recombination::add(Branch prev_added_branch, Branch next_added_branch, Branch prev_joining_branch, Branch next_joining_branch, Node_ptr cut_node) {
+void Recombination::add(Branch prev_added_branch, Branch next_added_branch, Branch prev_joining_branch, Branch next_joining_branch, Node *cut_node) {
     if (prev_added_branch == next_added_branch and prev_joining_branch == next_joining_branch) {
         return;
     }
@@ -217,9 +217,9 @@ void Recombination::add(Branch prev_added_branch, Branch next_added_branch, Bran
     assert(deleted_branches.size() == 3 or deleted_branches.size() == 4);
 }
 
-Branch Recombination::next_added_branch(Branch prev_joining_branch, Branch prev_added_branch, Node_ptr base_node) {
-    Node_ptr prev_node = prev_added_branch.upper_node;
-    Node_ptr next_node = nullptr;
+Branch Recombination::next_added_branch(Branch prev_joining_branch, Branch prev_added_branch, Node *base_node) {
+    Node *prev_node = prev_added_branch.upper_node;
+    Node *next_node = nullptr;
     if (!affect(prev_joining_branch)) {
         next_node = prev_node;
     }
@@ -233,7 +233,7 @@ Branch Recombination::next_added_branch(Branch prev_joining_branch, Branch prev_
 
 // private methods:
 
-void Recombination::break_front(Branch next_removed_branch, Branch next_split_branch, Node_ptr cut_node) {
+void Recombination::break_front(Branch next_removed_branch, Branch next_split_branch, Node *cut_node) {
     add_deleted_branch(next_removed_branch);
     add_deleted_branch(Branch(next_split_branch.lower_node, next_removed_branch.upper_node));
     add_deleted_branch(Branch(next_removed_branch.upper_node, next_split_branch.upper_node));
@@ -242,7 +242,7 @@ void Recombination::break_front(Branch next_removed_branch, Branch next_split_br
     simplify_branches();
 }
 
-void Recombination::break_end(Branch prev_removed_branch, Branch prev_split_branch, Node_ptr cut_node) {
+void Recombination::break_end(Branch prev_removed_branch, Branch prev_split_branch, Node *cut_node) {
     add_inserted_branch(prev_removed_branch);
     add_inserted_branch(Branch(prev_split_branch.lower_node, prev_removed_branch.upper_node));
     add_inserted_branch(Branch(prev_removed_branch.upper_node, prev_split_branch.upper_node));
@@ -267,7 +267,7 @@ void Recombination::break_end(Branch prev_removed_branch, Branch prev_split_bran
     simplify_branches();
 }
 
-void Recombination::fix_front(Branch next_added_branch, Branch next_joining_branch, Node_ptr cut_node) {
+void Recombination::fix_front(Branch next_added_branch, Branch next_joining_branch, Node *cut_node) {
     add_inserted_branch(next_added_branch);
     add_inserted_branch(Branch(next_joining_branch.lower_node, next_added_branch.upper_node));
     add_inserted_branch(Branch(next_added_branch.upper_node, next_joining_branch.upper_node));
@@ -283,7 +283,7 @@ void Recombination::fix_front(Branch next_added_branch, Branch next_joining_bran
     find_recomb_info();
 }
 
-void Recombination::fix_end(Branch prev_added_branch, Branch prev_joining_branch, Node_ptr cut_node) {
+void Recombination::fix_end(Branch prev_added_branch, Branch prev_joining_branch, Node *cut_node) {
     if (deleted_branches.size() == inserted_branches.size() and deleted_branches.size() == 0) {
         return;
     }
@@ -345,8 +345,8 @@ void Recombination::add_inserted_branch(Branch b) {
 
 void Recombination::find_nodes() {
     // find deleted and inserted nodes by simply comparing nodes
-    set<Node_ptr> prev_nodes = {};
-    set<Node_ptr> next_nodes = {};
+    set<Node *> prev_nodes = {};
+    set<Node *> next_nodes = {};
     for (Branch b : deleted_branches) {
         // prev_nodes.insert(b.lower_node);
         prev_nodes.insert(b.upper_node);
@@ -355,12 +355,12 @@ void Recombination::find_nodes() {
         // next_nodes.insert(b.lower_node);
         next_nodes.insert(b.upper_node);
     }
-    for (Node_ptr n : prev_nodes) {
+    for (Node *n : prev_nodes) {
         if (next_nodes.count(n) == 0) {
             deleted_node = n;
         }
     }
-    for (Node_ptr n : next_nodes) {
+    for (Node *n : next_nodes) {
         if (prev_nodes.count(n) == 0) {
             inserted_node = n;
         }
@@ -400,8 +400,8 @@ void Recombination::find_recomb_info() {
     if (pos == 0 or pos == INT_MAX) { // no need to process the pseudo terminal recombinations
         return;
     }
-    Node_ptr l = nullptr;
-    Node_ptr u = nullptr;
+    Node *l = nullptr;
+    Node *u = nullptr;
     // find merging branch by looking for deleted node in deleted branches
     for (Branch b : deleted_branches) {
         if (b == source_branch) {
@@ -440,7 +440,7 @@ void Recombination::find_recomb_info() {
     }
 }
 
-Branch Recombination::search_upper_node(Node_ptr n) {
+Branch Recombination::search_upper_node(Node *n) {
     Branch branch = Branch();
     for (Branch b : deleted_branches) {
         if (b != source_branch and b.upper_node == n) {
@@ -450,7 +450,7 @@ Branch Recombination::search_upper_node(Node_ptr n) {
     return branch;
 }
 
-Branch Recombination::search_lower_node(Node_ptr n) {
+Branch Recombination::search_lower_node(Node *n) {
     Branch branch = Branch();
     for (Branch b : deleted_branches) {
         if (b.lower_node == n) {

@@ -13,7 +13,7 @@ VERSION=$1
 INCLUDES="-I. -IARG -IHMM -Imoves -Isampler -Iutils"
 SOURCES=$(find . -path ./lab -prune -o -name '*.cpp' -print)
 
-clang++ -std=c++17 -O3 -g -flto $INCLUDES $SOURCES -o ../../releases/singer
+clang++ -std=c++17 -O3 -g -DNDEBUG -flto $INCLUDES $SOURCES -o ../../releases/singer
 
 # Compile the debug version of the program
 clang++ -std=c++17 -g $INCLUDES $SOURCES -o ../../releases/singer_debug

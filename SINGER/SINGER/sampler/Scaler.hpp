@@ -17,7 +17,7 @@ class Scaler {
 public:
     
     int num_windows = 100;
-    vector<Node_ptr> sorted_nodes = {};
+    vector<Node *> sorted_nodes = {};
     vector<double> node_deltas = {};
     vector<double> rates = {};
     vector<double> accumulated_arg_length = {};

@@ -26,7 +26,7 @@ public:
     double time = 0.0;
     int start_pos = 0;
     int source_pos = 0;
-    Node_ptr node = nullptr;
+    Node *node = nullptr;
     double reduction = 1.0;
     
     vector<double> source_weights = {};

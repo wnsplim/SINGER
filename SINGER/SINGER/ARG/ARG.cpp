@@ -71,7 +71,7 @@ void ARG::compute_rhos_thetas(Rate_map &rm, Rate_map &mm) {
     }
 }
 
-void ARG::build_singleton_arg(Node_ptr n) {
+void ARG::build_singleton_arg(const Node_ptr &n) {
     add_sample(n);
     Branch branch = Branch(n, root);
     Recombination r = Recombination({}, {branch});
@@ -82,8 +82,9 @@ void ARG::build_singleton_arg(Node_ptr n) {
     }
 }
 
-void ARG::add_sample(Node_ptr n) {
-    sample_nodes.insert(n);
+void ARG::add_sample(const Node_ptr &n) {
+    node_owner.push_back(n);
+    sample_nodes.insert(n.get());
     for (auto &x : n->mutation_sites) {
         // mutation_sites.insert(x);
         mutation_sites.insert(x.first);
@@ -97,8 +98,8 @@ void ARG::add_sample(Node_ptr n) {
     end = sequence_length;
 }
 
-void ARG::add_node(Node_ptr n) {
-    if (n != root and n != nullptr) {
+void ARG::add_node(Node *n) {
+    if (n != root.get() and n != nullptr) {
         node_set.insert(n);
     }
 }
@@ -107,9 +108,10 @@ void ARG::add_new_node(double t) {
     if (!isinf(t)) {
         Node_ptr n = new_node(t);
         n->index = (int) node_set.size();
-        node_set.insert(n);
+        node_owner.push_back(n);
+        node_set.insert(n.get());
         if (t == 0) {
-            sample_nodes.insert(n);
+            sample_nodes.insert(n.get());
         }
     }
 }
@@ -125,7 +127,7 @@ Tree ARG::get_tree_at(double x) {
     return tree;
 }
 
-Node_ptr ARG::get_query_node_at(double x) {
+Node *ARG::get_query_node_at(double x) {
     auto query_it = removed_branches.upper_bound(x);
     query_it--;
     return query_it->second.lower_node;
@@ -185,7 +187,8 @@ void ARG::remove(tuple<double, Branch, double> cut_point) {
     double t;
     tie(pos, center_branch, t) = cut_point;
     cut_time = t;
-    cut_node = new_node(cut_time);
+    cut_node_owner = new_node(cut_time);
+    cut_node = cut_node_owner.get();
     cut_node->set_index(-2);
     Tree forward_tree = cut_tree;
     Tree backward_tree = cut_tree;
@@ -200,7 +203,7 @@ void ARG::remove(tuple<double, Branch, double> cut_point) {
         prev_joining_branch = forward_tree.find_joining_branch(prev_removed_branch);
         forward_tree.forward_update(r);
         next_removed_branch = r.trace_forward(t, prev_removed_branch);
-        if (next_removed_branch.upper_node == root) {
+        if (next_removed_branch.upper_node == root.get()) {
             next_removed_branch = Branch();
         }
         next_joining_branch = forward_tree.find_joining_branch(next_removed_branch);
@@ -220,7 +223,7 @@ void ARG::remove(tuple<double, Branch, double> cut_point) {
         joining_branches[r.pos] = next_joining_branch;
         backward_tree.backward_update(r);
         prev_removed_branch = r.trace_backward(t, next_removed_branch);
-        if (prev_removed_branch.upper_node == root) {
+        if (prev_removed_branch.upper_node == root.get()) {
             prev_removed_branch = Branch();
         }
         if (prev_removed_branch == Branch()) {
@@ -273,8 +276,8 @@ void ARG::remove(map<double, Branch> seed_branches) {
 }
 
 void ARG::remove_leaf(int index) {
-    Node_ptr s = nullptr;
-    for (Node_ptr n : sample_nodes) {
+    Node *s = nullptr;
+    for (Node *n : sample_nodes) {
         if (n->index == index) {
             s = n;
         }
@@ -282,7 +285,7 @@ void ARG::remove_leaf(int index) {
     Tree tree = Tree();
     auto recomb_it = recombinations.begin();
     Branch removed_branch = Branch();
-    Node_ptr joining_node = nullptr;
+    Node *joining_node = nullptr;
     map<double, Branch> removed_branches = {};
     while (recomb_it->first < sequence_length) {
         Recombination r = recomb_it->second;
@@ -453,7 +456,7 @@ int ARG::count_incompatibility() {
     for (auto &x : mutation_branches) {
         set<Branch> &branches = x.second;
         if (branches.size() > 1) {
-            if (branches.rbegin()->upper_node == root) {
+            if (branches.rbegin()->upper_node == root.get()) {
                 if (branches.size() > 2) {
                     count += 1;
                 }
@@ -473,7 +476,7 @@ int ARG::count_flipping() {
     int count = 0;
     for (auto x : mutation_branches) {
         set<Branch> &branches = x.second;
-        if (branches.size() > 1 and branches.rbegin()->upper_node == root) {
+        if (branches.size() > 1 and branches.rbegin()->upper_node == root.get()) {
             count += 1;
         }
     }
@@ -644,7 +647,7 @@ void ARG::remap_mutations() {
     auto mut_it = mutation_branches.lower_bound(x);
     auto join_it = joining_branches.begin();
     auto remove_it = removed_branches.begin();
-    Node_ptr joining_node = nullptr;
+    Node *joining_node = nullptr;
     Branch joining_branch = Branch();
     Branch removed_branch = Branch();
     Branch lower_branch = Branch();
@@ -712,7 +715,7 @@ void ARG::check_mapping() {
         for (auto &x : tree.parents) {
             if (x.second->get_state(m) != x.first->get_state(m)) {
                 assert(mapped_branches.count(Branch(x.first, x.second)) > 0);
-                if (x.second != root) {
+                if (x.second != root.get()) {
                     count += 1;
                 }
             }
@@ -730,7 +733,7 @@ int ARG::num_unmapped() {
     for (auto &x : mutation_branches) {
         set<Branch> &branches = x.second;
         if (branches.size() > 1) {
-            if (branches.rbegin()->upper_node == root) {
+            if (branches.rbegin()->upper_node == root.get()) {
                 if (branches.size() > 2) {
                     count += 1;
                 }
@@ -749,7 +752,7 @@ void ARG::check_incompatibility() {
     for (auto &x : mutation_branches) {
         set<Branch> &branches = x.second;
         if (branches.size() > 1) {
-            if (branches.rbegin()->upper_node == root) {
+            if (branches.rbegin()->upper_node == root.get()) {
                 if (branches.size() > 2) {
                     count += 1;
                 }
@@ -769,7 +772,7 @@ void ARG::check_incompatibility() {
     for (auto &x : mutation_branches) {
         set<Branch> &branches = x.second;
         if (branches.size() > 1) {
-            if (branches.rbegin()->upper_node == root) {
+            if (branches.rbegin()->upper_node == root.get()) {
                 if (branches.size() > 2) {
                     count += branches.size() - 2;
                 }
@@ -863,19 +866,19 @@ set<double> ARG::get_check_points() {
     double start_pos = removed_branches.begin()->first;
     double end_pos = removed_branches.rbegin()->first;
     auto recomb_it = recombinations.lower_bound(start_pos);
-    map<Node_ptr , double> deleted_nodes = {};
-    vector<tuple<Node_ptr , double, double>> node_span = {};
+    map<Node *, double> deleted_nodes = {};
+    vector<tuple<Node *, double, double>> node_span = {};
     while (recomb_it->first <= end_pos) {
         Recombination &r = recomb_it->second;
         deleted_nodes[r.deleted_node] = r.pos;
-        Node_ptr inserted_node = r.inserted_node;
-        if (deleted_nodes.count(inserted_node) > 0 and inserted_node != root) {
+        Node *inserted_node = r.inserted_node;
+        if (deleted_nodes.count(inserted_node) > 0 and inserted_node != root.get()) {
             node_span.push_back({inserted_node, deleted_nodes[inserted_node], r.pos});
             deleted_nodes.erase(inserted_node);
         }
         recomb_it++;
     }
-    Node_ptr n;
+    Node *n;
     double x;
     double y;
     set<double> check_points = {};
@@ -890,7 +893,7 @@ set<double> ARG::get_check_points() {
 
 bool ARG::check_disjoint_nodes(double x, double y) {
     auto recomb_it = recombinations.lower_bound(x);
-    Node_ptr node = recomb_it->second.deleted_node;
+    Node *node = recomb_it->second.deleted_node;
     double t = recomb_it->second.deleted_node->time;
     Branch b = recomb_it->second.merging_branch;
     while (recomb_it->first < y) {
@@ -964,7 +967,7 @@ void ARG::create_node_set() {
             add_node(b.upper_node);
         }
     }
-    for (Node_ptr n : sample_nodes) {
+    for (Node *n : sample_nodes) {
         add_node(n);
     }
     assert(cut_node == nullptr or node_set.count(cut_node) > 0);
@@ -976,7 +979,7 @@ void ARG::write_nodes(string filename) {
     ofstream file;
     file.open(filename);
     int index = 0;
-    for (Node_ptr n : node_set) {
+    for (Node *n : node_set) {
         if (n->time > 0) {
             n->set_index(index);
         }
@@ -999,7 +1002,7 @@ void ARG::write_branches(string filename) {
                 branch_map[b] = pos;
             }
             for (Branch b : r.deleted_branches) {
-                // assert((node_set.count(b.lower_node) > 0 and node_set.count(b.upper_node) > 0) or b.upper_node == root);
+                // assert((node_set.count(b.lower_node) > 0 and node_set.count(b.upper_node) > 0) or b.upper_node == root.get());
                 int k1 = b.upper_node->index;
                 int k2 = b.lower_node->index;
                 // assert(k1 < 1e5 and k2 < 1e5);
@@ -1010,7 +1013,7 @@ void ARG::write_branches(string filename) {
     }
     for (auto x : branch_map) {
         Branch b = x.first;
-        // assert((node_set.count(b.lower_node) > 0 and node_set.count(b.upper_node) > 0) or b.upper_node == root);
+        // assert((node_set.count(b.lower_node) > 0 and node_set.count(b.upper_node) > 0) or b.upper_node == root.get());
         int k1 = b.upper_node->index;
         int k2 = b.lower_node->index;
         // assert(k1 < 1e5 and k2 < 1e5);
@@ -1075,15 +1078,15 @@ void ARG::read_branches(string filename) {
         cerr << "input file not found" << endl;
         exit(1);
     }
-    vector<Node_ptr> nodes = vector<Node_ptr>(node_set.begin(), node_set.end());
+    vector<Node *> nodes = vector<Node *>(node_set.begin(), node_set.end());
     double x;
     double y;
     double p;
     double c;
     double left;
     double right;
-    Node_ptr parent_node;
-    Node_ptr child_node;
+    Node *parent_node;
+    Node *child_node;
     Branch b;
     map<double, set<Branch>> deleted_branches = {{0, {}}};
     map<double, set<Branch>> inserted_branches = {};
@@ -1091,7 +1094,7 @@ void ARG::read_branches(string filename) {
         left = x;
         right = y;
         if (p < 0) {
-            parent_node = root;
+            parent_node = root.get();
         } else {
             parent_node = nodes[int(p)];
         }
@@ -1126,20 +1129,20 @@ void ARG::read_recombs(string filename) {
         exit(1);
     }
     create_node_set();
-    vector<Node_ptr> nodes = vector<Node_ptr>(node_set.begin(), node_set.end());
+    vector<Node *> nodes = vector<Node *>(node_set.begin(), node_set.end());
     map<double, Branch> source_branches = {};
     map<double, double> start_times = {};
     double pos;
     int n1;
     int n2;
     double t;
-    Node_ptr ln;
-    Node_ptr un;
+    Node *ln;
+    Node *un;
     Branch b;
     while (fin >> pos >> n1 >> n2 >> t) {
         ln = nodes[n1];
         if (n2 == -1) {
-            un = root;
+            un = root.get();
         } else {
             un = nodes[n2];
         }
@@ -1175,20 +1178,20 @@ void ARG::read_muts(string filename) {
         exit(1);
     }
     create_node_set();
-    vector<Node_ptr> nodes = vector<Node_ptr>(node_set.begin(), node_set.end());
+    vector<Node *> nodes = vector<Node *>(node_set.begin(), node_set.end());
     double pos;
     int n1;
     int n2;
     double s;
-    Node_ptr ln;
-    Node_ptr un;
+    Node *ln;
+    Node *un;
     Branch b;
     while (fin >> pos >> n1 >> n2 >> s) {
         if (pos <= sequence_length) {
             mutation_sites.insert(pos);
             ln = nodes[n1];
             if (n2 == -1) {
-                un = root;
+                un = root.get();
             } else {
                 un = nodes[n2];
             }
@@ -1269,7 +1272,7 @@ double ARG::get_arg_length(map<double, Branch> &new_joining_branches, map<double
         span = next(add_it)->first - add_it->first;
         joining_branch = join_it->second;
         join_time = add_it->second.upper_node->time;
-        if (joining_branch.upper_node == root) {
+        if (joining_branch.upper_node == root.get()) {
             h = 2*join_time - joining_branch.lower_node->time - cut_time;
         } else {
             h = join_time - cut_time;
@@ -1402,9 +1405,9 @@ tuple<double, Branch, double> ARG::sample_mutation_cut() {
 tuple<double, Branch, double> ARG::sample_terminal_cut() {
     Branch branch;
     double time = 1e-10;
-    vector<Node_ptr > nodes = vector<Node_ptr >(sample_nodes.begin(), sample_nodes.end());
+    vector<Node *> nodes = vector<Node *>(sample_nodes.begin(), sample_nodes.end());
     int index = rand() % nodes.size();
-    Node_ptr terminal_node = nodes[index];
+    Node *terminal_node = nodes[index];
     cut_tree = get_tree_at(0);
     for (auto &x : cut_tree.parents) {
         if (x.first == terminal_node) {

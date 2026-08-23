@@ -20,9 +20,9 @@ public:
     double ls = 0;
     double max_time = 20;
     
-    vector<Node_ptr> all_root_nodes = {};
+    vector<Node *> all_root_nodes = {};
     vector<double> all_root_spans = {};
-    vector<Node_ptr> all_nodes = {};
+    vector<Node *> all_nodes = {};
     vector<double> all_spans = {};
     set<double> mutation_ages = {};
     vector<double> old_grid = {};

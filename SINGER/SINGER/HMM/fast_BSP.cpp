@@ -34,7 +34,7 @@ void fast_BSP::start(set<Branch> &start_branches, set<Interval_info> &start_inte
             lb = max(b.lower_node->time, cut_time);
             ub = b.upper_node->time;
             p = cc->prob(lb, ub);
-            new_interval = create_interval(b, lb, ub, curr_index);
+            new_interval = make_interval(b, lb, ub, curr_index);
             curr_intervals.emplace_back(new_interval);
             temp_probs.emplace_back(p);
         }
@@ -63,7 +63,7 @@ void fast_BSP::start(Tree &start_tree, set<Interval_info> &start_intervals, doub
             lb = max(b.lower_node->time, cut_time);
             ub = b.upper_node->time;
             p = cc->prob(lb, ub);
-            new_interval = create_interval(b, lb, ub, curr_index);
+            new_interval = make_interval(b, lb, ub, curr_index);
             curr_intervals.emplace_back(new_interval);
             temp_probs.emplace_back(p);
         }
@@ -159,7 +159,7 @@ void fast_BSP::update(double rho) {
         if (covered_branches.count(b) == 0) {
             lb = max(cut_time, b.lower_node->time);
             ub = b.upper_node->time;
-            new_interval = create_interval(b, lb, ub, curr_index);
+            new_interval = make_interval(b, lb, ub, curr_index);
             temp_intervals.emplace_back(new_interval);
             temp_probs.emplace_back(0);
         }
@@ -186,7 +186,7 @@ double fast_BSP::get_recomb_prob(double rho, double t) {
     return p;
 }
 
-void fast_BSP::null_emit(double theta, Node_ptr query_node) {
+void fast_BSP::null_emit(double theta, Node *query_node) {
     compute_null_emit_prob(theta, query_node);
     prev_theta = theta;
     prev_node = query_node;
@@ -201,7 +201,7 @@ void fast_BSP::null_emit(double theta, Node_ptr query_node) {
     }
 }
 
-void fast_BSP::mut_emit(double theta, double bin_size, set<double> &mut_set, Node_ptr query_node) {
+void fast_BSP::mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node) {
     compute_mut_emit_probs(theta, bin_size, mut_set, query_node);
     double ws = 0;
     for (int i = 0; i < dim; i++) {
@@ -313,6 +313,11 @@ void fast_BSP::update_states(set<Interval_info> &deletions, set<Interval_info> &
     assert(reduced_branches.size() == reduced_intervals.size() and reduced_branches.size() > 0);
 }
 
+Interval_ptr fast_BSP::make_interval(Branch b, double tl, double tu, int init_pos) {
+    arena.emplace_back(b, tl, tu, init_pos);
+    return &arena.back();
+}
+
 void fast_BSP::set_dimensions() {
     dim = (int) curr_intervals.size();
     recomb_probs.resize(dim); recomb_probs.assign(dim, 0);
@@ -331,7 +336,7 @@ void fast_BSP::compute_recomb_probs(double rho) {
     }
 }
 
-void fast_BSP::compute_null_emit_prob(double theta, Node_ptr query_node) {
+void fast_BSP::compute_null_emit_prob(double theta, Node *query_node) {
     if (theta == prev_theta and query_node == prev_node) {
         return;
     }
@@ -340,7 +345,7 @@ void fast_BSP::compute_null_emit_prob(double theta, Node_ptr query_node) {
     }
 }
 
-void fast_BSP::compute_mut_emit_probs(double theta, double bin_size, set<double> &mut_set, Node_ptr query_node) {
+void fast_BSP::compute_mut_emit_probs(double theta, double bin_size, vector<double> &mut_set, Node *query_node) {
     for (int i = 0; i < dim; i++) {
         mut_emit_probs[i] = eh->mut_emit(curr_intervals[i]->branch, join_times[i], theta, bin_size, mut_set, query_node);
     }
@@ -429,29 +434,29 @@ void fast_BSP::generate_intervals(Recombination &r) {
         p = accumulate(weights.begin(), weights.end(), 0.0);
         assert(!isnan(p));
         if (lb == max(cut_time, b.lower_node->time) and ub == b.upper_node->time) { // full intervals
-            new_interval = create_interval(b, lb, ub, curr_index);
+            new_interval = make_interval(b, lb, ub, curr_index);
             temp_intervals.emplace_back(new_interval);
             temp_probs.emplace_back(p);
             if (weights.size() > 0) {
                 new_interval->source_weights = move(weights);
-                new_interval->intervals = move(intervals);
+                new_interval->source_intervals = move(intervals);
             }
             covered_branches.insert(b);
         } else if (full_branches.count(b) == 0) {
-            new_interval = create_interval(b, lb, ub, curr_index);
+            new_interval = make_interval(b, lb, ub, curr_index);
             temp_intervals.emplace_back(new_interval);
             temp_probs.emplace_back(p);
             if (weights.size() > 0) {
                 new_interval->source_weights = move(weights);
-                new_interval->intervals = move(intervals);
+                new_interval->source_intervals = move(intervals);
             }
         } else if (p > cutoff) {
-            new_interval = create_interval(b, lb, ub, curr_index);
+            new_interval = make_interval(b, lb, ub, curr_index);
             temp_intervals.emplace_back(new_interval);
             temp_probs.emplace_back(p);
             if (weights.size() > 0) {
                 new_interval->source_weights = move(weights);
-                new_interval->intervals = move(intervals);
+                new_interval->source_intervals = move(intervals);
             }
         }
     }
@@ -476,7 +481,7 @@ void fast_BSP::generate_intervals(Recombination &r) {
         if (covered_branches.count(b) == 0) {
             lb = max(cut_time, b.lower_node->time);
             ub = b.upper_node->time;
-            new_interval = create_interval(b, lb, ub, curr_index);
+            new_interval = make_interval(b, lb, ub, curr_index);
             temp_intervals.emplace_back(new_interval);
             temp_probs.emplace_back(0);
         }
@@ -711,7 +716,7 @@ Interval_ptr fast_BSP::sample_prev_interval(int x) {
 }
 
 Interval_ptr fast_BSP::sample_source_interval(Interval_ptr interval, int x) {
-    vector<Interval_ptr> &intervals = interval->intervals;
+    vector<Interval_ptr> &intervals = interval->source_intervals;
     vector<double> &weights = interval->source_weights;
     vector<Interval_ptr> &prev_intervals = get_state_space(x);
     if (x == interval->start_pos - 1) {

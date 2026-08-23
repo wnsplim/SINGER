@@ -11,17 +11,17 @@ Scaler::Scaler() {}
 
 void Scaler::compute_deltas(ARG &a) {
     // the base case
-    map<Node_ptr, double, compare_node> node_start = {};
-    map<Node_ptr, double, compare_node> node_span = {};
+    map<Node *, double, compare_node> node_start = {};
+    map<Node *, double, compare_node> node_span = {};
     for (const Branch &b : a.recombinations.begin()->second.inserted_branches) {
         node_start[b.upper_node] = 0;
     }
-    node_start.erase(a.root);
+    node_start.erase(a.root.get());
     auto r_it = next(a.recombinations.begin());
     while (next(r_it) != a.recombinations.end()) {
         Recombination &r = r_it->second;
-        Node_ptr dn = r.deleted_node;
-        Node_ptr in = r.inserted_node;
+        Node *dn = r.deleted_node;
+        Node *in = r.inserted_node;
         assert(node_start.count(dn) > 0);
         node_span[dn] += r.pos - node_start[dn];
         node_start.erase(dn);
@@ -29,11 +29,11 @@ void Scaler::compute_deltas(ARG &a) {
         r_it++;
     }
     for (auto &x : node_start) {
-        Node_ptr n = x.first;
+        Node *n = x.first;
         node_span[n] += a.sequence_length - node_start[n];
     }
     // the root case
-    map<Node_ptr, double, compare_node> root_start = {};
+    map<Node *, double, compare_node> root_start = {};
     Branch prev_branch;
     Branch next_branch;
     Recombination &r = a.recombinations.begin()->second;
@@ -44,22 +44,22 @@ void Scaler::compute_deltas(ARG &a) {
         Recombination &r = r_it->second;
         prev_branch = *r.deleted_branches.rbegin();
         next_branch = *r.inserted_branches.rbegin();
-        if (prev_branch.upper_node == a.root) {
-            Node_ptr dn = prev_branch.lower_node;
-            Node_ptr in = next_branch.lower_node;
+        if (prev_branch.upper_node == a.root.get()) {
+            Node *dn = prev_branch.lower_node;
+            Node *in = next_branch.lower_node;
             assert(dn != in);
-            assert(next_branch.upper_node == a.root);
+            assert(next_branch.upper_node == a.root.get());
             assert(root_start.count(dn) > 0);
             node_span[dn] += r.pos - root_start[dn];
             root_start.erase(dn);
             root_start[in] = r.pos;
         } else {
-            assert(next_branch.upper_node != a.root);
+            assert(next_branch.upper_node != a.root.get());
         }
         r_it++;
     }
     for (auto &x : root_start) {
-        Node_ptr n = x.first;
+        Node *n = x.first;
         node_span[n] += a.sequence_length - x.second;
     }
     int num_samples = (int) a.sample_nodes.size();
@@ -72,7 +72,7 @@ void Scaler::compute_deltas(ARG &a) {
         index++;
     }
     index = 0;
-    for (Node_ptr n : a.sample_nodes) {
+    for (Node *n : a.sample_nodes) {
         sorted_nodes[index] = n;
         index++;
     }

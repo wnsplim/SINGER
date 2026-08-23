@@ -31,7 +31,7 @@ SOURCES=$(find . -path ./lab -prune -o -name '*.cpp' -print)
 for d in $SRC_DIRS; do mkdir -p "$BUILD_DIR/release/$d" "$BUILD_DIR/debug/$d"; done
 
 printf '%s\n' $SOURCES | xargs -P "$JOBS" -I CPPFILE \
-    g++ -std=c++17 -O3 -g -flto=8 $INCLUDES -c CPPFILE -o "$BUILD_DIR/release/CPPFILE.o"
+    g++ -std=c++17 -O3 -g -DNDEBUG -flto=8 $INCLUDES -c CPPFILE -o "$BUILD_DIR/release/CPPFILE.o"
 g++ -std=c++17 -O3 -g -flto=8 $(find "$BUILD_DIR/release" -name '*.o') -o "$VERSION_DIR/singer"
 
 printf '%s\n' $SOURCES | xargs -P "$JOBS" -I CPPFILE \

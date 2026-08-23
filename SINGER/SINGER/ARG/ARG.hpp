@@ -23,7 +23,8 @@ public:
     
     double Ne = 1;
     Node_ptr root = new_node(numeric_limits<double>::infinity());
-    Node_ptr cut_node = nullptr;
+    Node *cut_node = nullptr;
+    Node_ptr cut_node_owner = nullptr;
     double cut_time = 0;
     set<double> mutation_sites = {};
     map<double, set<Branch>> mutation_branches = {};
@@ -34,8 +35,9 @@ public:
     vector<double> coordinates = {};
     vector<double> rhos = {};
     vector<double> thetas = {};
-    set<Node_ptr, compare_node> sample_nodes = {};
-    set<Node_ptr, compare_node> node_set = {};
+    vector<Node_ptr> node_owner = {};
+    set<Node *, compare_node> sample_nodes = {};
+    set<Node *, compare_node> node_set = {};
     map<double, Branch> joining_branches = {};
     map<double, Branch> removed_branches = {};
     map<double, Tree> tree_map = {};
@@ -61,17 +63,17 @@ public:
     
     void compute_rhos_thetas(Rate_map &rm, Rate_map &mm);
     
-    void build_singleton_arg(Node_ptr n);
+    void build_singleton_arg(const Node_ptr &n);
     
-    void add_sample(Node_ptr n);
+    void add_sample(const Node_ptr &n);
     
-    void add_node(Node_ptr n);
+    void add_node(Node *n);
     
     void add_new_node(double t);
     
     Tree get_tree_at(double x);
     
-    Node_ptr get_query_node_at(double x);
+    Node *get_query_node_at(double x);
     
     Tree modify_tree_to(double x, Tree &reference_tree, double x0);
     

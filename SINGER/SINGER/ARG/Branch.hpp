@@ -22,14 +22,20 @@ public:
     Node *upper_node;
      */
     
-    Node_ptr lower_node;
-    Node_ptr upper_node;
+    Node *lower_node = nullptr;
+    Node *upper_node = nullptr;
     
     Branch();
     
     // Branch(Node *l, Node *u);
     
-    Branch(Node_ptr l, Node_ptr u);
+    Branch(Node *l, Node *u);
+
+    Branch(const Node_ptr &l, const Node_ptr &u);
+
+    Branch(Node *l, const Node_ptr &u);
+
+    Branch(const Node_ptr &l, Node *u);
     
     double length();
     
@@ -42,7 +48,7 @@ public:
 
 struct branch_hash {
     std::size_t operator()(const Branch& b) const {
-        std::hash<Node_ptr> hasher;
+        std::hash<const Node *> hasher;
         std::size_t h1 = hasher(b.lower_node);
         std::size_t h2 = hasher(b.upper_node);
         return h1 ^ (h2 << 1);

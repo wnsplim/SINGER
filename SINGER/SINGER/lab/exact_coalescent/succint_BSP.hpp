@@ -51,7 +51,7 @@ public:
     // cache:
     double prev_rho = -1;
     double prev_theta = -1;
-    Node_ptr prev_node = nullptr;
+    Node *prev_node = nullptr;
     
     // vector computation:
     int dim = 0;
@@ -94,9 +94,9 @@ public:
 
     double get_recomb_prob(double rho, double t);
     
-    void null_emit(double theta, Node_ptr query_node);
+    void null_emit(double theta, Node *query_node);
     
-    void mut_emit(double theta, double bin_size, set<double> &mut_set, Node_ptr query_node);
+    void mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
     
     map<double, Branch> sample_joining_branches(int start_index, vector<double> &coordinates);
     
@@ -110,9 +110,9 @@ public:
     
     void compute_recomb_weights(double rho);
     
-    void compute_null_emit_prob(double theta, Node_ptr query_node);
+    void compute_null_emit_prob(double theta, Node *query_node);
     
-    void compute_mut_emit_probs(double theta, double bin_size, set<double> &mut_set, Node_ptr query_node);
+    void compute_mut_emit_probs(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
     
     void transfer_helper(Interval_info &next_interval, Interval_ptr &prev_interval, double w);
     
