@@ -781,9 +781,11 @@ void Sampler::debug_resume_fast_internal_sample(int num_iters, int spacing) {
 
 
 void Sampler::rescale() {
+    Scaler scaler = Scaler();
+    scaler.num_windows = scaling_bin;
+    scaler.compute_deltas(arg);
     for (int i = 0; i < scaling_rep; i++) {
-        Scaler scaler = Scaler();
-        scaler.num_windows = scaling_bin;
+        scaler.reset();
         scaler.rescale(arg, mut_rate);
     }
 }

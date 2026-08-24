@@ -961,8 +961,8 @@ int ARG::count_incompatibility(Tree tree, double x) {
 
 void ARG::create_node_set() {
     node_set.clear();
-    for (auto x : recombinations) {
-        for (Branch b : x.second.inserted_branches) {
+    for (auto &x : recombinations) {
+        for (const Branch &b : x.second.inserted_branches) {
             add_node(b.upper_node);
         }
     }

@@ -17,6 +17,24 @@ static typename V::value_type::second_type &keyed_slot(V &v, const K &key) {
     return v.insert(it, {key, {}})->second;
 }
 
+template <class V, class K>
+static typename V::value_type::second_type &recycled_slot(V &v, size_t &n, const K &key) {
+    auto it = lower_bound(v.begin(), v.begin() + n, key,
+                          [](const typename V::value_type &e, const K &k) { return e.first < k; });
+    if (it != v.begin() + n and !(key < it->first)) {
+        return it->second;
+    }
+    size_t p = it - v.begin();
+    if (n == v.size()) {
+        v.emplace_back();
+    }
+    rotate(v.begin() + p, v.begin() + n, v.begin() + n + 1);
+    v[p].first = key;
+    v[p].second.clear();
+    n++;
+    return v[p].second;
+}
+
 template <class V>
 static typename V::value_type::second_type &keyed_lookup(V &v, int key) {
     auto it = upper_bound(v.begin(), v.end(), key,
@@ -58,8 +76,8 @@ void approx_BSP::reset() {
     rhos.clear();
     recomb_sums.clear();
     weight_sums.clear();
-    transfer_intervals.clear();
-    transfer_weights.clear();
+    n_transfer_intervals = 0;
+    n_transfer_weights = 0;
     temp.clear();
     trace_back_probs.clear();
     valid_branches.clear();
@@ -201,8 +219,8 @@ void approx_BSP::transfer(Recombination &r) {
     weight_sums.push_back(0);
     sanity_check(r);
     curr_index += 1;
-    transfer_weights.clear();
-    transfer_intervals.clear();
+    n_transfer_weights = 0;
+    n_transfer_intervals = 0;
     temp.clear();
     temp_intervals.clear();
     for (int i = 0; i < curr_intervals.size(); i++) {
@@ -395,13 +413,13 @@ void approx_BSP::compute_mut_emit_probs(double theta, double bin_size, vector<do
 }
 
 void approx_BSP::transfer_helper(Interval_info &next_interval, Interval_ptr &prev_interval, double w) {
-    keyed_slot(transfer_weights, next_interval).push_back(w);
-    keyed_slot(transfer_intervals, next_interval).push_back(prev_interval);
+    recycled_slot(transfer_weights, n_transfer_weights, next_interval).push_back(w);
+    recycled_slot(transfer_intervals, n_transfer_intervals, next_interval).push_back(prev_interval);
 }
 
 void approx_BSP::transfer_helper(Interval_info &next_interval) {
-    keyed_slot(transfer_weights, next_interval);
-    keyed_slot(transfer_intervals, next_interval);
+    recycled_slot(transfer_weights, n_transfer_weights, next_interval);
+    recycled_slot(transfer_intervals, n_transfer_intervals, next_interval);
 }
 
 void approx_BSP::add_new_branches(Recombination &r) { // add recombined branch and merging branch, if legal
@@ -483,7 +501,8 @@ void approx_BSP::generate_intervals(Recombination &r) {
     Interval_info interval;
     Interval_ptr new_interval = nullptr;
     auto y = transfer_intervals.begin();
-    for (auto x = transfer_weights.begin(); x != transfer_weights.end(); ++x, ++y) {
+    auto x_end = transfer_weights.begin() + n_transfer_weights;
+    for (auto x = transfer_weights.begin(); x != x_end; ++x, ++y) {
         interval = x->first;
         auto &weights = x->second;
         auto &intervals = y->second;

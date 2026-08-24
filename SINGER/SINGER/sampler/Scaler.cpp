@@ -9,9 +9,19 @@
 
 Scaler::Scaler() {}
 
+void Scaler::reset() {
+    rates.clear();
+    accumulated_arg_length.clear();
+    old_grid.assign(1, 0);
+    new_grid.assign(1, 0);
+    expected_arg_length.clear();
+    observed_arg_length.clear();
+    scaling_factors.clear();
+}
+
 void Scaler::compute_deltas(ARG &a) {
     // the base case
-    map<Node *, double, compare_node> node_start = {};
+    unordered_map<Node *, double> node_start = {};
     map<Node *, double, compare_node> node_span = {};
     for (const Branch &b : a.recombinations.begin()->second.inserted_branches) {
         node_start[b.upper_node] = 0;
@@ -33,7 +43,7 @@ void Scaler::compute_deltas(ARG &a) {
         node_span[n] += a.sequence_length - node_start[n];
     }
     // the root case
-    map<Node *, double, compare_node> root_start = {};
+    unordered_map<Node *, double> root_start = {};
     Branch prev_branch;
     Branch next_branch;
     Recombination &r = a.recombinations.begin()->second;
@@ -160,7 +170,6 @@ void Scaler::add_mutation(double w, double lb, double ub) {
 }
 
 void Scaler::rescale(ARG &a, double theta) {
-    compute_deltas(a);
     compute_old_grid();
     map_mutations(a);
     compute_new_grid(theta);

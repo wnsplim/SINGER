@@ -161,6 +161,8 @@ public:
     
     deque<Interval> arena = {};
     size_t n_arena = 0;
+    size_t n_transfer_weights = 0;
+    size_t n_transfer_intervals = 0;
 
     Interval_ptr make_interval(Branch b, double tl, double tu, int init_pos);
 

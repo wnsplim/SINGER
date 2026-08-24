@@ -28,7 +28,9 @@ public:
     vector<double> scaling_factors = {};
     
     Scaler();
-    
+
+    void reset();
+
     void compute_deltas(ARG &a);
     
     void compute_old_grid();
