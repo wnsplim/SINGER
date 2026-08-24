@@ -393,11 +393,10 @@ void ARG::adjust_recombinations() {
 void ARG::approx_sample_recombinations() {
     // double n = sample_nodes.size();
     RSP_smc rsp = RSP_smc();
-    auto it = recombinations.upper_bound(0);
-    while (it->first < sequence_length) {
+    auto it = recombinations.lower_bound(start);
+    while (it->first <= end and it->first < sequence_length) {
         Recombination &r = it->second;
         if (r.pos > 0 and r.pos < sequence_length) {
-            // rsp.approx_sample_recombination(r, cut_time, n);
             rsp.approx_sample_recombination(r, cut_time);
             assert(r.start_time > 0);
             assert(r.start_time <= r.inserted_node->time);
@@ -503,7 +502,7 @@ void ARG::write_coordinates(string filename) {
     file.open(filename);
     file << std::setprecision(std::numeric_limits<double>::max_digits10) << std::fixed;
     for (auto x : coordinates) {
-        file << x << endl;
+        file << x << "\n";
     }
     return;
 }
@@ -1038,7 +1037,7 @@ void ARG::write_recombs(string filename) {
     for (auto x : recombinations) {
         Recombination &r = x.second;
         if (x.first > 0 and x.first < sequence_length) {
-            file << r.pos << " " << r.source_branch.lower_node->index << " " << r.source_branch.upper_node->index << " " << Ne*r.start_time << endl;
+            file << r.pos << " " << r.source_branch.lower_node->index << " " << r.source_branch.upper_node->index << " " << Ne*r.start_time << "\n";
         }
     }
     file.close();
@@ -1052,7 +1051,7 @@ void ARG::write_mutations(string filename) {
         double m = x.first;
         for (auto &y : x.second) {
             if (m < sequence_length and m > 0) {
-                file << m << " " << y.lower_node->index << " " << y.upper_node->index << " " << y.lower_node->get_state(m) << endl;
+                file << m << " " << y.lower_node->index << " " << y.upper_node->index << " " << y.lower_node->get_state(m) << "\n";
             }
         }
     }
