@@ -411,6 +411,7 @@ void Sampler::iterative_start() {
         random_engine.seed(random_seed);
         threader.reset();
         threader.pe->penalty = penalty;
+        threader.be->penalty = penalty;
         threader.pe->ancestral_prob = polar;
         Node_ptr n = *it;
         threader.thread(arg, n);
@@ -442,6 +443,7 @@ void Sampler::fast_iterative_start() {
         random_engine.seed(random_seed);
         Threader_smc threader = Threader_smc(bsp_c, tsp_q);
         threader.pe->penalty = penalty;
+        threader.be->penalty = penalty;
         threader.pe->ancestral_prob = polar;
         Node_ptr n = *it;
         if (arg.sample_nodes.size() > 1) {
@@ -478,6 +480,7 @@ void Sampler::recombination_climb(int num_iters, int spacing) {
         while (updated_length < spacing*arg.sequence_length) {
             Threader_smc threader = Threader_smc(bsp_c, tsp_q);
             threader.pe->penalty = penalty;
+            threader.be->penalty = penalty;
             threader.pe->ancestral_prob = polar;
             tuple<double, Branch, double> cut_point = arg.sample_recombination_cut();
             threader.internal_rethread(arg, cut_point);
@@ -504,6 +507,7 @@ void Sampler::mutation_climb(int num_iters, int spacing) {
         while (updated_length < spacing*arg.sequence_length) {
             Threader_smc threader = Threader_smc(bsp_c, tsp_q);
             threader.pe->penalty = penalty;
+            threader.be->penalty = penalty;
             threader.pe->ancestral_prob = polar;
             tuple<double, Branch, double> cut_point = arg.sample_mutation_cut();
             threader.internal_rethread(arg, cut_point);
@@ -530,6 +534,7 @@ void Sampler::fast_recombination_climb(int num_iters, int spacing) {
         while (updated_length < spacing*arg.sequence_length) {
             Threader_smc threader = Threader_smc(bsp_c, tsp_q);
             threader.pe->penalty = penalty;
+            threader.be->penalty = penalty;
             threader.pe->ancestral_prob = polar;
             tuple<double, Branch, double> cut_point = arg.sample_recombination_cut();
             threader.fast_internal_rethread(arg, cut_point);
@@ -555,6 +560,7 @@ void Sampler::fast_mutation_climb(int num_iters, int spacing) {
         while (updated_length < spacing*arg.sequence_length) {
             Threader_smc threader = Threader_smc(bsp_c, tsp_q);
             threader.pe->penalty = penalty;
+            threader.be->penalty = penalty;
             threader.pe->ancestral_prob = polar;
             tuple<double, Branch, double> cut_point = arg.sample_mutation_cut();
             threader.fast_internal_rethread(arg, cut_point);
@@ -580,6 +586,7 @@ void Sampler::terminal_sample(int num_iters) {
         srand(random_seed);
         Threader_smc threader = Threader_smc(bsp_c, tsp_q);
         threader.pe->penalty = penalty;
+        threader.be->penalty = penalty;
         threader.pe->ancestral_prob = polar;
         tuple<int, Branch, double> cut_point = arg.sample_terminal_cut();
         threader.terminal_rethread(arg, cut_point);
@@ -602,6 +609,7 @@ void Sampler::fast_terminal_sample(int num_iters) {
         srand(random_seed);
         Threader_smc threader = Threader_smc(bsp_c, tsp_q);
         threader.pe->penalty = penalty;
+        threader.be->penalty = penalty;
         threader.pe->ancestral_prob = polar;
         tuple<double, Branch, double> cut_point = arg.sample_terminal_cut();
         threader.fast_terminal_rethread(arg, cut_point);
@@ -627,6 +635,7 @@ void Sampler::internal_sample(int num_iters, int spacing) {
         while (updated_length < spacing*arg.sequence_length) {
             threader.reset();
             threader.pe->penalty = penalty;
+            threader.be->penalty = penalty;
             threader.pe->ancestral_prob = polar;
             tuple<double, Branch, double> cut_point = arg.sample_internal_cut();
             threader.internal_rethread(arg, cut_point);
@@ -659,6 +668,7 @@ void Sampler::fast_internal_sample(int num_iters, int spacing) {
         while (updated_length < spacing*arg.sequence_length) {
             Threader_smc threader = Threader_smc(bsp_c, tsp_q);
             threader.pe->penalty = penalty;
+            threader.be->penalty = penalty;
             threader.pe->ancestral_prob = polar;
             tuple<double, Branch, double> cut_point = arg.sample_internal_cut();
             threader.fast_internal_rethread(arg, cut_point);
@@ -730,6 +740,7 @@ void Sampler::resume_fast_internal_sample(int num_iters, int spacing) {
         while (updated_length < spacing*arg.sequence_length) {
             Threader_smc threader = Threader_smc(bsp_c, tsp_q);
             threader.pe->penalty = penalty;
+            threader.be->penalty = penalty;
             threader.pe->ancestral_prob = polar;
             tuple<double, Branch, double> cut_point = arg.sample_internal_cut();
             threader.fast_internal_rethread(arg, cut_point);

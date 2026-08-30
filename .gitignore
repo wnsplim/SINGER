@@ -27,6 +27,7 @@ venv/
 # Lab
 laboratory/
 
+# Binary & releases
 SINGER/SINGER/singer
 SINGER/SINGER/singer_debug
 releases/singer

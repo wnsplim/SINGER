@@ -554,9 +554,8 @@ void TSP::compute_null_emit_probs(double theta, Node *query_node) {
 }
 
 void TSP::compute_mut_emit_probs(double theta, double bin_size, vector<double> &mut_set, Node *query_node) {
-    compute_emissions(mut_set, curr_branch, query_node);
     for (int i = 0; i < dim; i++) {
-        mut_emit_probs[i] = eh->emit(curr_branch, curr_intervals[i]->time, theta, bin_size, emissions, query_node);
+        mut_emit_probs[i] = eh->mut_emit(curr_branch, curr_intervals[i]->time, theta, bin_size, mut_set, query_node);
     }
 }
 
