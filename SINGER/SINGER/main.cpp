@@ -22,7 +22,7 @@ int main(int argc, const char * argv[]) {
     double polar = 0.5;
     int scaling_rep = 5;
     int scaling_bin = 100;
-    double epsilon_hmm = 0.1;
+    double epsilon_hmm = 0.001;
     double epsilon_psmc = 0.05;
     int ploidy = 2;
     int seed = 42;

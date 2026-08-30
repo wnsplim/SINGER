@@ -7,102 +7,137 @@
 
 #include "approx_coalescent_calculator.hpp"
 
-approx_coalescent_calculator::approx_coalescent_calculator(double t) {
-    cut_time = t;
+approx_coalescent_calculator::approx_coalescent_calculator(double x) {
+    cut_time = x;
+    t.push_back(cut_time);
 }
 
 approx_coalescent_calculator::~approx_coalescent_calculator() {}
 
 void approx_coalescent_calculator::start(set<Branch> &branches) {
-    for (auto &x : branches) {
-        if (x.upper_node->time > cut_time and x.lower_node->time <= cut_time) {
-            n0 += 1;
+    for (const Branch &b : branches) {
+        if (b.lower_node->time > cut_time) {
+            t.push_back(b.lower_node->time);
         }
     }
+    sort(t.begin(), t.end());
+    rebuild_from = 0;
 }
 
 void approx_coalescent_calculator::start(Tree &tree) {
     for (auto &x : tree.parents) {
-        if (x.second->time > cut_time and x.first->time <= cut_time) {
-            n0 += 1;
+        if (x.second->time > cut_time and x.first->time > cut_time) {
+            t.push_back(x.first->time);
         }
     }
+    sort(t.begin(), t.end());
+    rebuild_from = 0;
 }
 
 void approx_coalescent_calculator::update(Recombination &r) {
-    if (r.deleted_node->time > cut_time) {
-        n0 -= 1;
+    double t_old = r.deleted_node->time;
+    double t_new = r.inserted_node->time;
+    if (t_old > cut_time) {
+        auto it = lower_bound(t.begin(), t.end(), t_old);
+        if (it != t.end() and *it == t_old) {
+            rebuild_from = min(rebuild_from, (int) (it - t.begin()) - 1);
+            t.erase(it);
+        }
     }
-    if (r.inserted_node->time > cut_time) {
-        n0 += 1;
+    if (t_new > cut_time) {
+        auto it = lower_bound(t.begin(), t.end(), t_new);
+        rebuild_from = min(rebuild_from, (int) (it - t.begin()) - 1);
+        t.insert(it, t_new);
     }
 }
 
-pair<double, double> approx_coalescent_calculator::compute_time_weights(double x, double y) {
-    if (x == y) { // no need to compute when point mass
-        return {x, 0};
+void approx_coalescent_calculator::refresh() {
+    int m = (int) t.size();
+    if (rebuild_from >= m - 1 and (int) Lam.size() == m) {
+        return;
     }
-    double t, w, p, q;
-    p = prob(x, y);
-    t = find_median(x, y);
-    q = p*(t - cut_time);
-    w = q*n0/2;
-    if (y - x < 0.001) {
-        t = 0.5*(x + y);
+    int j0 = max(0, rebuild_from);
+    if ((int) Lam.size() != m) {
+        Lam.resize(m);
+        G.resize(m);
+        Q.resize(m);
+        j0 = 0; // k = m - j shifts for the whole array when the size changes
     }
-    assert(t >= x and t <= y);
-    assert(q >= 0);
-    return {t, w};
+    for (int j = j0; j + 1 < m; j++) {
+        double k = m - j;
+        double ea = exp(-Lam[j]);
+        double eb = exp(-(Lam[j] + k*(t[j+1] - t[j])));
+        Lam[j+1] = Lam[j] + k*(t[j+1] - t[j]);
+        G[j+1] = G[j] + (ea - eb)/k;
+        Q[j+1] = Q[j] + ((t[j] - cut_time)*ea - (t[j+1] - cut_time)*eb)/k + (ea - eb)/k/k;
+    }
+    double ez = exp(-Lam[m-1]);
+    tail_G = ez;
+    tail_Q = (t[m-1] - cut_time)*ez + ez;
+    first_moment = G[m-1] + tail_G;
+    rebuild_from = m;
 }
 
-void approx_coalescent_calculator::compute_first_moment() {
-    first_moment = 2.0/n0;
+void approx_coalescent_calculator::compute_first_moment() {}
+
+void approx_coalescent_calculator::at(double x, double &g, double &q) {
+    int m = (int) t.size();
+    if (isinf(x)) {
+        g = G[m-1] + tail_G;
+        q = Q[m-1] + tail_Q;
+        return;
+    }
+    int j = (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
+    double k = m - j;
+    double ea = exp(-Lam[j]);
+    double ex = exp(-(Lam[j] + k*(x - t[j])));
+    g = G[j] + (ea - ex)/k;
+    q = Q[j] + ((t[j] - cut_time)*ea - (x - cut_time)*ex)/k + (ea - ex)/k/k;
 }
 
 double approx_coalescent_calculator::prob(double x, double y) {
-    double p1 = prob_integral(x);
-    double p2 = prob_integral(y);
-    return max(p2 - p1, 0.0);
-}
-
-double approx_coalescent_calculator::prob_integral(double x) {
-    x -= cut_time;
-    if (n0 == 1) {
-        return 1 - exp(-x);
-    }
-    double v = n0 + (1 - n0)*exp(-0.5*x);
-    double p = -2*log(v) -2*n0/v;
-    p = p/(1 - n0)/(1 - n0);
-    assert(!isnan(p));
-    return p;
+    refresh();
+    double gx, qx, gy, qy;
+    at(x, gx, qx);
+    at(y, gy, qy);
+    return max(gy - gx, 0.0);
 }
 
 double approx_coalescent_calculator::find_median(double x, double y) {
+    return compute_time_weights(x, y).first;
+}
+
+pair<double, double> approx_coalescent_calculator::compute_time_weights(double x, double y) {
     if (x == y) {
-        return x;
+        return {x, 0};
     }
-    if (y - x <= 0.01) {
-        return 0.5*(x + y);
+    refresh();
+    int m = (int) t.size();
+    int j = (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
+    double dl = 0; // referenced to x so the exponential factors out and cannot underflow
+    double P = 0, Q1 = 0;
+    double a = x;
+    while (a < y and j < m) {
+        double k = m - j;
+        double b = (j + 1 < m) ? min(t[j+1], y) : y;
+        double ea = exp(-dl);
+        if (isinf(b)) {
+            P += ea/k;
+            Q1 += ((a - x)*ea)/k + ea/k/k;
+            break;
+        }
+        double eb = exp(-(dl + k*(b - a)));
+        P += (ea - eb)/k;
+        Q1 += ((a - x)*ea - (b - x)*eb)/k + (ea - eb)/k/k;
+        dl += k*(b - a);
+        a = b;
+        j += 1;
     }
-    if (n0 == 1) {
-        double q = 0.5*(exp(-x) + exp(-y));
-        double t = -log(q);
-        assert(t >= x and t <= y);
-        return t;
+    double time = x + Q1/P;
+    double w = exp(-Lam[j < m ? j : m-1])*((x - cut_time)*P + Q1)/first_moment;
+    if (y - x < 0.001) {
+        time = 0.5*(x + y);
+        w = (time - cut_time)*prob(x, y)/first_moment;
     }
-    x -= cut_time;
-    y -= cut_time;
-    double z = 0;
-    double nx = n0 + (1 - n0)*exp(-0.5*x);
-    double ny = n0 + (1 - n0)*exp(-0.5*y);
-    double nm = sqrt(nx*ny);
-    z = 2*log(n0 - 1) - 2*log(n0 - nm);
-    if (isinf(y)) {
-        z = x + 1;
-    }
-    if (z < x or z > y) {
-        z = 0.5*(x + y);
-    }
-    z += cut_time;
-    return z;
+    return {time, w};
 }
