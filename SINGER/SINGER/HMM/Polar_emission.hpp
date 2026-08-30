@@ -18,7 +18,7 @@ class Polar_emission : public Emission {
     
 public:
     
-    double penalty = 0.01;
+    double penalty = 0.1;
     double ancestral_prob = 0.5;
     double root_reward = 1;
     

@@ -70,10 +70,25 @@ double Polar_emission::mut_emit(Branch &branch, double time, double theta, doubl
     double ll = time - branch.lower_node->time;
     double lu = branch.upper_node->time - time;
     double l0 = time - node->time;
+    double u0 = ll*theta/bin_size;
+    double u1 = isinf(lu) ? 1.0 : lu*theta/bin_size;
+    double u2 = l0*theta/bin_size;
+    double uo = isinf(lu) ? 1.0 : (ll + lu)*theta/bin_size;
+    double pen[4] = {1.0, penalty, penalty*penalty, penalty*penalty*penalty};
+    bool at_root = branch.upper_node->index == -1;
     for (double m : mut_set) {
-        get_diff(m, branch, node);
-        emit_prob *= mut_prob(theta, bin_size, ll, lu, l0, diff[0], diff[1], diff[2]);
-        old_prob *= mut_prob(theta*(ll + lu), bin_size, diff[3]);
+        int sl = (int) branch.lower_node->get_state(m);
+        int su = (int) branch.upper_node->get_state(m);
+        int s0 = (int) node->get_state(m);
+        int base = abs(sl - su);
+        int k0 = sl + su + s0;
+        double t0 = (sl ? u0 : 1.0)*(su ? u1 : 1.0)*(s0 ? u2 : 1.0)*pen[k0 - base];
+        double t1 = (sl ? 1.0 : u0)*(su ? 1.0 : u1)*(s0 ? 1.0 : u2)*pen[3 - k0 - base];
+        emit_prob *= t0 + t1;
+        if (base) {
+            old_prob *= uo;
+        }
+        root_reward = (at_root and k0 < 2 and sl == 1) ? ancestral_prob/(1 - ancestral_prob) : 1;
     }
     if (!isinf(lu)) {
        emit_prob *= null_prob(theta*l0);
