@@ -26,3 +26,12 @@ venv/
 
 # Lab
 laboratory/
+
+SINGER/SINGER/singer
+SINGER/SINGER/singer_debug
+releases/singer
+releases/singer_debug
+releases/singer_master
+releases/convert_to_tskit
+releases/convert_to_tskit.py
+releases/singer-*-beta-*/
