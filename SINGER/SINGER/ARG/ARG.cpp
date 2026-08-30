@@ -577,6 +577,11 @@ void ARG::impute(map<double, Branch> &new_joining_branches, map<double, Branch> 
     double m = 0;
     Branch joining_branch = Branch();
     Branch added_branch = Branch();
+    Branch table_joining = Branch();
+    Branch table_added = Branch();
+    double table_theta = -1;
+    double p[8];
+    int bi = get_index(start);
     while (add_it->first < end) {
         added_branch = add_it->second;
         if (join_it->first == add_it->first) {
@@ -586,9 +591,40 @@ void ARG::impute(map<double, Branch> &new_joining_branches, map<double, Branch> 
         add_it++;
         while (*mut_it < add_it->first) {
             m = *mut_it;
-            map_mutation(m, joining_branch, added_branch);
+            while (coordinates[bi + 1] <= m) {
+                bi++;
+            }
+            double unit_theta = thetas[bi]/(coordinates[bi + 1] - coordinates[bi]);
+            if (unit_theta != table_theta or joining_branch != table_joining or added_branch != table_added) {
+                joining_state_table(joining_branch, added_branch, unit_theta, p);
+                table_theta = unit_theta;
+                table_joining = joining_branch;
+                table_added = added_branch;
+            }
+            map_mutation(m, joining_branch, added_branch, p);
             mut_it++;
         }
+    }
+}
+
+void ARG::joining_state_table(const Branch &joining_branch, const Branch &added_branch, double unit_theta, double *p) {
+    double tm = added_branch.upper_node->time;
+    double ll = tm - joining_branch.lower_node->time;
+    double lu = joining_branch.upper_node->time - tm;
+    double l0 = tm - added_branch.lower_node->time;
+    double u0 = ll*unit_theta;
+    double u1 = isinf(lu) ? 1.0 : lu*unit_theta;
+    double u2 = l0*unit_theta;
+    double w0 = isinf(lu) ? ancestral_prob : 1.0;
+    double w1 = isinf(lu) ? 1 - ancestral_prob : 1.0;
+    double pen[4] = {1.0, penalty, penalty*penalty, penalty*penalty*penalty};
+    for (int c = 0; c < 8; c++) {
+        int sl = c & 1, su = (c >> 1) & 1, s0 = (c >> 2) & 1;
+        int base = abs(sl - su);
+        int k0 = sl + su + s0;
+        double t0 = w0*(sl ? u0 : 1.0)*(su ? u1 : 1.0)*(s0 ? u2 : 1.0)*pen[k0 - base];
+        double t1 = w1*(sl ? 1.0 : u0)*(su ? 1.0 : u1)*(s0 ? 1.0 : u2)*pen[3 - k0 - base];
+        p[c] = t1/(t0 + t1);
     }
 }
 
@@ -609,17 +645,14 @@ void ARG::map_mutations(double x, double y) {
     }
 }
 
-void ARG::map_mutation(double x, Branch joining_branch, Branch added_branch) {
+void ARG::map_mutation(double x, Branch joining_branch, Branch added_branch, const double *joining_state_prob) {
     double sl, su, s0, sm;
     Branch new_branch;
     sl = joining_branch.lower_node->get_state(x);
     su = joining_branch.upper_node->get_state(x);
     s0 = added_branch.lower_node->get_state(x);
-    if (sl + su + s0 > 1) {
-        sm = 1;
-    } else {
-        sm = 0;
-    }
+    int c = ((int) sl) | (((int) su) << 1) | (((int) s0) << 2);
+    sm = uniform_random() < joining_state_prob[c] ? 1 : 0;
     added_branch.upper_node->write_state(x, sm);
     if (sl != su) {
         mutation_branches[x].erase(joining_branch);
