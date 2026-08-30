@@ -473,7 +473,7 @@ int ARG::count_incompatibility() {
 
 int ARG::count_flipping() {
     int count = 0;
-    for (auto x : mutation_branches) {
+    for (auto &x : mutation_branches) {
         set<Branch> &branches = x.second;
         if (branches.size() > 1 and branches.rbegin()->upper_node == root.get()) {
             count += 1;

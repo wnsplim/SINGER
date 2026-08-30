@@ -73,7 +73,9 @@ public:
     vector<double> mut_emit_probs = {};
     int sample_index = -1;
     vector<double> trace_back_probs = {};
-    vector<vector<double>> forward_probs = {};
+    vector<double> forward_probs = {};
+    vector<size_t> row_starts = {0};
+    size_t n_used = 0;
     
     // states after pruning:
     bool states_change = false;
@@ -81,11 +83,17 @@ public:
     
     size_t n_rows = 0;
 
+    double *row(int i) { return forward_probs.data() + row_starts[i]; }
+
+    size_t row_size(int i) { return row_starts[i + 1] - row_starts[i]; }
+
     approx_BSP();
 
     ~approx_BSP();
 
     void push_row(const vector<double> &v);
+
+    void push_row(int n);
 
     void reset();
 

@@ -46,27 +46,31 @@ static typename V::value_type::second_type &keyed_lookup(V &v, int key) {
 approx_BSP::approx_BSP() {}
 
 approx_BSP::~approx_BSP() {
-    vector<vector<double>>().swap(forward_probs);
+    vector<double>().swap(forward_probs);
+    vector<size_t>().swap(row_starts);
     vector<pair<int, vector<Interval_ptr>>>().swap(state_spaces);
     vector<pair<int, vector<double>>>().swap(times);
     vector<pair<int, vector<double>>>().swap(weights);
 }
 
-void approx_BSP::push_row(const vector<double> &v) {
-    if (n_rows < forward_probs.size()) {
-        vector<double> &row = forward_probs[n_rows];
-        if (row.capacity() < v.size()) {
-            row.reserve(max(v.size(), row.capacity() + row.capacity()/2));
-        }
-        row.assign(v.begin(), v.end());
-    } else {
-        forward_probs.push_back(v);
+void approx_BSP::push_row(int n) {
+    if (n_used + n > forward_probs.size()) {
+        forward_probs.resize(max(n_used + n, 2*forward_probs.size() + n));
     }
+    n_used += n;
+    row_starts.push_back(n_used);
     n_rows++;
+}
+
+void approx_BSP::push_row(const vector<double> &v) {
+    push_row((int) v.size());
+    copy(v.begin(), v.end(), row((int) n_rows - 1));
 }
 
 void approx_BSP::reset() {
     n_rows = 0;
+    n_used = 0;
+    row_starts.assign(1, 0);
     curr_index = 0;
     state_spaces.assign(1, {INT_MAX, {}});
     times.assign(1, {INT_MAX, {}});
@@ -95,7 +99,7 @@ void approx_BSP::reset() {
 }
 
 void approx_BSP::reserve_memory(int length) {
-    forward_probs.reserve(length);
+    row_starts.reserve(length + 1);
 }
 
 void approx_BSP::start(set<Branch> &branches, double t) {
@@ -186,7 +190,7 @@ void approx_BSP::forward(double rho) {
     curr_index += 1;
     {
         const double *rp = recomb_probs.data();
-        const double *fp = forward_probs[curr_index - 1].data();
+        const double *fp = row(curr_index - 1);
         int n = (int) recomb_probs.size();
         double a0 = 0, a1 = 0, a2 = 0, a3 = 0;
         int k = 0;
@@ -199,9 +203,9 @@ void approx_BSP::forward(double rho) {
         }
         recomb_sum = (a0 + a1) + (a2 + a3);
     }
-    push_row(recomb_probs);
-    double *curr_probs = forward_probs[curr_index].data();
-    const double *prev_probs = forward_probs[curr_index - 1].data();
+    push_row(dim);
+    double *curr_probs = row(curr_index);
+    const double *prev_probs = row(curr_index - 1);
     const double *rprobs = recomb_probs.data();
     const double *rweights = recomb_weights.data();
     for (int i = 0; i < dim; i++) {
@@ -244,7 +248,7 @@ void approx_BSP::null_emit(double theta, Node *query_node) {
     prev_theta = theta;
     prev_node = query_node;
     double ws = 0;
-    double *curr_probs = forward_probs[curr_index].data();
+    double *curr_probs = row(curr_index);
     const double *emit_probs = null_emit_probs.data();
     double s0 = 0, s1 = 0, s2 = 0, s3 = 0;
     int i = 0;
@@ -276,7 +280,7 @@ void approx_BSP::null_emit(double theta, Node *query_node) {
 void approx_BSP::mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node) {
     compute_mut_emit_probs(theta, bin_size, mut_set, query_node);
     double ws = 0;
-    double *curr_probs = forward_probs[curr_index].data();
+    double *curr_probs = row(curr_index);
     const double *emit_probs = mut_emit_probs.data();
     double s0 = 0, s1 = 0, s2 = 0, s3 = 0;
     int i = 0;
@@ -483,10 +487,10 @@ void approx_BSP::sanity_check(Recombination &r) {
     for (int i = 0; i < curr_intervals.size(); i++) {
         const Interval_ptr& interval = curr_intervals[i];
         if (interval->lb == interval->ub and interval->lb == r.inserted_node->time and interval->branch != r.target_branch) {
-            forward_probs[curr_index][i] = 0;
+            row(curr_index)[i] = 0;
         }
         if (interval->lb == interval->ub and interval->lb == r.inserted_node->time and interval->branch == r.target_branch and interval->node != r.inserted_node) {
-            forward_probs[curr_index][i] = 0;
+            row(curr_index)[i] = 0;
         }
     }
 }
@@ -575,7 +579,7 @@ void approx_BSP::process_interval(Recombination &r, int i) {
 void approx_BSP::process_source_interval(Recombination &r, int i) {
     double w1, w2, lb, ub = 0;
     Interval_ptr prev_interval = curr_intervals[i];
-    double p = forward_probs[curr_index - 1][i];
+    double p = row(curr_index - 1)[i];
     double point_time = r.source_branch.upper_node->time;
     double break_time = r.start_time;
     Branch next_branch;
@@ -618,7 +622,7 @@ void approx_BSP::process_source_interval(Recombination &r, int i) {
 void approx_BSP::process_target_interval(Recombination &r, int i) {
     double w0, w1, w2, lb, ub = 0;
     Interval_ptr prev_interval = curr_intervals[i];
-    double p = forward_probs[curr_index - 1][i];
+    double p = row(curr_index - 1)[i];
     double join_time = r.inserted_node->time;
     Branch next_branch;
     Interval_info next_interval;
@@ -675,7 +679,7 @@ void approx_BSP::process_target_interval(Recombination &r, int i) {
 void approx_BSP::process_other_interval(Recombination &r, int i) {
     double lb, ub = 0;
     Interval_ptr prev_interval = curr_intervals[i];
-    double p = forward_probs[curr_index - 1][i];
+    double p = row(curr_index - 1)[i];
     if (prev_interval->branch != r.source_sister_branch and prev_interval->branch != r.source_parent_branch) {
         // in other words, not affected by recombination
         if (prev_interval->full(cut_time)) {
@@ -740,11 +744,12 @@ void approx_BSP::simplify(map<double, Branch> &joining_branches) {
 
 Interval_ptr approx_BSP::sample_curr_interval(int x) {
     vector<Interval_ptr > &intervals = get_state_space(x);
-    double ws = accumulate(forward_probs[x].begin(), forward_probs[x].end(), 0.0);
+    const double *fx = row(x);
+    double ws = accumulate(fx, fx + row_size(x), 0.0);
     double q = random();
     double w = ws*q;
     for (int i = 0; i < intervals.size(); i++) {
-        w -= forward_probs[x][i];
+        w -= fx[i];
         if (w <= 0) {
             sample_index = i;
             return intervals[i];
@@ -764,7 +769,7 @@ Interval_ptr approx_BSP::sample_prev_interval(int x) {
     double rb = 0;
     for (int i = 0; i < intervals.size(); i++) {
         rb = get_recomb_prob(rho, prev_times[i]);
-        w -= rb*forward_probs[x][i];
+        w -= rb*row(x)[i];
         if (w <= 0) {
             sample_index = i;
             return intervals[i];
@@ -821,7 +826,7 @@ int approx_BSP::trace_back_helper(Interval_ptr interval, int x) {
             shrinkage = 1;
         } else {
             recomb_prob = get_recomb_prob(rhos[x - 1], t);
-            non_recomb_prob = (1 - recomb_prob)*forward_probs[x - 1][sample_index];
+            non_recomb_prob = (1 - recomb_prob)*row(x - 1)[sample_index];
             all_prob = non_recomb_prob + recomb_sum*w*recomb_prob/weight_sum;
             shrinkage = non_recomb_prob/all_prob;
             assert(shrinkage >= 0 and shrinkage <= 1);
