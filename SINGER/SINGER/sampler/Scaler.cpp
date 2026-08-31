@@ -50,7 +50,7 @@ void Scaler::compute_deltas(ARG &a) {
     prev_branch = *(r.inserted_branches.rbegin());
     root_start[prev_branch.lower_node] = 0;
     r_it = next(a.recombinations.begin());
-    while (next(r_it)->first < a.sequence_length) {
+    while (next(r_it) != a.recombinations.end()) {
         Recombination &r = r_it->second;
         prev_branch = *r.deleted_branches.rbegin();
         next_branch = *r.inserted_branches.rbegin();
