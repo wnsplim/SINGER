@@ -12,6 +12,8 @@ int main(int argc, const char * argv[]) {
     bool fast = false;
     bool resume = false;
     bool debug = false;
+    bool no_marginalise = false;
+    bool no_discount = false;
     double r = -1, m = -1, Ne = -1;
     int num_iters = 0;
     int spacing = 1;
@@ -34,6 +36,20 @@ int main(int argc, const char * argv[]) {
                 exit(1);
             }
             fast = true;
+        }
+        else if (arg == "-no_marginalise") {
+            if (i + 1 < argc && argv[i+1][0] != '-') {
+                cerr << "Error: -no_marginalise flag doesn't take any value. " << endl;
+                exit(1);
+            }
+            no_marginalise = true;
+        }
+        else if (arg == "-no_discount") {
+            if (i + 1 < argc && argv[i+1][0] != '-') {
+                cerr << "Error: -no_discount flag doesn't take any value. " << endl;
+                exit(1);
+            }
+            no_discount = true;
         }
         else if (arg == "-resume") {
             if (i + 1 < argc && argv[i+1][0] != '-') {
@@ -318,6 +334,8 @@ int main(int argc, const char * argv[]) {
     sampler.set_precision(epsilon_hmm, epsilon_psmc);
     sampler.set_input_file_prefix(input_filename);
     sampler.set_output_file_prefix(output_prefix);
+    sampler.marginalise_missing = !no_marginalise;
+    sampler.discount_unassayed = !no_discount;
     sampler.fast_mode = fast;
     sampler.random_seed = seed;
     sampler.start = start_pos;

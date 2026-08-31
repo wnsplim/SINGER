@@ -175,6 +175,7 @@ void Threader_smc::set_check_points(ARG &a) {
 }
 
 void Threader_smc::run_pruner(ARG &a) {
+    pruner.any_missing = a.any_missing;
     pruner.prune_arg(a);
 }
 
@@ -198,6 +199,7 @@ void Threader_smc::run_BSP(ARG &a) {
     }
     double curr_rho = a.thetas[start_index]/(a.coordinates[start_index + 1] - a.coordinates[start_index]);
     double p_tree = branch_product(a.start_tree, pe->penalty, curr_rho);
+    pe->any_missing = a.any_missing;
     for (int i = start_index; i < end_index; i++) {
         if (a.coordinates[i] == query_it->first) {
             query_node = query_it->second.lower_node;
@@ -221,7 +223,7 @@ void Threader_smc::run_BSP(ARG &a) {
             p_tree = branch_product(tree, pe->penalty, rho);
             curr_rho = rho;
         }
-        pe->set_tree_product(pe->penalty, rho, p_tree, w);
+        pe->set_tree_product(pe->penalty, rho, p_tree, called_width(query_node, a, i));
         mut_set.clear();
         while (*mut_it < a.coordinates[i + 1]) {
             mut_set.push_back(*mut_it);
@@ -261,6 +263,7 @@ void Threader_smc::run_fast_BSP(ARG &a) {
     }
     double curr_rho = a.thetas[start_index]/(a.coordinates[start_index + 1] - a.coordinates[start_index]);
     double p_tree = branch_product(a.start_tree, pe->penalty, curr_rho);
+    pe->any_missing = a.any_missing;
     for (int i = start_index; i < end_index; i++) {
         if (a.coordinates[i] == query_it->first) {
             query_node = query_it->second.lower_node;
@@ -289,7 +292,7 @@ void Threader_smc::run_fast_BSP(ARG &a) {
             p_tree = branch_product(tree, pe->penalty, rho);
             curr_rho = rho;
         }
-        pe->set_tree_product(pe->penalty, rho, p_tree, w);
+        pe->set_tree_product(pe->penalty, rho, p_tree, called_width(query_node, a, i));
         mut_set.clear();
         while (*mut_it < a.coordinates[i+1]) {
             mut_set.push_back(*mut_it);
@@ -328,6 +331,7 @@ void Threader_smc::run_TSP(ARG &a) {
     }
     double curr_rho = a.thetas[start_index]/(a.coordinates[start_index + 1] - a.coordinates[start_index]);
     double p_tree = branch_product(a.start_tree, be->penalty, curr_rho);
+    be->any_missing = a.any_missing;
     for (int i = start_index; i < end_index; i++) {
         if (a.coordinates[i] == query_it->first) {
             query_node = query_it->second.lower_node;
@@ -360,7 +364,7 @@ void Threader_smc::run_TSP(ARG &a) {
             p_tree = branch_product(tree, be->penalty, rho);
             curr_rho = rho;
         }
-        be->set_tree_product(be->penalty, rho, p_tree, w);
+        be->set_tree_product(be->penalty, rho, p_tree, called_width(query_node, a, i));
         mut_set.clear();
         while (*mut_it < a.coordinates[i+1]) {
             mut_set.push_back(*mut_it);

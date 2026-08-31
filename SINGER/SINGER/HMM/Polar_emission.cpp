@@ -72,10 +72,28 @@ double Polar_emission::mut_emit(Branch &branch, double time, double theta, doubl
     bool at_root = branch.upper_node->index == -1;
     double w0 = at_root ? ancestral_prob : 1.0;
     double w1 = at_root ? 1 - ancestral_prob : 1.0;
+    bool lower_any = any_missing and branch.lower_node->missing_sites.size() > 0;
+    bool query_any = any_missing and node->missing_sites.size() > 0;
     for (double m : mut_set) {
         int sl = (int) branch.lower_node->get_state(m);
         int su = (int) branch.upper_node->get_state(m);
         int s0 = (int) node->get_state(m);
+        bool ml = lower_any and branch.lower_node->is_missing(m);
+        bool m0 = query_any and node->is_missing(m);
+        if (ml or m0) {
+            double p0 = u0*penalty, p1 = u1*penalty, p2 = u2*penalty, po = uo*penalty;
+            double num = 0, den = 0;
+            for (int a = ml ? 0 : sl; a <= (ml ? 1 : sl); a++) {
+                den += (a ? w1 : w0)*((a == su) ? 1.0 : po);
+                for (int b = m0 ? 0 : s0; b <= (m0 ? 1 : s0); b++) {
+                    num += w0*((a == 0) ? 1.0 : p0)*((su == 0) ? 1.0 : p1)*((b == 0) ? 1.0 : p2)
+                         + w1*((a == 1) ? 1.0 : p0)*((su == 1) ? 1.0 : p1)*((b == 1) ? 1.0 : p2);
+                }
+            }
+            emit_prob *= num;
+            old_prob *= den;
+            continue;
+        }
         int base = abs(sl - su);
         int k0 = sl + su + s0;
         double t0 = (sl ? u0 : 1.0)*(su ? u1 : 1.0)*(s0 ? u2 : 1.0)*pen[k0 - base];

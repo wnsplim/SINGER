@@ -51,6 +51,12 @@ public:
 
     void move_iterator(double m);
 
+    vector<double> missing_sites = {};
+
+    void add_missing(double pos);
+
+    bool is_missing(double pos);
+
 /*
 public:
     

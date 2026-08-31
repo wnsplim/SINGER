@@ -53,6 +53,94 @@ void Sampler::set_num_samples(int n) {
     num_samples = n;
 }
 
+int Sampler::parse_genotype(const string &field, int expected_ploidy, int *calls) {
+    size_t stop = field.find(':');
+    if (stop == string::npos) {
+        stop = field.size();
+    }
+    int n = 0;
+    size_t i = 0;
+    while (i < stop and n < expected_ploidy) {
+        size_t j = i;
+        while (j < stop and field[j] != '|' and field[j] != '/') {
+            j++;
+        }
+        if (j == i + 1 and field[i] == '0') {
+            calls[n] = 0;
+        } else if (j == i + 1 and field[i] == '1') {
+            calls[n] = 1;
+        } else {
+            calls[n] = -1;
+        }
+        n++;
+        i = j + 1;
+    }
+    return n;
+}
+
+void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vector<Node *> &leaves, int ploidy) {
+    ifstream file(prefix + ".vcf");
+    string line;
+    long long prev_pos = -1;
+    int calls[2];
+    while (getline(file, line)) {
+        if (line[0] == '#') {
+            continue;
+        }
+        istringstream iss(line);
+        string chrom, id, ref, alt, qual, filter, info, format, genotype;
+        long long pos;
+        iss >> chrom >> pos >> id >> ref >> alt >> qual >> filter >> info >> format;
+        if (pos < start_pos) {continue;}
+        if (pos > end_pos) {break;}
+        if (pos == prev_pos) {continue;}
+        if (ref.size() > 1 or alt.size() > 1 or alt == "*" or alt == ".") {
+            unassayed_site_list.push_back(pos - start_pos);
+            continue;
+        }
+        streampos old_pos = file.tellg();
+        string next_line;
+        if (getline(file, next_line)) {
+            istringstream next_iss(next_line);
+            string next_chrom;
+            long long next_pos;
+            next_iss >> next_chrom >> next_pos;
+            if (next_pos == pos and next_chrom == chrom) {
+                unassayed_site_list.push_back(pos - start_pos);
+                prev_pos = pos;
+                continue;
+            }
+            file.seekg(old_pos);
+        }
+        int individual = 0;
+        int site_missing = 0;
+        while (iss >> genotype) {
+            int n = parse_genotype(genotype, ploidy, calls);
+            for (int k = 0; k < ploidy; k++) {
+                if ((k < n ? calls[k] : -1) < 0) {
+                    site_missing += 1;
+                    if (marginalise_missing) {
+                        leaves[ploidy*individual + k]->add_missing(pos - start_pos);
+                    }
+                }
+            }
+            individual += 1;
+        }
+        missing_calls += site_missing;
+        assayed_calls += (long long) leaves.size() - site_missing;
+        if (site_missing == (int) leaves.size()) {
+            all_missing_sites += 1;
+            unassayed_site_list.push_back(pos - start_pos);
+        } else if (site_missing > 0) {
+            partially_missing_sites += 1;
+        }
+    }
+    sort(unassayed_site_list.begin(), unassayed_site_list.end());
+    cout << "missing calls: " << missing_calls << " of " << missing_calls + assayed_calls << endl;
+    cout << "all-missing sites: " << all_missing_sites
+         << " , partially-missing sites: " << partially_missing_sites << endl;
+}
+
 void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end_pos) {
     string vcf_file = prefix + ".vcf";
     ifstream file(vcf_file);
@@ -63,6 +151,7 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
     int valid_mutation = 0;
     int removed_mutation = 0;
     vector<double> genotypes = {};
+    int calls[2];
     while (getline(file, line)) {
         if (line.substr(0, 6) == "#CHROM") {
             istringstream iss(line);
@@ -91,7 +180,7 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
         if (pos < start_pos) {continue;}
         if (pos > end_pos) {break;}
         if (pos == prev_pos) {continue;} // skip multi-allelic sites
-        if (ref.size() > 1 or alt.size() > 1) {
+        if (ref.size() > 1 or alt.size() > 1 or alt == "*" or alt == ".") {
             removed_mutation += 1;
             continue;
         } // skip multi-allelic sites or structural variant
@@ -103,7 +192,7 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
             string next_chrom;
             long long next_pos;
             next_iss >> next_chrom >> next_pos;
-            if (next_pos == pos) {
+            if (next_pos == pos and next_chrom == chrom) {
                 removed_mutation += 1;
                 prev_pos = pos;
                 continue;
@@ -112,7 +201,8 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
         }
         int individual_index = 0;
         while (iss >> genotype) {
-            genotypes[individual_index] = (genotype[0] == '1');
+            int n = parse_genotype(genotype, 1, calls);
+            genotypes[individual_index] = (n > 0 and calls[0] == 1) ? 1 : 0;
             individual_index += 1;
         }
         int genotype_sum = accumulate(genotypes.begin(), genotypes.end(), 0.0);
@@ -131,6 +221,11 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
     sequence_length = end_pos - start_pos;
     cout << "valid mutations: " << valid_mutation << endl;
     cout << "removed mutations: " << removed_mutation << endl;
+    vector<Node *> leaves;
+    for (const Node_ptr &n : sample_nodes) {
+        leaves.push_back(n.get());
+    }
+    scan_missing(prefix, start_pos, end_pos, leaves, 1);
 }
 
 void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
@@ -143,6 +238,7 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
     int valid_mutation = 0;
     int removed_mutation = 0;
     vector<double> genotypes = {};
+    int calls[2];
     while (getline(file, line)) {
         if (line.substr(0, 6) == "#CHROM") {
             istringstream iss(line);
@@ -171,7 +267,7 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
         if (pos < start_pos) {continue;}
         if (pos > end_pos) {break;}
         if (pos == prev_pos) {continue;} // skip multi-allelic sites
-        if (ref.size() > 1 or alt.size() > 1) {
+        if (ref.size() > 1 or alt.size() > 1 or alt == "*" or alt == ".") {
             removed_mutation += 1;
             continue;
         } // skip multi-allelic sites or structural variant
@@ -183,7 +279,7 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
             string next_chrom;
             long long next_pos;
             next_iss >> next_chrom >> next_pos;
-            if (next_pos == pos) {
+            if (next_pos == pos and next_chrom == chrom) {
                 removed_mutation += 1;
                 prev_pos = pos;
                 continue;
@@ -192,15 +288,9 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
         }
         int individual_index = 0;
         while (iss >> genotype) {
-            if (genotype[0] == '1') {
-                genotypes[2*individual_index] = 1;
-            } else {
-                genotypes[2*individual_index] = 0;
-            }
-            if (genotype[2] == '1') {
-                genotypes[2*individual_index + 1] = 1;
-            } else {
-                genotypes[2*individual_index + 1] = 0;
+            int n = parse_genotype(genotype, 2, calls);
+            for (int k = 0; k < 2; k++) {
+                genotypes[2*individual_index + k] = (k < n and calls[k] == 1) ? 1 : 0;
             }
             individual_index += 1;
         }
@@ -257,6 +347,7 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
     int valid_mutation = 0;
     int removed_mutation = 0;
     vector<double> genotypes = {};
+    int calls[2];
     while (getline(vcf_stream, line)) {
         istringstream iss(line);
         string chrom, id, ref, alt, qual, filter, info, format, genotype;
@@ -264,7 +355,7 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
         iss >> chrom >> pos >> id >> ref >> alt >> qual >> filter >> info >> format;
         if (pos == prev_pos) {continue;} // skip multi-allelic sites
         if (pos >= end) {break;} // variant out of scope
-        if (ref.size() > 1 or alt.size() > 1) {
+        if (ref.size() > 1 or alt.size() > 1 or alt == "*" or alt == ".") {
             removed_mutation += 1;
             continue;
         } // skip multi-allelic sites or structural variant
@@ -275,7 +366,7 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
             string next_chrom;
             long long next_pos;
             next_iss >> next_chrom >> next_pos;
-            if (next_pos == pos) {
+            if (next_pos == pos and next_chrom == chrom) {
                 removed_mutation += 1;
                 prev_pos = pos;
                 continue;
@@ -287,15 +378,9 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
             if (genotypes.size() < 2*individual_index + 2) {
                 genotypes.resize(2*individual_index + 2);
             }
-            if (genotype[0] == '1') {
-                genotypes[2*individual_index] = 1;
-            } else {
-                genotypes[2*individual_index] = 0;
-            }
-            if (genotype[2] == '1') {
-                genotypes[2*individual_index + 1] = 1;
-            } else {
-                genotypes[2*individual_index + 1] = 0;
+            int n = parse_genotype(genotype, 2, calls);
+            for (int k = 0; k < 2; k++) {
+                genotypes[2*individual_index + k] = (k < n and calls[k] == 1) ? 1 : 0;
             }
             individual_index += 1;
         }
@@ -338,6 +423,11 @@ void Sampler::load_vcf(string prefix, double start, double end) {
     } else {
         naive_read_vcf(prefix, start, end);
     }
+    vector<Node *> leaves;
+    for (const Node_ptr &n : sample_nodes) {
+        leaves.push_back(n.get());
+    }
+    scan_missing(prefix, start, end, leaves, 2);
 }
 
 void Sampler::optimal_ordering() {
@@ -385,12 +475,17 @@ void Sampler::build_singleton_arg() {
     bin_size = min(bin_size, 100.0);
     Node_ptr n = *ordered_sample_nodes.begin();
     arg = ARG(Ne, sequence_length);
+    arg.any_missing = missing_calls > 0;
+    arg.unassayed_sites = unassayed_site_list;
     arg.discretize(bin_size);
     arg.build_singleton_arg(n);
     if (mut_rate > 0 and recomb_rate > 0) {
         arg.compute_rhos_thetas(recomb_rate, mut_rate);
     } else {
         arg.compute_rhos_thetas(recomb_map, mut_map);
+    }
+    if (discount_unassayed) {
+        arg.discount_unassayed();
     }
 }
 
@@ -915,10 +1010,17 @@ void Sampler::load_resume_arg() {
     coord_file = output_prefix + "_coordinates.txt";
     arg.read(node_file, branch_file, recomb_file, mut_file);
     arg.read_coordinates(coord_file);
+    vector<Node *> leaves = vector<Node *>(arg.sample_nodes.begin(), arg.sample_nodes.end());
+    scan_missing(input_prefix, start, end, leaves, 2);
+    arg.any_missing = missing_calls > 0;
+    arg.unassayed_sites = unassayed_site_list;
     if (mut_rate > 0 and recomb_rate > 0) {
         arg.compute_rhos_thetas(recomb_rate, mut_rate);
     } else {
         arg.compute_rhos_thetas(recomb_map, mut_map);
+    }
+    if (discount_unassayed) {
+        arg.discount_unassayed();
     }
 }
 

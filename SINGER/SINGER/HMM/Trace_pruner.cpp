@@ -174,6 +174,9 @@ Node *Trace_pruner::get_node_at(double x) {
 }
 
 double Trace_pruner::count_mismatch(const Branch &branch, Node *n, double m) {
+    if (any_missing and (n->is_missing(m) or branch.lower_node->is_missing(m))) {
+        return 0;
+    }
     double s0 = n->get_state(m);
     double sl = branch.lower_node->get_state(m);
     double su = branch.upper_node->get_state(m);
@@ -692,6 +695,9 @@ void Trace_pruner::remove_segment(double x, double y) {
 }
 
 double Trace_pruner::get_match_time(set<Branch> &branches, double m, Node *n) {
+    if (any_missing and n->is_missing(m)) {
+        return -1;
+    }
     double state = n->get_state(m);
     assert(state == 0 or state == 1);
     int valid_count = 0;

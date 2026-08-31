@@ -32,6 +32,8 @@ public:
     int bin_num = 0;
     double penalty = 0.1;
     double ancestral_prob = 0.5;
+    bool any_missing = false;
+    vector<double> unassayed_sites = {};
     double sequence_length = 0;
     double bin_size = 0;
     vector<double> coordinates = {};
@@ -142,6 +144,8 @@ public:
     void map_mutation(double x, Branch joining_branch, Branch added_branch, const double *joining_state_prob);
 
     void joining_state_table(const Branch &joining_branch, const Branch &added_branch, double unit_theta, double *p);
+
+    void discount_unassayed();
     
     void map_mutation(Tree tree, double x);
 

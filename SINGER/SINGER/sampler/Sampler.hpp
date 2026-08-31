@@ -69,7 +69,22 @@ public:
     void set_sequence_length(double x);
     
     void set_num_samples(int n);
-    
+
+    int parse_genotype(const string &field, int expected_ploidy, int *calls);
+
+    void scan_missing(string prefix, double start_pos, double end_pos, vector<Node *> &leaves, int ploidy);
+
+    vector<double> unassayed_site_list = {};
+
+    bool marginalise_missing = true;
+
+    bool discount_unassayed = true;
+
+    long long missing_calls = 0;
+    long long assayed_calls = 0;
+    int all_missing_sites = 0;
+    int partially_missing_sites = 0;
+
     void naive_read_vcf_haploid(string prefix, double start_pos, double end_pos);
     
     void naive_read_vcf(string prefix, double start_pos, double end_pos);

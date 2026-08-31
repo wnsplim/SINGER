@@ -580,7 +580,7 @@ void ARG::impute(map<double, Branch> &new_joining_branches, map<double, Branch> 
     Branch table_joining = Branch();
     Branch table_added = Branch();
     double table_theta = -1;
-    double p[8];
+    double p[32];
     int bi = get_index(start);
     while (add_it->first < end) {
         added_branch = add_it->second;
@@ -626,6 +626,34 @@ void ARG::joining_state_table(const Branch &joining_branch, const Branch &added_
         double t1 = w1*(sl ? 1.0 : u0)*(su ? 1.0 : u1)*(s0 ? 1.0 : u2)*pen[3 - k0 - base];
         p[c] = t1/(t0 + t1);
     }
+    if (!any_missing) {
+        return;
+    }
+    double p0 = u0*penalty, p1 = u1*penalty, p2 = u2*penalty;
+    for (int mask = 1; mask < 4; mask++) {
+        bool ml = mask & 1, m0 = mask & 2;
+        for (int c = 0; c < 8; c++) {
+            int sl = c & 1, su = (c >> 1) & 1, s0 = (c >> 2) & 1;
+            double t0 = w0*(ml or sl == 0 ? 1.0 : p0)*(su == 0 ? 1.0 : p1)*(m0 or s0 == 0 ? 1.0 : p2);
+            double t1 = w1*(ml or sl == 1 ? 1.0 : p0)*(su == 1 ? 1.0 : p1)*(m0 or s0 == 1 ? 1.0 : p2);
+            p[8*mask + c] = t1/(t0 + t1);
+        }
+    }
+}
+
+void ARG::discount_unassayed() {
+    int n = (int) coordinates.size() - 1;
+    vector<int> dropped(n, 0);
+    for (double x : unassayed_sites) {
+        if (x >= 0 and x < sequence_length) {
+            dropped[get_index(x)] += 1;
+        }
+    }
+    for (int i = 0; i < n; i++) {
+        double width = coordinates[i+1] - coordinates[i];
+        double assayed = max(0.0, width - dropped[i]);
+        thetas[i] *= assayed/width;
+    }
 }
 
 void ARG::map_mutations(double x, double y) {
@@ -648,24 +676,28 @@ void ARG::map_mutations(double x, double y) {
 void ARG::map_mutation(double x, Branch joining_branch, Branch added_branch, const double *joining_state_prob) {
     double sl, su, s0, sm;
     Branch new_branch;
-    sl = joining_branch.lower_node->get_state(x);
+    Node *lower_node = joining_branch.lower_node;
+    Node *query_node = added_branch.lower_node;
+    bool ml = any_missing and lower_node->is_missing(x);
+    bool m0 = any_missing and query_node->is_missing(x);
+    sl = lower_node->get_state(x);
     su = joining_branch.upper_node->get_state(x);
-    s0 = added_branch.lower_node->get_state(x);
-    int c = ((int) sl) | (((int) su) << 1) | (((int) s0) << 2);
+    s0 = query_node->get_state(x);
+    int c = ((int) sl) | (((int) su) << 1) | (((int) s0) << 2) | (ml ? 8 : 0) | (m0 ? 16 : 0);
     sm = uniform_random() < joining_state_prob[c] ? 1 : 0;
     added_branch.upper_node->write_state(x, sm);
     if (sl != su) {
         mutation_branches[x].erase(joining_branch);
     }
-    if (sm != sl) {
-        new_branch = Branch(joining_branch.lower_node, added_branch.upper_node);
+    if (sm != sl and !ml) {
+        new_branch = Branch(lower_node, added_branch.upper_node);
         mutation_branches[x].insert(new_branch);
     }
     if (sm != su) {
         new_branch = Branch(added_branch.upper_node, joining_branch.upper_node);
         mutation_branches[x].insert(new_branch);
     }
-    if (sm != s0) {
+    if (sm != s0 and !m0) {
         mutation_branches[x].insert(added_branch);
     }
     for (const Branch &b : mutation_branches[x]) {
@@ -702,9 +734,11 @@ void ARG::remap_mutations() {
         mut_it->second.erase(removed_branch);
         mut_it->second.erase(lower_branch);
         mut_it->second.erase(upper_branch);
-        double sl = lower_branch.lower_node->get_state(mut_it->first);
+        Node *lower_node = lower_branch.lower_node;
+        double sl = lower_node->get_state(mut_it->first);
         double su = upper_branch.upper_node->get_state(mut_it->first);
-        if (sl != su) {
+        bool ml = any_missing and lower_node->is_missing(mut_it->first);
+        if (sl != su and !ml) {
             mut_it->second.insert(joining_branch);
         }
         for (const Branch &b : mut_it->second) {

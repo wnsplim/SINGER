@@ -19,6 +19,7 @@ public:
     double crho = 0;
     double norm_scale = 1.0;
     double bin_width = 1.0;
+    bool any_missing = false;
 
     virtual double null_emit(Branch &branch, double time, double theta, Node *node) = 0;
     virtual double mut_emit(Branch &branch, double time, double theta, double bin_size, vector<double> &mut_set, Node *node) = 0;
@@ -55,6 +56,17 @@ inline double branch_product(Tree &tree, double c, double rho) {
         }
     }
     return p;
+}
+
+inline double called_width(Node *query_node, ARG &a, int i) {
+    double w = a.coordinates[i + 1] - a.coordinates[i];
+    if (!a.any_missing or query_node == nullptr or query_node->missing_sites.size() == 0) {
+        return w;
+    }
+    vector<double> &ms = query_node->missing_sites;
+    auto lo = lower_bound(ms.begin(), ms.end(), a.coordinates[i]);
+    auto hi = lower_bound(lo, ms.end(), a.coordinates[i + 1]);
+    return w - (double) (hi - lo);
 }
 
 inline bool varying_rate(ARG &a, int lo, int hi) {

@@ -24,6 +24,7 @@ public:
     double start = 0;
     double end = 0;
     double cut_time = 0;
+    bool any_missing = false;
     int band_width = 10;
     
     double length = 0;
