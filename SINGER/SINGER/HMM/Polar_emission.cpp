@@ -30,16 +30,10 @@ double Polar_emission::null_emit(Branch &branch, double time, double theta, Node
  */
 
 double Polar_emission::null_emit(Branch &branch, double time, double theta, Node *node) {
-    double emit_prob = 1;
     double ll = time - branch.lower_node->time;
     double lu = branch.upper_node->time - time;
     double l0 = time - node->time;
-    if (!isinf(lu)) {
-        emit_prob = null_prob(theta*l0);
-    } else {
-       emit_prob = null_prob(theta*(ll + l0));
-    }
-    return emit_prob;
+    return norm_ratio(ll, lu, l0);
 }
 
 /*
@@ -90,11 +84,7 @@ double Polar_emission::mut_emit(Branch &branch, double time, double theta, doubl
         }
         root_reward = (at_root and k0 < 2 and sl == 1) ? ancestral_prob/(1 - ancestral_prob) : 1;
     }
-    if (!isinf(lu)) {
-       emit_prob *= null_prob(theta*l0);
-    } else {
-       emit_prob *= null_prob(theta*(l0 + ll));
-    }
+    emit_prob *= norm_ratio(ll, lu, l0);
     emit_prob /= old_prob;
     emit_prob *= root_reward;
     emit_prob = max(emit_prob, 1e-20);

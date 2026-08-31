@@ -12,19 +12,10 @@ Binary_emission::Binary_emission() {}
 Binary_emission::~Binary_emission() {}
 
 double Binary_emission::null_emit(Branch &branch, double time, double theta, Node *node) {
-    double emit_prob = 1;
-    double old_prob = 1;
     double ll = time - branch.lower_node->time;
     double lu = branch.upper_node->time - time;
     double l0 = time - node->time;
-    emit_prob = calculate_prob(theta, 1, ll, lu, l0, 0, 0, 0);
-    if (!isinf(lu)) {
-        old_prob = calculate_prob(theta*(ll + lu), 1, 0);
-    } else {
-        old_prob = 1;
-    }
-    emit_prob /= old_prob;
-    return emit_prob;
+    return norm_ratio(ll, lu, l0);
 }
 
 double Binary_emission::mut_emit(Branch &branch, double time, double theta, double bin_size, vector<double> &mut_set, Node *node) {
@@ -51,11 +42,7 @@ double Binary_emission::mut_emit(Branch &branch, double time, double theta, doub
             old_prob *= uo;
         }
     }
-    if (!isinf(lu)) {
-        emit_prob *= calculate_prob(theta*l0, 1, 0);
-    } else {
-        emit_prob *= calculate_prob(theta*(l0 + ll), 1, 0);
-    }
+    emit_prob *= norm_ratio(ll, lu, l0);
     emit_prob /= old_prob;
     assert(emit_prob != 0);
     return emit_prob;

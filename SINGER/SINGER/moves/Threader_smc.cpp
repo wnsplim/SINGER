@@ -191,6 +191,13 @@ void Threader_smc::run_BSP(ARG &a) {
     set<Branch> deletions = {};
     set<Branch> insertions = {};
     Node *query_node = nullptr;
+    bool varying = varying_rate(a, start_index, end_index);
+    Tree tree;
+    if (varying) {
+        tree = a.start_tree;
+    }
+    double curr_rho = a.thetas[start_index]/(a.coordinates[start_index + 1] - a.coordinates[start_index]);
+    double p_tree = branch_product(a.start_tree, pe->penalty, curr_rho);
     for (int i = start_index; i < end_index; i++) {
         if (a.coordinates[i] == query_it->first) {
             query_node = query_it->second.lower_node;
@@ -200,16 +207,28 @@ void Threader_smc::run_BSP(ARG &a) {
             Recombination &r = recomb_it->second;
             recomb_it++;
             bsp.transfer(r);
+            if (varying) {
+                tree.forward_update(r);
+            } else {
+                p_tree = update_branch_product(p_tree, r, pe->penalty*curr_rho);
+            }
         } else if (a.coordinates[i] != start) {
             bsp.forward(a.rhos[i - 1]);
         }
+        double w = a.coordinates[i + 1] - a.coordinates[i];
+        double rho = a.thetas[i]/w;
+        if (rho != curr_rho) {
+            p_tree = branch_product(tree, pe->penalty, rho);
+            curr_rho = rho;
+        }
+        pe->set_tree_product(pe->penalty, rho, p_tree, w);
         mut_set.clear();
         while (*mut_it < a.coordinates[i + 1]) {
             mut_set.push_back(*mut_it);
             mut_it++;
         }
         if (mut_set.size() > 0) {
-            bsp.mut_emit(a.thetas[i], a.coordinates[i + 1] - a.coordinates[i], mut_set, query_node);
+            bsp.mut_emit(a.thetas[i], w, mut_set, query_node);
         } else {
             bsp.null_emit(a.thetas[i], query_node);
         }
@@ -235,6 +254,13 @@ void Threader_smc::run_fast_BSP(ARG &a) {
     vector<double> mutations;
     vector<double> mut_set = {};
     Node *query_node = nullptr;
+    bool varying = varying_rate(a, start_index, end_index);
+    Tree tree;
+    if (varying) {
+        tree = a.start_tree;
+    }
+    double curr_rho = a.thetas[start_index]/(a.coordinates[start_index + 1] - a.coordinates[start_index]);
+    double p_tree = branch_product(a.start_tree, pe->penalty, curr_rho);
     for (int i = start_index; i < end_index; i++) {
         if (a.coordinates[i] == query_it->first) {
             query_node = query_it->second.lower_node;
@@ -249,16 +275,28 @@ void Threader_smc::run_fast_BSP(ARG &a) {
             Recombination &r = recomb_it->second;
             recomb_it++;
             fbsp.transfer(r);
+            if (varying) {
+                tree.forward_update(r);
+            } else {
+                p_tree = update_branch_product(p_tree, r, pe->penalty*curr_rho);
+            }
         } else if (a.coordinates[i] != start) {
             fbsp.forward(a.rhos[i - 1]);
         }
+        double w = a.coordinates[i+1] - a.coordinates[i];
+        double rho = a.thetas[i]/w;
+        if (rho != curr_rho) {
+            p_tree = branch_product(tree, pe->penalty, rho);
+            curr_rho = rho;
+        }
+        pe->set_tree_product(pe->penalty, rho, p_tree, w);
         mut_set.clear();
         while (*mut_it < a.coordinates[i+1]) {
             mut_set.push_back(*mut_it);
             mut_it++;
         }
         if (mut_set.size() > 0) {
-            fbsp.mut_emit(a.thetas[i], a.coordinates[i+1] - a.coordinates[i], mut_set, query_node);
+            fbsp.mut_emit(a.thetas[i], w, mut_set, query_node);
         } else {
             fbsp.null_emit(a.thetas[i], query_node);
         }
@@ -283,6 +321,13 @@ void Threader_smc::run_TSP(ARG &a) {
     Branch next_branch = start_branch;
     Node *query_node = nullptr;
     vector<double> mut_set = {};
+    bool varying = varying_rate(a, start_index, end_index);
+    Tree tree;
+    if (varying) {
+        tree = a.start_tree;
+    }
+    double curr_rho = a.thetas[start_index]/(a.coordinates[start_index + 1] - a.coordinates[start_index]);
+    double p_tree = branch_product(a.start_tree, be->penalty, curr_rho);
     for (int i = start_index; i < end_index; i++) {
         if (a.coordinates[i] == query_it->first) {
             query_node = query_it->second.lower_node;
@@ -296,6 +341,11 @@ void Threader_smc::run_TSP(ARG &a) {
             Recombination &r = recomb_it->second;
             recomb_it++;
             tsp.transfer(r, prev_branch, next_branch);
+            if (varying) {
+                tree.forward_update(r);
+            } else {
+                p_tree = update_branch_product(p_tree, r, be->penalty*curr_rho);
+            }
             prev_branch = next_branch;
         } else if (prev_branch != next_branch) {
             tsp.recombine(prev_branch, next_branch);
@@ -304,13 +354,20 @@ void Threader_smc::run_TSP(ARG &a) {
             double rho = a.rhos[i];
             tsp.forward(rho);
         }
+        double w = a.coordinates[i+1] - a.coordinates[i];
+        double rho = a.thetas[i]/w;
+        if (rho != curr_rho) {
+            p_tree = branch_product(tree, be->penalty, rho);
+            curr_rho = rho;
+        }
+        be->set_tree_product(be->penalty, rho, p_tree, w);
         mut_set.clear();
         while (*mut_it < a.coordinates[i+1]) {
             mut_set.push_back(*mut_it);
             mut_it++;
         }
         if (mut_set.size() > 0) {
-            tsp.mut_emit(a.thetas[i], a.coordinates[i+1] - a.coordinates[i], mut_set, query_node);
+            tsp.mut_emit(a.thetas[i], w, mut_set, query_node);
         } else {
             tsp.null_emit(a.thetas[i], query_node);
         }
