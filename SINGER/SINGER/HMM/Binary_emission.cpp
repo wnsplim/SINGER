@@ -29,6 +29,9 @@ double Binary_emission::mut_emit(Branch &branch, double time, double theta, doub
     double u2 = l0*theta/bin_size;
     double uo = isinf(lu) ? 1.0 : (ll + lu)*theta/bin_size;
     double pen[4] = {1.0, penalty, penalty*penalty, penalty*penalty*penalty};
+    bool at_root = branch.upper_node->index == -1;
+    double w0 = at_root ? ancestral_prob : 1.0;
+    double w1 = at_root ? 1 - ancestral_prob : 1.0;
     for (double m : mut_set) {
         int sl = (int) branch.lower_node->get_state(m);
         int su = (int) branch.upper_node->get_state(m);
@@ -37,7 +40,12 @@ double Binary_emission::mut_emit(Branch &branch, double time, double theta, doub
         int k0 = sl + su + s0;
         double t0 = (sl ? u0 : 1.0)*(su ? u1 : 1.0)*(s0 ? u2 : 1.0)*pen[k0 - base];
         double t1 = (sl ? 1.0 : u0)*(su ? 1.0 : u1)*(s0 ? 1.0 : u2)*pen[3 - k0 - base];
-        emit_prob *= t0 + t1;
+        if (at_root) {
+            emit_prob *= w0*t0 + w1*t1;
+            old_prob *= sl ? w1 : w0;
+        } else {
+            emit_prob *= t0 + t1;
+        }
         if (base) {
             old_prob *= uo;
         }

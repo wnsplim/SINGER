@@ -217,7 +217,7 @@ void Threader_smc::run_BSP(ARG &a) {
         }
         double w = a.coordinates[i + 1] - a.coordinates[i];
         double rho = a.thetas[i]/w;
-        if (rho != curr_rho) {
+        if (varying and rho != curr_rho) {
             p_tree = branch_product(tree, pe->penalty, rho);
             curr_rho = rho;
         }
@@ -285,7 +285,7 @@ void Threader_smc::run_fast_BSP(ARG &a) {
         }
         double w = a.coordinates[i+1] - a.coordinates[i];
         double rho = a.thetas[i]/w;
-        if (rho != curr_rho) {
+        if (varying and rho != curr_rho) {
             p_tree = branch_product(tree, pe->penalty, rho);
             curr_rho = rho;
         }
@@ -356,7 +356,7 @@ void Threader_smc::run_TSP(ARG &a) {
         }
         double w = a.coordinates[i+1] - a.coordinates[i];
         double rho = a.thetas[i]/w;
-        if (rho != curr_rho) {
+        if (varying and rho != curr_rho) {
             p_tree = branch_product(tree, be->penalty, rho);
             curr_rho = rho;
         }

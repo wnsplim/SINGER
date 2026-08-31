@@ -70,6 +70,8 @@ double Polar_emission::mut_emit(Branch &branch, double time, double theta, doubl
     double uo = isinf(lu) ? 1.0 : (ll + lu)*theta/bin_size;
     double pen[4] = {1.0, penalty, penalty*penalty, penalty*penalty*penalty};
     bool at_root = branch.upper_node->index == -1;
+    double w0 = at_root ? ancestral_prob : 1.0;
+    double w1 = at_root ? 1 - ancestral_prob : 1.0;
     for (double m : mut_set) {
         int sl = (int) branch.lower_node->get_state(m);
         int su = (int) branch.upper_node->get_state(m);
@@ -78,18 +80,19 @@ double Polar_emission::mut_emit(Branch &branch, double time, double theta, doubl
         int k0 = sl + su + s0;
         double t0 = (sl ? u0 : 1.0)*(su ? u1 : 1.0)*(s0 ? u2 : 1.0)*pen[k0 - base];
         double t1 = (sl ? 1.0 : u0)*(su ? 1.0 : u1)*(s0 ? 1.0 : u2)*pen[3 - k0 - base];
-        emit_prob *= t0 + t1;
+        if (at_root) {
+            emit_prob *= w0*t0 + w1*t1;
+            old_prob *= sl ? w1 : w0;
+        } else {
+            emit_prob *= t0 + t1;
+        }
         if (base) {
             old_prob *= uo;
         }
-        root_reward = (at_root and k0 < 2 and sl == 1) ? ancestral_prob/(1 - ancestral_prob) : 1;
     }
     emit_prob *= norm_ratio(ll, lu, l0);
     emit_prob /= old_prob;
-    emit_prob *= root_reward;
-    emit_prob = max(emit_prob, 1e-20);
-    assert(emit_prob > 0);
-    return emit_prob;
+    return max(emit_prob, 1e-20);
 }
 
 double Polar_emission::emit(Branch &branch, double time, double theta, double bin_size, vector<double> &emissions, Node *node) {

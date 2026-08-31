@@ -109,6 +109,10 @@ int main(int argc, const char * argv[]) {
                 cerr << "Error: -polar flag expects a number. " << endl;
                 exit(1);
             }
+            if (polar <= 0 or polar >= 1) {
+                cerr << "Error: -polar flag expects a number between 0 and 1. " << endl;
+                exit(1);
+            }
         }
         else if (arg == "-scaling_rep") {
             if (i + 1 >= argc || argv[i+1][0] == '-') {
