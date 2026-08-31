@@ -76,14 +76,7 @@ public:
 
     vector<double> unassayed_site_list = {};
 
-    bool marginalise_missing = true;
-
-    bool discount_unassayed = true;
-
-    long long missing_calls = 0;
-    long long assayed_calls = 0;
-    int all_missing_sites = 0;
-    int partially_missing_sites = 0;
+    bool any_missing = false;
 
     void naive_read_vcf_haploid(string prefix, double start_pos, double end_pos);
     

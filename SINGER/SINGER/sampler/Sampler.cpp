@@ -119,26 +119,19 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
             for (int k = 0; k < ploidy; k++) {
                 if ((k < n ? calls[k] : -1) < 0) {
                     site_missing += 1;
-                    if (marginalise_missing) {
-                        leaves[ploidy*individual + k]->add_missing(pos - start_pos);
-                    }
+                    leaves[ploidy*individual + k]->add_missing(pos - start_pos);
                 }
             }
             individual += 1;
         }
-        missing_calls += site_missing;
-        assayed_calls += (long long) leaves.size() - site_missing;
+        if (site_missing > 0) {
+            any_missing = true;
+        }
         if (site_missing == (int) leaves.size()) {
-            all_missing_sites += 1;
             unassayed_site_list.push_back(pos - start_pos);
-        } else if (site_missing > 0) {
-            partially_missing_sites += 1;
         }
     }
     sort(unassayed_site_list.begin(), unassayed_site_list.end());
-    cout << "missing calls: " << missing_calls << " of " << missing_calls + assayed_calls << endl;
-    cout << "all-missing sites: " << all_missing_sites
-         << " , partially-missing sites: " << partially_missing_sites << endl;
 }
 
 void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end_pos) {
@@ -475,7 +468,7 @@ void Sampler::build_singleton_arg() {
     bin_size = min(bin_size, 100.0);
     Node_ptr n = *ordered_sample_nodes.begin();
     arg = ARG(Ne, sequence_length);
-    arg.any_missing = missing_calls > 0;
+    arg.any_missing = any_missing;
     arg.unassayed_sites = unassayed_site_list;
     arg.discretize(bin_size);
     arg.build_singleton_arg(n);
@@ -484,9 +477,7 @@ void Sampler::build_singleton_arg() {
     } else {
         arg.compute_rhos_thetas(recomb_map, mut_map);
     }
-    if (discount_unassayed) {
-        arg.discount_unassayed();
-    }
+    arg.discount_unassayed();
 }
 
 void Sampler::build_void_arg() {
@@ -1012,16 +1003,14 @@ void Sampler::load_resume_arg() {
     arg.read_coordinates(coord_file);
     vector<Node *> leaves = vector<Node *>(arg.sample_nodes.begin(), arg.sample_nodes.end());
     scan_missing(input_prefix, start, end, leaves, 2);
-    arg.any_missing = missing_calls > 0;
+    arg.any_missing = any_missing;
     arg.unassayed_sites = unassayed_site_list;
     if (mut_rate > 0 and recomb_rate > 0) {
         arg.compute_rhos_thetas(recomb_rate, mut_rate);
     } else {
         arg.compute_rhos_thetas(recomb_map, mut_map);
     }
-    if (discount_unassayed) {
-        arg.discount_unassayed();
-    }
+    arg.discount_unassayed();
 }
 
 vector<string> Sampler::read_last_line(string filename) {

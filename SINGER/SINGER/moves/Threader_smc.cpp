@@ -175,7 +175,6 @@ void Threader_smc::set_check_points(ARG &a) {
 }
 
 void Threader_smc::run_pruner(ARG &a) {
-    pruner.any_missing = a.any_missing;
     pruner.prune_arg(a);
 }
 
