@@ -14,8 +14,7 @@ TSP::TSP() {
 
 TSP::~TSP() {
     vector<vector<double>>().swap(forward_probs);
-    unordered_map<Interval *, Interval *>().swap(source_interval);
-    map<int, vector<Interval *>>().swap(state_spaces);
+    vector<pair<int, vector<Interval *>>>().swap(state_spaces);
 }
 
 void TSP::set_gap(double q) {
@@ -48,6 +47,7 @@ Interval *TSP::make_interval(Branch b, double tl, double tu, int init_pos) {
     x.source_pos = 0;
     x.node = nullptr;
     x.reduction = 1.0;
+    x.source_interval = nullptr;
     x.source_weights.clear();
     x.source_intervals.clear();
     return &x;
@@ -68,8 +68,7 @@ void TSP::push_row(const vector<double> &v) {
 
 void TSP::reset() {
     state_spaces.clear();
-    state_spaces[INT_MAX] = {};
-    source_interval.clear();
+    state_spaces.push_back({INT_MAX, {}});
     n_rows = 0;
     curr_index = 0;
     curr_branch = Branch();
@@ -112,7 +111,7 @@ void TSP::start(Branch &branch, double t) {
     for (int i = 0; i < curr_intervals.size(); i++) {
         temp[i] = cc->prob(curr_intervals[i]->lb, curr_intervals[i]->ub);
     }
-    state_spaces[0] = curr_intervals;
+    set_state_space(0);
     push_row(temp);
     temp.clear();
 }
@@ -159,7 +158,7 @@ void TSP::transfer(Recombination &r, Branch &prev_branch, Branch &next_branch) {
         ub = next_branch.upper_node->time;
         generate_intervals(next_branch, lb, ub);
     }
-    state_spaces[curr_index] = curr_intervals;
+    set_state_space(curr_index);
     push_row(temp);
     temp.clear();
     set_dimensions();
@@ -179,7 +178,7 @@ void TSP::recombine(Branch &prev_branch, Branch &next_branch) {
     lower_bound = max(cut_time, next_branch.lower_node->time);
     generate_intervals(next_branch, next_branch.lower_node->time, next_branch.upper_node->time);
     push_row(temp);
-    state_spaces[curr_index] = curr_intervals;
+    set_state_space(curr_index);
     set_dimensions();
     compute_factors();
     double mass = accumulate(forward_probs[curr_index-1].begin(),
@@ -332,7 +331,7 @@ map<double, Node *> TSP::sample_joining_nodes(int start_index, vector<double> &c
         if (x == 0) {
             break;
         } if (x == interval->start_pos) {
-            if (source_interval.count(interval) > 0) {
+            if (interval->source_interval != nullptr) {
                 x -= 1;
                 interval = sample_source_interval(interval, x);
             } else {
@@ -486,7 +485,7 @@ void TSP::transfer_intervals(Recombination &r, Branch &prev_branch, Branch &next
             fill_interval_time(new_interval);
             new_interval->node = interval->node;
             new_interval->node = interval->node;
-            source_interval[new_interval] = interval;
+            new_interval->source_interval = interval;
             curr_intervals.emplace_back(new_interval);
             temp.emplace_back(p);
         }
@@ -668,10 +667,15 @@ void TSP::sanity_check(Recombination &r) {
     }
 }
 
+void TSP::set_state_space(int x) {
+    state_spaces.insert(prev(state_spaces.end()), {x, curr_intervals});
+}
+
 vector<Interval *> &TSP::get_state_space(int x) {
-    auto state_it = state_spaces.upper_bound(x);
-    state_it--;
-    return state_it->second;
+    auto it = upper_bound(state_spaces.begin(), state_spaces.end(), x,
+                          [](int k, const pair<int, vector<Interval *>> &e) { return k < e.first; });
+    --it;
+    return it->second;
 }
 
 int TSP::get_interval_index(Interval *interval, vector<Interval *> &intervals) {
@@ -681,9 +685,10 @@ int TSP::get_interval_index(Interval *interval, vector<Interval *> &intervals) {
 }
 
 int TSP::get_prev_breakpoint(int x) {
-    auto state_it = state_spaces.upper_bound(x);
-    state_it--;
-    return state_it->first;
+    auto it = upper_bound(state_spaces.begin(), state_spaces.end(), x,
+                          [](int k, const pair<int, vector<Interval *>> &e) { return k < e.first; });
+    --it;
+    return it->first;
 }
 
 Interval *TSP::sample_curr_interval(int x) {
@@ -731,8 +736,7 @@ Interval *TSP::sample_prev_interval(Interval *interval, int x) {
 }
 
 Interval *TSP::sample_source_interval(Interval *interval, int x) {
-    assert(source_interval.count(interval) > 0);
-    Interval *sample_interval = source_interval[interval];
+    Interval *sample_interval = interval->source_interval;
     vector<Interval *> &intervals = get_state_space(x);
     sample_index = get_interval_index(sample_interval, intervals);
     return sample_interval;
@@ -848,8 +852,8 @@ Interval *TSP::search_point_interval(Recombination &r) {
     }
     assert(candidate_point_intervals.size() == 2);
     Interval *test_interval = candidate_point_intervals[0];
-    while (source_interval.count(test_interval) > 0) {
-        test_interval = source_interval[test_interval];
+    while (test_interval->source_interval != nullptr) {
+        test_interval = test_interval->source_interval;
         if (test_interval->branch.upper_node == r.inserted_node or test_interval->branch.lower_node == r.inserted_node) {
             return candidate_point_intervals[1];
         }

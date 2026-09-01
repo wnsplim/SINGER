@@ -30,6 +30,7 @@ public:
     double reduction = 1.0;
     double s_lb = -1.0;
     double s_ub = -1.0;
+    Interval *source_interval = nullptr;
     
     vector<double> source_weights = {};
     vector<Interval *> source_intervals = {};

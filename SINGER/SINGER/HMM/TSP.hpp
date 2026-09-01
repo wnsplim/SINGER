@@ -79,8 +79,7 @@ public:
     int curr_index = 0;
     Branch curr_branch = Branch();
     vector<Interval *> curr_intervals = {};
-    map<int, vector<Interval *>>  state_spaces = {{INT_MAX, {}}};
-    unordered_map<Interval *, Interval *> source_interval = {};
+    vector<pair<int, vector<Interval *>>>  state_spaces = {{INT_MAX, {}}};
     
     vector<double> rhos = {}; // length: number of blocks - 1
     vector<double> thetas = {}; // length: number of blocks
@@ -155,6 +154,8 @@ public:
     
     void generate_intervals(Branch &next_branch, double lb, double ub);
     
+    void set_state_space(int x);
+
     vector<Interval *> &get_state_space(int x);
     
     int get_interval_index(Interval *interval, vector<Interval *> &intervals);
