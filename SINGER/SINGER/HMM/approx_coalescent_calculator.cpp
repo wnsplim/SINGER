@@ -61,15 +61,21 @@ void approx_coalescent_calculator::refresh() {
         Lam.resize(m);
         G.resize(m);
         Q.resize(m);
+        W.resize(m);
+        B.resize(m);
         j0 = 0; // k = m - j shifts for the whole array when the size changes
     }
     for (int j = j0; j + 1 < m; j++) {
         double k = m - j;
+        double dt = t[j+1] - t[j];
         double ea = exp(-Lam[j]);
-        double eb = exp(-(Lam[j] + k*(t[j+1] - t[j])));
-        Lam[j+1] = Lam[j] + k*(t[j+1] - t[j]);
+        double eb = exp(-(Lam[j] + k*dt));
+        Lam[j+1] = Lam[j] + k*dt;
         G[j+1] = G[j] + (ea - eb)/k;
         Q[j+1] = Q[j] + ((t[j] - cut_time)*ea - (t[j+1] - cut_time)*eb)/k + (ea - eb)/k/k;
+        double e = -expm1(-k*dt);
+        B[j+1] = B[j] + W[j]*e/k + dt/k - e/k/k;
+        W[j+1] = W[j]*(1 - e) + e/k;
     }
     double ez = exp(-Lam[m-1]);
     tail_G = ez;
@@ -105,6 +111,55 @@ double approx_coalescent_calculator::prob(double x, double y) {
 
 double approx_coalescent_calculator::find_median(double x, double y) {
     return compute_time_weights(x, y).first;
+}
+
+double approx_coalescent_calculator::surv(double x) {
+    if (isinf(x)) {
+        return 0;
+    }
+    refresh();
+    int m = (int) t.size();
+    int j = (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
+    return exp(-(Lam[j] + (m - j)*(x - t[j])));
+}
+
+double approx_coalescent_calculator::surv_inv(double p) {
+    if (p <= 0) {
+        return numeric_limits<double>::infinity();
+    }
+    refresh();
+    int m = (int) t.size();
+    double l = -log(p);
+    int j = (int) (upper_bound(Lam.begin(), Lam.begin() + m, l) - Lam.begin()) - 1;
+    j = max(j, 0);
+    return t[j] + (l - Lam[j])/(m - j);
+}
+
+double approx_coalescent_calculator::recomb_mass(double s, double v) {
+    refresh();
+    int m = (int) t.size();
+    double x = min(s, v);
+    int jx = (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
+    double kx = m - jx;
+    double dx = x - t[jx];
+    double ex = -expm1(-kx*dx);
+    double b2 = B[jx] + W[jx]*ex/kx + dx/kx - ex/kx/kx;
+    if (s > v) {
+        return b2;
+    }
+    double wx = W[jx]*(1 - ex) + ex/kx;
+    double lx = Lam[jx] + kx*dx;
+    double gx = G[jx] + (exp(-Lam[jx]) - exp(-lx))/kx;
+    double gv;
+    if (isinf(v)) {
+        gv = G[m-1] + exp(-Lam[m-1]);
+    } else {
+        int jv = (int) (upper_bound(t.begin(), t.end(), v) - t.begin()) - 1;
+        double kv = m - jv;
+        double lv = Lam[jv] + kv*(v - t[jv]);
+        gv = G[jv] + (exp(-Lam[jv]) - exp(-lv))/kv;
+    }
+    return b2 + wx*(gv - gx)*exp(lx);
 }
 
 pair<double, double> approx_coalescent_calculator::compute_time_weights(double x, double y) {

@@ -41,12 +41,20 @@ public:
 
     double find_median(double x, double y);
 
+    double surv(double x);
+
+    double surv_inv(double p);
+
+    double recomb_mass(double s, double t);
+
 private:
 
     vector<double> t = {};
     vector<double> Lam = {};
     vector<double> G = {};
     vector<double> Q = {};
+    vector<double> W = {};
+    vector<double> B = {};
     double tail_G = 0;
     double tail_Q = 0;
     int rebuild_from = 0;
