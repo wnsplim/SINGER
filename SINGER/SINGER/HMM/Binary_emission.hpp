@@ -19,7 +19,7 @@ class Binary_emission : public Emission {
 public:
     
     map<double, double> num_unmapped = {};
-    double penalty = 0.1;
+    double penalty = 0.01;
     double ancestral_prob = 0.5;
     
     vector<double> diff = vector<double>(4);
