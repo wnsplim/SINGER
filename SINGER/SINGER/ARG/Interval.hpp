@@ -28,6 +28,8 @@ public:
     int source_pos = 0;
     Node *node = nullptr;
     double reduction = 1.0;
+    double s_lb = -1.0;
+    double s_ub = -1.0;
     
     vector<double> source_weights = {};
     vector<Interval *> source_intervals = {};

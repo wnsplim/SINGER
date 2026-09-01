@@ -357,11 +357,13 @@ double TSP::non_recomb_prob(double rho, double s) {
 }
 
 void TSP::fill_interval_time(Interval *iv) {
+    iv->s_lb = cc->surv(iv->lb);
+    iv->s_ub = cc->surv(iv->ub);
     if (iv->ub - iv->lb < 1e-3) {
         iv->fill_time();
         return;
     }
-    iv->time = cc->surv_inv(0.5*(cc->surv(iv->lb) + cc->surv(iv->ub)));
+    iv->time = cc->surv_inv(0.5*(iv->s_lb + iv->s_ub));
 }
 
 double TSP::recomb_prob(double s, double t1, double t2) {
@@ -614,7 +616,7 @@ void TSP::compute_factors() {
         } else if (curr_intervals[i-1]->ub - curr_intervals[i-1]->lb < 1e-4) {
             factors[i] = 5;
         } else {
-            factors[i] = (cc->surv(curr_intervals[i]->lb) - cc->surv(curr_intervals[i]->ub))/(cc->surv(curr_intervals[i-1]->lb) - cc->surv(curr_intervals[i-1]->ub));
+            factors[i] = (curr_intervals[i]->s_lb - curr_intervals[i]->s_ub)/(curr_intervals[i-1]->s_lb - curr_intervals[i-1]->s_ub);
             factors[i] = min(factors[i], 5.0);
         }
         assert(!isnan(factors[i]) and !isinf(factors[i]));
