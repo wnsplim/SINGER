@@ -313,6 +313,8 @@ void Threader_smc::run_TSP(ARG &a) {
     tsp.reserve_memory(end_index - start_index);
     tsp.set_gap(gap);
     tsp.set_emission(be);
+    tsp.cc = make_shared<approx_coalescent_calculator>(cut_time);
+    tsp.cc->start(a.start_tree);
     Branch start_branch = new_joining_branches.begin()->second;
     tsp.start(start_branch, cut_time);
     auto recomb_it = a.recombinations.upper_bound(start);

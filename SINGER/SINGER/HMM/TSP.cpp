@@ -110,7 +110,7 @@ void TSP::start(Branch &branch, double t) {
     set_dimensions();
     compute_factors();
     for (int i = 0; i < curr_intervals.size(); i++) {
-        temp[i] = exp(-curr_intervals[i]->lb) - exp(-curr_intervals[i]->ub);
+        temp[i] = cc->prob(curr_intervals[i]->lb, curr_intervals[i]->ub);
     }
     state_spaces[0] = curr_intervals;
     push_row(temp);
@@ -123,6 +123,7 @@ void TSP::transfer(Recombination &r, Branch &prev_branch, Branch &next_branch) {
     prev_theta = -1;
     prev_node = nullptr;
     sanity_check(r);
+    cc->update(r);
     curr_index += 1;
     curr_branch = next_branch;
     lower_bound = max(cut_time, next_branch.lower_node->time);
@@ -181,19 +182,14 @@ void TSP::recombine(Branch &prev_branch, Branch &next_branch) {
     state_spaces[curr_index] = curr_intervals;
     set_dimensions();
     compute_factors();
-    double new_prob;
-    double base;
-    for (int i = 0; i < prev_intervals.size(); i++) {
-        base = recomb_prob(prev_intervals[i]->time, curr_intervals.front()->lb, curr_intervals.back()->ub);
-        for (int j = 0; j < curr_intervals.size(); j++) {
-            if (base == 0) {
-                new_prob = 1;
-            } else {
-                new_prob = recomb_prob(prev_intervals[i]->time, curr_intervals[j]->lb, curr_intervals[j]->ub)*forward_probs[curr_index-1][i]/base;
-            }
-            assert(new_prob >= 0);
-            forward_probs[curr_index][j] += new_prob + epsilon;
-        }
+    double mass = accumulate(forward_probs[curr_index-1].begin(),
+                             forward_probs[curr_index-1].begin() + prev_intervals.size(), 0.0);
+    double tot = 0;
+    for (int j = 0; j < curr_intervals.size(); j++) {
+        tot += cc->prob(curr_intervals[j]->lb, curr_intervals[j]->ub);
+    }
+    for (int j = 0; j < curr_intervals.size(); j++) {
+        forward_probs[curr_index][j] += mass*cc->prob(curr_intervals[j]->lb, curr_intervals[j]->ub)/tot;
     }
     for (int i = 0; i < forward_probs[curr_index].size(); i++) {
         assert(forward_probs[curr_index][i] >= 0);
@@ -215,13 +211,13 @@ double TSP::get_exp_quantile(double p) {
 vector<double> TSP::generate_grid(double lb, double ub) {
     assert(lb < ub);
     vector<double> points = {lb};
-    double lq = 1 - exp(-lb);
-    double uq = 1 - exp(-ub);
-    double q = uq - lq;
-    int n = ceil(q/gap);
+    double ls = cc->surv(lb);
+    double us = cc->surv(ub);
+    double q = ls - us;
+    int n = max((int) ceil((1 - us/ls)/gap), min_num);
     double l;
     for (int i = 1; i < n; i++) {
-        l = get_exp_quantile(lq + i*q/n);
+        l = cc->surv_inv(ls - i*q/n);
         points.emplace_back(l);
     }
     points.emplace_back(ub);
@@ -235,14 +231,7 @@ double TSP::recomb_cdf(double s, double t) {
     if (t == 0) {
         return 0;
     }
-    double cdf = 0;
-    double l = s - cut_time;
-    if (s > t) {
-        cdf = t + expm1(cut_time - t) - cut_time;
-    } else {
-        cdf = s + expm1(cut_time - t) - expm1(s - t) - cut_time;
-    }
-    cdf = cdf/l;
+    double cdf = cc->recomb_mass(s, t)/(s - cut_time);
     assert(!isnan(cdf));
     return cdf;
 }
@@ -367,6 +356,14 @@ double TSP::non_recomb_prob(double rho, double s) {
     return exp(-rho*(s - cut_time));
 }
 
+void TSP::fill_interval_time(Interval *iv) {
+    if (iv->ub - iv->lb < 1e-3) {
+        iv->fill_time();
+        return;
+    }
+    iv->time = cc->surv_inv(0.5*(cc->surv(iv->lb) + cc->surv(iv->ub)));
+}
+
 double TSP::recomb_prob(double s, double t1, double t2) {
     assert(t1 <= t2);
     assert(t1 >= cut_time and s >= cut_time);
@@ -374,7 +371,7 @@ double TSP::recomb_prob(double s, double t1, double t2) {
         return 0;
     }
     if (s - cut_time < 0.005) {
-        return max(epsilon, exp(-t1) - exp(-t2));
+        return max(epsilon, cc->surv(t1) - cc->surv(t2));
     }
     double pl = recomb_cdf(s, t1);
     double pu = recomb_cdf(s, t2);
@@ -433,7 +430,7 @@ void TSP::generate_intervals(Branch &next_branch, double lb, double ub) {
         }
         else {
             new_interval = make_interval(next_branch, lb, ub, curr_index);
-            new_interval->fill_time();
+            fill_interval_time(new_interval);
             curr_intervals.emplace_back(new_interval);
             temp.emplace_back(0);
             return;
@@ -446,7 +443,7 @@ void TSP::generate_intervals(Branch &next_branch, double lb, double ub) {
         l = points[i];
         u = points[i+1];
         new_interval = make_interval(next_branch, l, u, curr_index);
-        new_interval->fill_time();
+        fill_interval_time(new_interval);
         curr_intervals.emplace_back(new_interval);
         temp.emplace_back(0);
     }
@@ -484,7 +481,7 @@ void TSP::transfer_intervals(Recombination &r, Branch &prev_branch, Branch &next
             }
             assert(!isnan(p));
             new_interval = make_interval(next_branch, lb, ub, curr_index);
-            new_interval->fill_time();
+            fill_interval_time(new_interval);
             new_interval->node = interval->node;
             new_interval->node = interval->node;
             source_interval[new_interval] = interval;
@@ -516,8 +513,8 @@ double TSP::get_prop(double lb1, double ub1, double lb2, double ub2) {
     if (ub2 - lb2 < 1e-6) {
         p = 1;
     } else {
-        double p1 = exp(-lb1) - exp(-ub1);
-        double p2 = exp(-lb2) - exp(-ub2);
+        double p1 = cc->surv(lb1) - cc->surv(ub1);
+        double p2 = cc->surv(lb2) - cc->surv(ub2);
         p = p1/p2;
     }
     return p;
@@ -617,7 +614,7 @@ void TSP::compute_factors() {
         } else if (curr_intervals[i-1]->ub - curr_intervals[i-1]->lb < 1e-4) {
             factors[i] = 5;
         } else {
-            factors[i] = (exp(-curr_intervals[i]->lb) - exp(-curr_intervals[i]->ub))/(exp(-curr_intervals[i-1]->lb) - exp(-curr_intervals[i-1]->ub));
+            factors[i] = (cc->surv(curr_intervals[i]->lb) - cc->surv(curr_intervals[i]->ub))/(cc->surv(curr_intervals[i-1]->lb) - cc->surv(curr_intervals[i-1]->ub));
             factors[i] = min(factors[i], 5.0);
         }
         assert(!isnan(factors[i]) and !isinf(factors[i]));
@@ -805,7 +802,7 @@ void TSP::set_interval_constraint(Recombination &r) {
             forward_probs[curr_index-1][i] = 0; // curr_index - 1 because the index has already moved forward
         } else {
             interval->lb = max(r.start_time, interval->lb);
-            interval->fill_time();
+            fill_interval_time(interval);
         }
     }
 }
@@ -864,19 +861,12 @@ double TSP::sample_time(double lb, double ub) {
 
 double TSP::exp_median(double lb, double ub) {
     assert(lb <= ub);
-    if (isinf(ub)) {
-        return lb + 2*random();
-    }
     if (ub - lb <= 0.005) {
         return (0.45 + 0.1*random())*(ub - lb) + lb;
     }
-    if (lb > 10) {
-        return (0.45 + 0.1*random())*(ub - lb) + lb;
-    }
-    double lq = 1 - exp(-lb);
-    double uq = 1 - exp(-ub);
-    double mq = (0.45 + 0.1*random())*(uq - lq) + lq;
-    double m = -log(1 - mq);
+    double ls = cc->surv(lb);
+    double us = cc->surv(ub);
+    double m = cc->surv_inv(ls - (0.45 + 0.1*random())*(ls - us));
     assert(m >= lb and m <= ub);
     return m;
 }

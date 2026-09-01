@@ -13,6 +13,7 @@
 #include "random_utils.hpp"
 #include "Interval.hpp"
 #include "Emission.hpp"
+#include "approx_coalescent_calculator.hpp"
 
 class TSP {
     
@@ -25,6 +26,7 @@ public:
     double epsilon = 1e-7;
     set<double> check_points = {};
     shared_ptr<Emission> eh;
+    shared_ptr<approx_coalescent_calculator> cc;
     static int counter;
     
     TSP();
@@ -116,6 +118,8 @@ public:
     double psmc_prob(double rho, double s, double t1, double t2);
     
     double get_exp_quantile(double p);
+
+    void fill_interval_time(Interval *iv);
     
     vector<double> generate_grid(double lb, double ub);
     
