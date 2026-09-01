@@ -364,9 +364,7 @@ map<double, Node *> TSP::sample_joining_nodes(int start_index, vector<double> &c
 }
 
 double TSP::non_recomb_prob(double rho, double s) {
-    double l = 2*s - lower_bound - cut_time;
-    double p = exp(-rho*l);
-    return p;
+    return exp(-rho*(s - cut_time));
 }
 
 double TSP::recomb_prob(double s, double t1, double t2) {
@@ -375,7 +373,7 @@ double TSP::recomb_prob(double s, double t1, double t2) {
     if (t1 == t2) {
         return 0;
     }
-    if (s - max(lower_bound, cut_time) < 0.005) {
+    if (s - cut_time < 0.005) {
         return max(epsilon, exp(-t1) - exp(-t2));
     }
     double pl = recomb_cdf(s, t1);
@@ -387,29 +385,10 @@ double TSP::recomb_prob(double s, double t1, double t2) {
 }
 
 double TSP::psmc_cdf(double rho, double s, double t) {
-    double l;
-    double pre_factor;
-    if (t <= s) {
-        l = 2*t - lower_bound - cut_time;
-    } else {
-        l = 2*s - lower_bound - cut_time;
-    }
-    if (l == 0) {
-        pre_factor = rho;
-    } else {
-        pre_factor = (1 - exp(-rho*l))/l;
-    }
-    double integral;
-    double cdf;
-    if (t == cut_time and t == lower_bound) {
+    if (s <= cut_time) {
         return 0;
-    } else if (t <= s) {
-        integral = 2*t + exp(-t)*(exp(cut_time) + exp(lower_bound)) - cut_time - lower_bound - 2;
-    } else {
-        integral = 2*s + exp(cut_time - t) + exp(lower_bound - t) - 2*exp(s-t) - cut_time - lower_bound;
     }
-    cdf = pre_factor*integral;
-    return cdf;
+    return -expm1(-rho*(s - cut_time))*recomb_cdf(s, t);
 }
 
 double TSP::standard_recomb_cdf(double rho, double s, double t) {
