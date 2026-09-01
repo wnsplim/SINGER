@@ -255,7 +255,7 @@ double Tree::transition_likelihood(Recombination &r) {
         }
     }
     vector<double> sorted_coalescence_times = vector(coalescence_times.begin(), coalescence_times.end());
-    int num_leaves = (int) sorted_coalescence_times.size();
+    int num_leaves = (int) sorted_coalescence_times.size() - 1;
     double base_time = r.start_time;
     double join_time = r.inserted_node->time;
     for (int i = 0; i < sorted_coalescence_times.size(); i++) {
