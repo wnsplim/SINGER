@@ -93,8 +93,8 @@ public:
     
     void add(map<double, Branch> &new_joining_branches, map<double, Branch> &added_branches);
     
-    void smc_sample_recombinations();
-    
+    void smc_sample_recombinations(map<double, Branch> &lineage);
+
     void approx_sample_recombinations();
     
     void adjust_recombinations();
@@ -158,6 +158,13 @@ public:
     void clear_remove_info();
     
     double smc_prior_likelihood(double r);
+    double corrected_smc_prior(map<double, Branch> &lineage);
+
+    double mutation_log_likelihood(map<double, Branch> &lineage, double x, double y);
+
+    double site_weight(Tree &tree, double pos, Node *summed);
+
+    Branch lineage_branch_before(map<double, Branch> &lineage, double x);
     
     double data_likelihood(double m);
     

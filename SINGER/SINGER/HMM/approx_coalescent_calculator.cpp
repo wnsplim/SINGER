@@ -123,6 +123,13 @@ double approx_coalescent_calculator::surv(double x) {
     return exp(-(Lam[j] + (m - j)*(x - t[j])));
 }
 
+double approx_coalescent_calculator::rate(double x) {
+    refresh();
+    int m = (int) t.size();
+    int j = (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
+    return (double)(m - j);
+}
+
 double approx_coalescent_calculator::surv_inv(double p) {
     if (p <= 0) {
         return numeric_limits<double>::infinity();

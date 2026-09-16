@@ -127,7 +127,7 @@ void approx_BSP::start(set<Branch> &branches, double t) {
             temp.push_back(p);
         }
     }
-    cutoff = min(0.01, cutoff/curr_intervals.size()); // adjust cutoff based on number of states;
+    cutoff = -1.0;
     push_row(temp);
     weight_sums.push_back(0.0);
     set_dimensions();
@@ -161,7 +161,7 @@ void approx_BSP::start(Tree &tree, double t) {
             temp.push_back(p);
         }
     }
-    cutoff = min(0.01, cutoff/curr_intervals.size()); // adjust cutoff based on number of states;
+    cutoff = -1.0;
     push_row(temp);
     weight_sums.push_back(0.0);
     set_dimensions();
@@ -239,8 +239,7 @@ void approx_BSP::transfer(Recombination &r) {
 }
 
 double approx_BSP::get_recomb_prob(double rho, double t) {
-    double p = rho*(t - cut_time)*exp(-rho*(t - cut_time));
-    return p;
+    return -expm1(-rho*(t - cut_time));
 }
 
 void approx_BSP::null_emit(double theta, Node *query_node) {
@@ -311,13 +310,16 @@ void approx_BSP::mut_emit(double theta, double bin_size, vector<double> &mut_set
 
 map<double, Branch> approx_BSP::sample_joining_branches(int start_index, vector<double> &coordinates) {
     prev_rho = -1;
+    log_q = 0;
     map<double, Branch> joining_branches = {};
+    map<double, Interval_ptr> joining_intervals = {};
     int x = curr_index;
     int y = 0;
     double pos = coordinates[x + start_index + 1];
     Interval_ptr interval = sample_curr_interval(x);
     Branch b = interval->branch;
     joining_branches[pos] = b;
+    joining_intervals[pos] = interval;
     while (x >= 0) {
         vector<Interval_ptr> &intervals = get_state_space(x);
         assert(intervals[sample_index] == interval);
@@ -325,6 +327,7 @@ map<double, Branch> approx_BSP::sample_joining_branches(int start_index, vector<
         b = interval->branch;
         pos = coordinates[x + start_index];
         joining_branches[pos] = b;
+        joining_intervals[pos] = interval;
         y = get_prev_breakpoint(x);
         if (x == 0) {
             break;
@@ -340,6 +343,91 @@ map<double, Branch> approx_BSP::sample_joining_branches(int start_index, vector<
     }
     simplify(joining_branches);
     return joining_branches;
+}
+
+double approx_BSP::branch_log_q(map<double, Branch> &joining_branches, int start_index, vector<double> &coordinates) {
+    auto branch_at = [&](int x) {
+        auto it = joining_branches.upper_bound(coordinates[x + start_index]);
+        --it;
+        return it->second;
+    };
+    int x = curr_index;
+    vector<Interval_ptr> &last = get_state_space(x);
+    const double *fx = row(x);
+    double ws = accumulate(fx, fx + row_size(x), 0.0);
+    Branch b = branch_at(x);
+    vector<double> mass(last.size(), 0.0), prev_mass;
+    double total = 0;
+    for (int i = 0; i < (int) last.size(); i++) {
+        if (last[i]->branch == b) {
+            mass[i] = fx[i]/ws;
+            total += mass[i];
+        }
+    }
+    if (total <= 0) {
+        return -numeric_limits<double>::infinity();
+    }
+    for (double &v : mass) v /= total;
+    double lq = log(total);
+    while (x > 0) {
+        int y = get_prev_breakpoint(x);
+        vector<Interval_ptr> &curr = get_state_space(x);
+        vector<Interval_ptr> &prev = get_state_space(x - 1);
+        prev_mass.assign(prev.size(), 0.0);
+        if (x > y) {
+            vector<double> &ts = get_time_points(x);
+            vector<double> &rw = get_raw_weights(x);
+            double rho = rhos[x - 1];
+            double rs = recomb_sums[x - 1];
+            double wsum = weight_sums[x];
+            const double *fp = row(x - 1);
+            double jump = 0;
+            for (int i = 0; i < (int) curr.size(); i++) {
+                if (mass[i] == 0) continue;
+                double stay = 1;
+                if (rs > 0 and curr[i]->full(cut_time)) {
+                    double rb = get_recomb_prob(rho, ts[i]);
+                    double non_recomb = (1 - rb)*fp[i];
+                    double all = non_recomb + rs*rw[i]*rb/wsum;
+                    stay = (all > 0) ? non_recomb/all : 0;
+                }
+                prev_mass[i] += mass[i]*stay;
+                jump += mass[i]*(1 - stay);
+            }
+            if (jump > 0) {
+                for (int i = 0; i < (int) prev.size(); i++) {
+                    prev_mass[i] += jump*get_recomb_prob(rho, ts[i])*fp[i]/rs;
+                }
+            }
+        } else {
+            for (int i = 0; i < (int) curr.size(); i++) {
+                if (mass[i] == 0) continue;
+                Interval_ptr iv = curr[i];
+                if (iv->start_pos == x) {
+                    double sw = accumulate(iv->source_weights.begin(), iv->source_weights.end(), 0.0);
+                    for (int k = 0; k < (int) iv->source_intervals.size(); k++) {
+                        prev_mass[get_interval_index(iv->source_intervals[k], prev)] += mass[i]*iv->source_weights[k]/sw;
+                    }
+                } else {
+                    prev_mass[get_interval_index(iv, prev)] += mass[i];
+                }
+            }
+        }
+        x -= 1;
+        b = branch_at(x);
+        total = 0;
+        for (int i = 0; i < (int) prev.size(); i++) {
+            if (prev[i]->branch != b) prev_mass[i] = 0;
+            total += prev_mass[i];
+        }
+        if (total <= 0) {
+            return -numeric_limits<double>::infinity();
+        }
+        for (double &v : prev_mass) v /= total;
+        lq += log(total);
+        mass.swap(prev_mass);
+    }
+    return lq;
 }
 
 Interval_ptr approx_BSP::make_interval(Branch b, double tl, double tu, int init_pos) {
@@ -752,6 +840,7 @@ Interval_ptr approx_BSP::sample_curr_interval(int x) {
         w -= fx[i];
         if (w <= 0) {
             sample_index = i;
+            log_q += log(fx[i]/ws);
             return intervals[i];
         }
     }
@@ -764,14 +853,15 @@ Interval_ptr approx_BSP::sample_prev_interval(int x) {
     vector<double> &prev_times = get_time_points(x);
     double rho = rhos[x];
     double ws = recomb_sums[x];
+    double rb = 0;
     double q = random();
     double w = ws*q;
-    double rb = 0;
     for (int i = 0; i < intervals.size(); i++) {
         rb = get_recomb_prob(rho, prev_times[i]);
         w -= rb*row(x)[i];
         if (w <= 0) {
             sample_index = i;
+            log_q += log(rb*row(x)[i]/ws);
             return intervals[i];
         }
     }
@@ -784,13 +874,14 @@ Interval_ptr approx_BSP::sample_source_interval(Interval_ptr interval, int x) {
     vector<double> &weights = interval->source_weights;
     vector<Interval_ptr> &prev_intervals = get_state_space(x);
     if (x == interval->start_pos - 1) {
-        double q = random();
         double ws = accumulate(weights.begin(), weights.end(), 0.0);
+        double q = random();
         double w = ws*q;
         for (int i = 0; i < weights.size(); i++) {
             w -= weights[i];
             if (w <= 0) {
                 sample_index = get_interval_index(intervals[i], prev_intervals);
+                log_q += log(weights[i]/ws);
                 return intervals[i];
             }
         }
@@ -815,6 +906,7 @@ int approx_BSP::trace_back_helper(Interval_ptr interval, int x) {
     double w = ws[sample_index];
     double p = random();
     double q = 1;
+    double q_prev = 1;
     double shrinkage = 0;
     double recomb_prob = 0;
     double non_recomb_prob = 0;
@@ -831,12 +923,15 @@ int approx_BSP::trace_back_helper(Interval_ptr interval, int x) {
             shrinkage = non_recomb_prob/all_prob;
             assert(shrinkage >= 0 and shrinkage <= 1);
         }
+        q_prev = q;
         q *= shrinkage;
         if (p >= q) {
+            log_q += log(q_prev - q);
             return x;
         }
         x -= 1;
     }
+    log_q += log(q);
     return y;
 }
 

@@ -343,14 +343,22 @@ void ARG::add(map<double, Branch> &new_joining_branches, map<double, Branch> &ad
     start_tree.add(added_branches.begin()->second, new_joining_branches.begin()->second, cut_node);
 }
 
-void ARG::smc_sample_recombinations() {
+Branch ARG::lineage_branch_before(map<double, Branch> &lineage, double x) {
+    auto it = lineage.lower_bound(x);
+    if (it == lineage.begin()) {
+        return Branch();
+    }
+    return prev(it)->second;
+}
+
+void ARG::smc_sample_recombinations(map<double, Branch> &lineage) {
     RSP_smc rsp = RSP_smc();
     Tree tree = start_tree;
     auto it = recombinations.upper_bound(start);
     while (it->first < end) {
         Recombination &r = it->second;
         if (r.pos != 0 and r.pos < sequence_length) {
-            rsp.sample_recombination(r, cut_time, tree);
+            rsp.sample_recombination(r, cut_time, tree, lineage_branch_before(lineage, r.pos));
             assert(r.start_time > 0);
         }
         tree.forward_update(r);
@@ -891,6 +899,94 @@ double ARG::smc_prior_likelihood(double r) {
     return log_likelihood;
 }
 
+double ARG::site_weight(Tree &tree, double pos, Node *summed) {
+    double theta = thetas[get_index(pos)]/(coordinates[get_index(pos) + 1] - coordinates[get_index(pos)]);
+    double total = 0;
+    for (int s = 0; s < 2; s++) {
+        double w = 1.0;
+        int k = 0;
+        for (auto &e : tree.parents) {
+            Node *l = e.first;
+            Node *u = e.second;
+            double sl = (l == summed) ? s : l->get_state(pos);
+            double su = (u == summed) ? s : (u == root.get() ? 0.0 : u->get_state(pos));
+            if (u == root.get()) {
+                w *= (sl == 0) ? ancestral_prob : 1 - ancestral_prob;
+            }
+            if (sl != su) {
+                k += 1;
+                if (u != root.get()) {
+                    w *= theta*(u->time - l->time);
+                }
+            }
+        }
+        if (k > 1) {
+            w *= pow(penalty, k - 1);
+        }
+        total += w;
+        if (summed == nullptr) {
+            break;
+        }
+    }
+    return total;
+}
+
+double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, double y) {
+    Tree tree = get_tree_at(x);
+    auto recomb_it = recombinations.upper_bound(x);
+    auto mut_it = mutation_sites.lower_bound(x);
+    double ll = 0;
+    for (int i = get_index(x); i < get_index(y); i++) {
+        if (coordinates[i] == recomb_it->first) {
+            tree.forward_update(recomb_it->second);
+            recomb_it++;
+        }
+        double w = coordinates[i + 1] - coordinates[i];
+        double theta = thetas[i]/w;
+        double p = 1.0;
+        for (auto &e : tree.parents) {
+            if (e.second != root.get()) {
+                p *= 1 + penalty*theta*(e.second->time - e.first->time);
+            }
+        }
+        ll -= w*log1p((p - 1)/penalty);
+        Node *summed = lineage_branch_before(lineage, coordinates[i] + 0.5*w).upper_node;
+        while (*mut_it < coordinates[i + 1]) {
+            ll += log(site_weight(tree, *mut_it, summed));
+            mut_it++;
+        }
+    }
+    return ll;
+}
+
+double ARG::corrected_smc_prior(map<double, Branch> &lineage) {
+    Tree tree = get_tree_at(0);
+    RSP_smc rsp = RSP_smc();
+    double log_likelihood = tree.prior_likelihood();
+    rsp.set_tree(tree);
+    double visible_length = tree.length() - rsp.unchanged_recomb_length(tree);
+    auto recomb_it = recombinations.upper_bound(0);
+    for (int i = 0; i + 1 < bin_num; i++) {
+        double rho = rhos[i];
+        if (coordinates[i+1] == recomb_it->first) {
+            Recombination &rec = recomb_it->second;
+            recomb_it++;
+            log_likelihood += log(rho);
+            log_likelihood += (rec.start_time > 0) ? rsp.log_start_density(rec) : rsp.log_start_marginal(rec, cut_time, lineage_branch_before(lineage, rec.pos));
+            tree.forward_update(rec);
+            rsp.set_tree(tree);
+            visible_length = tree.length() - rsp.unchanged_recomb_length(tree);
+        } else {
+            if (rho*visible_length >= 1) {
+                cerr << "bin " << i << " is too wide for one record per bin: rho*visible length = " << rho*visible_length << endl;
+                exit(1);
+            }
+            log_likelihood += log1p(-rho*visible_length);
+        }
+    }
+    return log_likelihood;
+}
+
 double ARG::data_likelihood(double m) {
     double theta = 0;
     double log_likelihood = 0;
@@ -1389,14 +1485,8 @@ tuple<double, Branch, double> ARG::sample_internal_cut() {
  */
 
 tuple<double, Branch, double> ARG::sample_internal_cut() {
-    if (end >= sequence_length - 0.1) {
-        cut_pos = 0;
-        cut_tree = get_tree_at(0);
-        
-    } else {
-        cut_tree = move(end_tree);
-        cut_pos = end;
-    }
+    cut_pos = uniform_random()*sequence_length;
+    cut_tree = get_tree_at(cut_pos);
     Branch b;
     double t;
     tie(b, t) = cut_tree.sample_cut_point();

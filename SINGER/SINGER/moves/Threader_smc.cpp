@@ -79,26 +79,50 @@ void Threader_smc::fast_thread(ARG &a, Node_ptr n) {
 
 void Threader_smc::internal_rethread(ARG &a, tuple<double, Branch, double> cut_point) {
     cut_time = get<2>(cut_point);
-    // a.write("/Users/yun_deng/Desktop/SINGER/arg_files/full_ts_nodes.txt", "/Users/yun_deng/Desktop/SINGER/arg_files/full_ts_branches.txt");
     a.remove(cut_point);
-    // a.write("/Users/yun_deng/Desktop/SINGER/arg_files/partial_ts_nodes.txt", "/Users/yun_deng/Desktop/SINGER/arg_files/partial_ts_branches.txt");
     get_boundary(a);
     set_check_points(a);
     run_BSP(a);
-    // boundary_check(a);
     sample_joining_branches(a);
     run_TSP(a);
     sample_joining_points(a);
-    double ar = acceptance_ratio(a);
-    // cout << "Acceptance ratio: " << ar << endl;
+    double ar = bridges_kept(a) ? acceptance_ratio(a) : 0;
     double q = random();
     if (q < ar) {
         a.add(new_joining_branches, added_branches);
+        a.smc_sample_recombinations(added_branches);
     } else {
         a.add(a.joining_branches, a.removed_branches);
+        a.smc_sample_recombinations(a.removed_branches);
     }
-    a.approx_sample_recombinations();
     a.clear_remove_info();
+}
+
+static bool joined_at(map<double, Branch> &m, double x, double y, Node *n) {
+    auto it = m.upper_bound(x);
+    --it;
+    for (; it != m.end() and it->first < y; ++it) {
+        if (it->second.upper_node != n) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Threader_smc::bridges_kept(ARG &a) {
+    map<Node *, double> deleted_at;
+    for (auto it = a.recombinations.upper_bound(a.start); it != a.recombinations.end() and it->first <= a.end; ++it) {
+        Recombination &r = it->second;
+        auto d = deleted_at.find(r.inserted_node);
+        if (d != deleted_at.end()) {
+            if (joined_at(a.removed_branches, d->second, it->first, r.inserted_node) and !joined_at(added_branches, d->second, it->first, r.inserted_node)) {
+                return false;
+            }
+            deleted_at.erase(d);
+        }
+        deleted_at[r.deleted_node] = it->first;
+    }
+    return true;
 }
 
 
@@ -114,7 +138,7 @@ void Threader_smc::terminal_rethread(ARG &a, tuple<double, Branch, double> cut_p
     run_TSP(a);
     sample_joining_points(a);
     a.add(new_joining_branches, added_branches);
-    a.smc_sample_recombinations();
+    a.smc_sample_recombinations(added_branches);
     a.clear_remove_info();
 }
 
@@ -155,7 +179,7 @@ void Threader_smc::fast_terminal_rethread(ARG &a, tuple<double, Branch, double> 
     run_TSP(a);
     sample_joining_points(a);
     a.add(new_joining_branches, added_branches);
-    a.smc_sample_recombinations();
+    a.smc_sample_recombinations(added_branches);
     a.clear_remove_info();
 }
 
@@ -240,7 +264,6 @@ void Threader_smc::run_BSP(ARG &a) {
     }
 }
 
-
 void Threader_smc::run_fast_BSP(ARG &a) {
     fbsp.reserve_memory(end_index - start_index);
     fbsp.set_cutoff(cutoff);
@@ -310,15 +333,19 @@ void Threader_smc::run_fast_BSP(ARG &a) {
 }
 
 void Threader_smc::run_TSP(ARG &a) {
+    run_TSP(a, new_joining_branches);
+}
+
+void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb) {
     tsp.reserve_memory(end_index - start_index);
     tsp.set_gap(gap);
     tsp.set_emission(be);
     tsp.cc = make_shared<approx_coalescent_calculator>(cut_time);
     tsp.cc->start(a.start_tree);
-    Branch start_branch = new_joining_branches.begin()->second;
+    Branch start_branch = jb.begin()->second;
     tsp.start(start_branch, cut_time);
     auto recomb_it = a.recombinations.upper_bound(start);
-    auto join_it = new_joining_branches.upper_bound(start);
+    auto join_it = jb.upper_bound(start);
     auto mut_it = a.mutation_sites.lower_bound(start);
     auto query_it = a.removed_branches.lower_bound(start);
     Branch prev_branch = start_branch;
@@ -427,7 +454,23 @@ double Threader_smc::acceptance_ratio(ARG &a) {
     if (new_join_it->second.upper_node == a.root.get()) {
         new_height = new_add_it->second.upper_node->time;
     }
-    return old_height/new_height;
+    double jac = old_height/new_height;
+    double q_new = bsp.branch_log_q(new_joining_branches, start_index, a.coordinates);
+    double q_old = bsp.branch_log_q(a.joining_branches, start_index, a.coordinates);
+    double h_new = tsp.sel_log_q + tsp.time_log_q;
+    set<double> check_points = tsp.check_points;
+    tsp.reset();
+    tsp.check_points = check_points;
+    run_TSP(a, a.joining_branches);
+    double h_old = tsp.eval_joining_nodes(a.joining_branches, a.removed_branches, start_index, a.coordinates);
+    ARG new_arg = a;
+    new_arg.add(new_joining_branches, added_branches);
+    double pi_new = new_arg.corrected_smc_prior(added_branches) + new_arg.mutation_log_likelihood(added_branches, start, end);
+    ARG old_arg = a;
+    old_arg.add(a.joining_branches, a.removed_branches);
+    double pi_old = old_arg.corrected_smc_prior(a.removed_branches) + old_arg.mutation_log_likelihood(a.removed_branches, start, end);
+    double log_a = (pi_new - pi_old) + (q_old - q_new) + (h_old - h_new) + log(jac);
+    return exp(log_a);
 }
 
 double Threader_smc::random() {

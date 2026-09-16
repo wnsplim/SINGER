@@ -43,6 +43,8 @@ public:
 
     double surv(double x);
 
+    double rate(double x);
+
     double surv_inv(double p);
 
     double recomb_mass(double s, double t);

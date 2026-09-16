@@ -73,7 +73,25 @@ public:
     void mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
     
     map<double, Node *> sample_joining_nodes(int start_index, vector<double> &coordinates);
-    
+
+    bool pin_active = false;
+
+    bool pinned(Interval *iv);
+
+    double eval_joining_nodes(map<double, Branch> &old_jb, map<double, Branch> &old_ab, int start_index, vector<double> &coordinates);
+
+    int find_old_interval(int x, const Branch &b, double t);
+
+    double stay_mass(Interval *iv, vector<Interval *> &intervals, vector<double> &probs, double rho);
+
+    double jump_mass(Interval *iv, vector<Interval *> &intervals, vector<double> &probs);
+
+    double ffbs_stay_logq(int x, Interval *iv);
+
+    double ffbs_jump_logq(int x, Interval *iv);
+
+    void eval_time_at(Interval *interval, double t);
+
 // private:
 
     int curr_index = 0;
@@ -100,7 +118,11 @@ public:
     vector<double> null_emit_probs = {};
     vector<double> mut_emit_probs = {};
     int sample_index = -1;
+    double log_h = 0;
+    double sel_log_q = 0;
+    double time_log_q = 0;
     vector<double> trace_back_probs = {};
+    Node *find_node = nullptr;
     vector<vector<double>> forward_probs = {};
     vector<double> emissions = vector<double>(4);
     

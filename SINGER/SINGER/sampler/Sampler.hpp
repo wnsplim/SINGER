@@ -37,7 +37,7 @@ public:
     int num_samples = 0;
     ARG arg;
     bool fast_mode = false;
-    double bsp_c = 0.01;
+    double bsp_c = 0;
     double tsp_q = 0.05;
     int random_seed = 0;
     double penalty = 0.01;
@@ -111,7 +111,7 @@ public:
     // void terminal_sample(int num_iters);
     
     void internal_sample(int num_iters, int spacing);
-    
+
     // void fast_terminal_sample(int num_iters);
     
     void fast_internal_sample(int num_iters, int spacing);

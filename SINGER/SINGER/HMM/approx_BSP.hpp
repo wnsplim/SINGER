@@ -72,6 +72,7 @@ public:
     vector<double> null_emit_probs = {};
     vector<double> mut_emit_probs = {};
     int sample_index = -1;
+    double log_q = 0;
     vector<double> trace_back_probs = {};
     vector<double> forward_probs = {};
     vector<size_t> row_starts = {0};
@@ -116,17 +117,19 @@ public:
     double get_recomb_prob(double rho, double t);
     
     void null_emit(double theta, Node *query_node);
-    
+
     void mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
-    
+
     map<double, Branch> sample_joining_branches(int start_index, vector<double> &coordinates);
-    
+
+    double branch_log_q(map<double, Branch> &joining_branches, int start_index, vector<double> &coordinates);
+
     void set_dimensions();
     
     void compute_recomb_probs(double rho);
     
     void compute_recomb_weights(double rho);
-    
+
     void compute_null_emit_prob(double theta, Node *query_node);
     
     void compute_mut_emit_probs(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
@@ -162,7 +165,7 @@ public:
     vector<double> &get_time_points(int x);
     
     vector<double> &get_raw_weights(int x);
-    
+
     int get_interval_index(Interval_ptr interval, vector<Interval_ptr> &intervals);
     
     void simplify(map<double, Branch> &joining_branches);

@@ -10,98 +10,98 @@
 RSP_smc::RSP_smc() {
 }
 
-double RSP_smc::sample_start_time(Branch b, int density, double join_time, double cut_time) {
-    double lb = b.lower_node->time;
-    double ub = b.upper_node->time;
-    lb = max(cut_time, lb);
-    ub = min(join_time, ub);
-    assert(lb < ub);
-    double p;
-    double t;
-    double w;
-    double start_time = 0;
-    vector<double> start_times = {};
-    vector<double> weights = {};
-    double weight_sum = 0;
-    for (int i = 0; i < density; i++) {
-        t = random_time(lb, ub);
-        w = recomb_pdf(t, ub);
-        start_times.push_back(t);
-        weights.push_back(w);
-        weight_sum += w;
-    }
-    p = uniform_random();
-    weight_sum = weight_sum*p;
-    for (int i = 0; i < density; i++) {
-        weight_sum -= weights[i];
-        if (weight_sum <= 0) {
-            start_time = start_times[i];
-            break;
+void RSP_smc::set_tree(Tree &tree) {
+    vector<double> node_times;
+    for (auto &x : tree.parents) {
+        if (x.first->time > 0) {
+            node_times.push_back(x.first->time);
         }
     }
-    assert(start_time >= cut_time);
-    assert(start_time <= join_time);
-    assert(start_time <= ub);
-    return start_time;
+    sort(node_times.begin(), node_times.end());
+    level_times.assign(1, 0.0);
+    for (double t : node_times) {
+        if (t != level_times.back()) {
+            level_times.push_back(t);
+        }
+    }
+    int m = (int) level_times.size();
+    level_rates.resize(m);
+    level_lambda.assign(m, 0.0);
+    for (int j = 0; j < m; j++) {
+        level_rates[j] = 1.0 + (node_times.end() - upper_bound(node_times.begin(), node_times.end(), level_times[j]));
+        if (j > 0) {
+            level_lambda[j] = level_lambda[j-1] + level_rates[j-1]*(level_times[j] - level_times[j-1]);
+        }
+    }
 }
 
-pair<Branch, double> RSP_smc::sample_start_time(Branch b1, Branch b2, int density, double join_time, double cut_time) {
-    double lb1 = max(b1.lower_node->time, cut_time);
-    double ub1 = min(b1.upper_node->time, join_time);
-    double lb2 = max(b2.lower_node->time, cut_time);
-    double ub2 = min(b2.upper_node->time, join_time);
-    assert(lb1 < ub1);
-    assert(lb2 < ub2);
-    double q = (ub1 - lb1)/(ub1 + ub2 - lb1 - lb2);
-    int n1 = round(density*q);
-    int n2 = density - n1;
-    double p;
-    double t;
-    double w;
-    Branch source_branch;
-    double start_time = 0;
-    vector<double> start_times(0);
-    vector<double> weights(0);
-    vector<int> branch_indices(0);
-    double weight_sum = 0;
-    for (int i = 0; i < n1; i++) {
-        t = random_time(lb1, ub1);
-        w = recomb_pdf(t, ub1);
-        start_times.push_back(t);
-        weights.push_back(w);
-        weight_sum += w;
-        branch_indices.push_back(1);
+int RSP_smc::level_of(double s) {
+    return (int) (upper_bound(level_times.begin(), level_times.end(), s) - level_times.begin()) - 1;
+}
+
+double RSP_smc::lambda(double s) {
+    int j = level_of(s);
+    return level_lambda[j] + level_rates[j]*(s - level_times[j]);
+}
+
+double RSP_smc::exp_lambda_integral(double lo, double hi) {
+    double lam_hi = lambda(hi);
+    double total = 0;
+    int j = level_of(lo);
+    double a = lo;
+    while (a < hi) {
+        double b = (j + 1 < (int) level_times.size()) ? min(level_times[j+1], hi) : hi;
+        double k = level_rates[j];
+        total += (exp(lambda(b) - lam_hi) - exp(lambda(a) - lam_hi))/k;
+        a = b;
+        j += 1;
     }
-    for (int i = 0; i < n2; i++) {
-        t = random_time(lb2, ub2);
-        w = recomb_pdf(t, ub2);
-        start_times.push_back(t);
-        weights.push_back(w);
-        weight_sum += w;
-        branch_indices.push_back(2);
+    return total;
+}
+
+double RSP_smc::draw_start_time(double lo, double hi) {
+    double lam_hi = lambda(hi);
+    vector<double> piece_lo, piece_hi, piece_mass;
+    int j = level_of(lo);
+    double a = lo;
+    while (a < hi) {
+        double b = (j + 1 < (int) level_times.size()) ? min(level_times[j+1], hi) : hi;
+        double k = level_rates[j];
+        piece_lo.push_back(a);
+        piece_hi.push_back(b);
+        piece_mass.push_back((exp(lambda(b) - lam_hi) - exp(lambda(a) - lam_hi))/k);
+        a = b;
+        j += 1;
     }
-    p = uniform_random();
-    weight_sum = weight_sum*p;
-    for (int i = 0; i < density; i++) {
-        weight_sum -= weights[i];
-        if (weight_sum <= 0) {
-            start_time = start_times[i];
-            if (branch_indices[i] == 1) {
-                source_branch = b1;
-            } else {
-                source_branch = b2;
+    double w = uniform_random()*accumulate(piece_mass.begin(), piece_mass.end(), 0.0);
+    int p = 0;
+    while (p + 1 < (int) piece_mass.size() and w > piece_mass[p]) {
+        w -= piece_mass[p];
+        p += 1;
+    }
+    double k = level_rates[level_of(piece_lo[p])];
+    double u = piece_lo[p] + log1p(uniform_random()*expm1(k*(piece_hi[p] - piece_lo[p])))/k;
+    return min(max(u, piece_lo[p]), piece_hi[p]);
+}
+
+vector<Branch> RSP_smc::source_candidates(Recombination &r) {
+    vector<Branch> candidates;
+    for (Branch b : r.deleted_branches) {
+        if (b.upper_node == r.deleted_node and b.lower_node->time < r.inserted_node->time) {
+            if (r.create(Branch(b.lower_node, r.inserted_node))) {
+                candidates.push_back(b);
             }
-            break;
         }
     }
-    assert(weight_sum <= 0);
-    assert(start_time >= cut_time);
-    assert(start_time <= join_time);
-    assert(start_time <= min(ub1, ub2));
-    return {source_branch, start_time};
+    return candidates;
 }
 
-void RSP_smc::sample_recombination(Recombination &r, double cut_time, Tree &tree) {
+double RSP_smc::start_lower_bound(const Branch &candidate, double cut_time, const Branch &own) {
+    double lo = candidate.lower_node->time;
+    return (candidate == own) ? max(cut_time, lo) : lo;
+}
+
+void RSP_smc::sample_recombination(Recombination &r, double cut_time, Tree &tree, const Branch &own) {
     if (r.pos == 0) {
         return;
     }
@@ -111,34 +111,91 @@ void RSP_smc::sample_recombination(Recombination &r, double cut_time, Tree &tree
     if (r.deleted_branches.size() == 0) {
         return;
     }
-    get_coalescence_rate(tree, r, cut_time);
-    vector<Branch> source_candidates;
-    for (Branch b : r.deleted_branches) {
-        if (b.upper_node == r.deleted_node and b.lower_node->time < r.inserted_node->time) {
-            Branch candidate_recombined_branch = Branch(b.lower_node, r.inserted_node);
-            if (r.create(candidate_recombined_branch)) {
-                source_candidates.push_back(b);
-            }
+    set_tree(tree);
+    double join_time = r.inserted_node->time;
+    double lam_join = lambda(join_time);
+    vector<Branch> candidates = source_candidates(r);
+    vector<double> weights(candidates.size(), 0.0);
+    for (int i = 0; i < (int) candidates.size(); i++) {
+        double lo = start_lower_bound(candidates[i], cut_time, own);
+        double hi = min(join_time, candidates[i].upper_node->time);
+        if (lo < hi) {
+            weights[i] = exp_lambda_integral(lo, hi)*exp(lambda(hi) - lam_join);
         }
     }
-    if (source_candidates.size() == 1) {
-        r.source_branch = source_candidates[0];
-        r.start_time = sample_start_time(r.source_branch, 20, r.inserted_node->time, cut_time);
-    } else if (source_candidates.size() == 2) {
-        pair<Branch, double> breakpoint = sample_start_time(source_candidates[0], source_candidates[1], 40, r.inserted_node->time, cut_time);
-        r.source_branch = breakpoint.first;
-        r.start_time = breakpoint.second;
-    } else {
-        cout << r.pos << " " << source_candidates.size() << endl;
+    double total = accumulate(weights.begin(), weights.end(), 0.0);
+    if (total <= 0) {
+        cout << r.pos << " " << candidates.size() << endl;
         cerr << "no candidates in smc sampling" << endl;
         exit(1);
     }
+    double w = uniform_random()*total;
+    int c = 0;
+    while (c + 1 < (int) candidates.size() and w > weights[c]) {
+        w -= weights[c];
+        c += 1;
+    }
+    r.source_branch = candidates[c];
+    r.start_time = draw_start_time(start_lower_bound(r.source_branch, cut_time, own), min(join_time, r.source_branch.upper_node->time));
     r.find_target_branch();
     r.find_recomb_info();
-    assert(r.target_branch != Branch());
-    assert(r.merging_branch != Branch());
-    assert(r.start_time <= r.inserted_node->time);
-    assert(r.start_time >= cut_time);
+}
+
+double RSP_smc::log_start_density(Recombination &r) {
+    double join_time = r.inserted_node->time;
+    double lo = r.source_branch.lower_node->time;
+    double hi = min(join_time, r.source_branch.upper_node->time);
+    if (r.start_time < lo or r.start_time > hi) {
+        return -numeric_limits<double>::infinity();
+    }
+    return lambda(r.start_time) - lambda(join_time);
+}
+
+double RSP_smc::log_start_marginal(Recombination &r, double cut_time, const Branch &own) {
+    double join_time = r.inserted_node->time;
+    double lam_join = lambda(join_time);
+    double total = 0;
+    for (Branch &b : source_candidates(r)) {
+        double lo = start_lower_bound(b, cut_time, own);
+        double hi = min(join_time, b.upper_node->time);
+        if (lo < hi) {
+            total += exp_lambda_integral(lo, hi)*exp(lambda(hi) - lam_join);
+        }
+    }
+    return log(total);
+}
+
+double RSP_smc::unchanged_recomb_length(Tree &tree) {
+    int m = (int) level_times.size();
+    vector<double> a_sum(m, 0.0), e_sum(m, 0.0), eg_sum(m, 0.0), g_tail(m + 1, 0.0);
+    vector<double> e_lev(m, 0.0), g_lev(m, 0.0);
+    for (int j = 0; j + 1 < m; j++) {
+        double k = level_rates[j];
+        double d = level_times[j+1] - level_times[j];
+        double decay = -expm1(-k*d);
+        e_lev[j] = exp(level_lambda[j+1])*decay/k;
+        g_lev[j] = exp(-level_lambda[j])*decay/k;
+    }
+    for (int j = m - 2; j >= 0; j--) {
+        g_tail[j] = g_tail[j+1] + g_lev[j];
+    }
+    for (int j = 0; j + 1 < m; j++) {
+        double k = level_rates[j];
+        double d = level_times[j+1] - level_times[j];
+        a_sum[j+1] = a_sum[j] + d/k + expm1(-k*d)/k/k;
+        e_sum[j+1] = e_sum[j] + e_lev[j];
+        eg_sum[j+1] = eg_sum[j] + e_lev[j]*g_tail[j+1];
+    }
+    double total = 0;
+    for (auto &x : tree.parents) {
+        if (x.second->index == -1) {
+            continue;
+        }
+        int jc = level_of(x.first->time);
+        int jp = level_of(x.second->time);
+        total += (a_sum[jp] - a_sum[jc]) + (eg_sum[jp] - eg_sum[jc]) - g_tail[jp]*(e_sum[jp] - e_sum[jc]);
+    }
+    return total;
 }
 
 void RSP_smc::approx_sample_recombination(Recombination &r, double cut_time) {
@@ -303,39 +360,6 @@ void RSP_smc::adjust(Recombination &r, double cut_time, double n) {
 }
 
 // private methods:
-
-double RSP_smc::recomb_pdf(double s, double t) {
-    double pdf = 1.0;
-    double curr_time = s;
-    double next_coalescence_time = s;
-    map<double, int>::iterator rate_it = coalescence_rates.upper_bound(s);
-    rate_it--;
-    int rate;
-    while (next_coalescence_time < t) {
-        rate = rate_it->second;
-        rate_it++;
-        next_coalescence_time = rate_it->first;
-        pdf *= exp(-rate*(-curr_time + min(t, next_coalescence_time)));
-        curr_time = next_coalescence_time;
-    }
-    return pdf;
-}
-
-void RSP_smc::get_coalescence_rate(Tree &tree, Recombination &r, double cut_time) {
-    coalescence_rates.clear();
-    vector<double> coalescence_times = {cut_time};
-    for (auto &x : tree.parents) {
-        if (x.first->time > cut_time and x.second != r.deleted_node) {
-            coalescence_times.push_back(x.first->time);
-        }
-    }
-    coalescence_times.push_back(numeric_limits<double>::infinity());
-    sort(coalescence_times.begin(), coalescence_times.end());
-    int n = (int) coalescence_times.size();
-    for (int i = 0; i < n; i++) {
-        coalescence_rates[coalescence_times[i]] = n-i-1;
-    }
-}
 
 double RSP_smc::random_time(double lb, double ub) {
     double t = (uniform_random()*0.01 + 0.99)*(ub - lb) + lb;

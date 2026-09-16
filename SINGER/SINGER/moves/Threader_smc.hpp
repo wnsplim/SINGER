@@ -59,7 +59,7 @@ public:
     shared_ptr<Polar_emission> pe = make_shared<Polar_emission>();
     map<double, Branch> new_joining_branches = {};
     map<double, Branch> added_branches = {};
-    
+
     void get_boundary(ARG &a);
     
     void set_check_points(ARG &a);
@@ -67,19 +67,23 @@ public:
     void run_pruner(ARG &a);
     
     void run_BSP(ARG &a);
-    
+
     void run_fast_BSP(ARG &a);
-    
+
     void run_TSP(ARG &a);
-    
+
+    void run_TSP(ARG &a, map<double, Branch> &jb);
+
     void sample_joining_branches(ARG &a);
-    
+
     void sample_fast_joining_branches(ARG &a);
-    
+
     void sample_joining_points(ARG &a);
-    
+
     double acceptance_ratio(ARG &a);
-    
+
+    bool bridges_kept(ARG &a);
+
     double random();
     
     vector<double> expected_diff(double m);
