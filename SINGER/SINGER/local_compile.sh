@@ -1,5 +1,6 @@
 #!/bin/bash
 
+cd "$(dirname "$0")"
 INCLUDES="-I. -IARG -IHMM -Imoves -Isampler -Iutils"
 SOURCES=$(find . -path ./lab -prune -o -name '*.cpp' -print)
 

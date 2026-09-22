@@ -40,10 +40,10 @@ g++ -std=c++17 -g $(find "$BUILD_DIR/debug" -name '*.o') -o "$VERSION_DIR/singer
 
 # Copy additional files
 cp singer_master "$VERSION_DIR/singer_master"
-cp convert_to_tskit.py "$VERSION_DIR/convert_to_tskit.py"
-cp index_vcf.py "$VERSION_DIR/index_vcf.py"
-cp merge_ARG.py "$VERSION_DIR/merge_ARG.py"
-cp convert_long_ARG.py "$VERSION_DIR/convert_long_ARG.py"
+cp python_scripts/convert_to_tskit.py "$VERSION_DIR/convert_to_tskit.py"
+cp python_scripts/index_vcf.py "$VERSION_DIR/index_vcf.py"
+cp python_scripts/merge_ARG.py "$VERSION_DIR/merge_ARG.py"
+cp python_scripts/convert_long_ARG.py "$VERSION_DIR/convert_long_ARG.py"
 cp "$SRC_DIR/../../LICENSE" "$VERSION_DIR/LICENSE"
 cp "$VERSION_DIR/singer" singer.tmp && mv -f singer.tmp singer
 cp "$VERSION_DIR/singer_debug" singer_debug.tmp && mv -f singer_debug.tmp singer_debug
