@@ -39,6 +39,9 @@ int Rate_map::find_index(double x) {
 
 double Rate_map::cumulative_distance(double x) {
     int index = find_index(x);
+    if (index + 1 == (int) coordinates.size()) {
+        return rate_distances[index];
+    }
     double prev_dist = rate_distances[index];
     double next_dist = rate_distances[index+1];
     double p = (x - coordinates[index])/(coordinates[index+1] - coordinates[index]);
@@ -47,6 +50,11 @@ double Rate_map::cumulative_distance(double x) {
 }
 
 double Rate_map::segment_distance(double x, double y) {
+    int i = find_index(x);
+    if (i + 1 < (int) coordinates.size() and y <= coordinates[i+1]) {
+        // a product, so equal-width bins inside one map segment get bit-equal values (the HMMs cache on rho)
+        return (rate_distances[i+1] - rate_distances[i])/(coordinates[i+1] - coordinates[i])*(y - x);
+    }
     return cumulative_distance(y) - cumulative_distance(x);
 }
 

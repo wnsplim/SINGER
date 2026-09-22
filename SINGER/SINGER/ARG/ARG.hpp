@@ -138,6 +138,8 @@ public:
     void impute(map<double, Branch> &new_joining_branches, map<double, Branch> &added_branches);
     
     void map_mutations(double x, double y);
+
+    void rebuild_mutation_map(double x, double y);
     
     void remap_mutations();
     

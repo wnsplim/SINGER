@@ -94,6 +94,7 @@ void Threader_smc::internal_rethread(ARG &a, tuple<double, Branch, double> cut_p
     double q = random();
     if (q < ar) {
         a.add(new_joining_branches, added_branches);
+        a.rebuild_mutation_map(a.start, a.end);
     } else {
         a.add(a.joining_branches, a.removed_branches);
     }
@@ -114,6 +115,7 @@ void Threader_smc::terminal_rethread(ARG &a, tuple<double, Branch, double> cut_p
     run_TSP(a);
     sample_joining_points(a);
     a.add(new_joining_branches, added_branches);
+    a.rebuild_mutation_map(a.start, a.end);
     a.smc_sample_recombinations();
     a.clear_remove_info();
 }
@@ -135,6 +137,7 @@ void Threader_smc::fast_internal_rethread(ARG &a, tuple<double, Branch, double> 
     double q = random();
     if (q < ar) {
         a.add(new_joining_branches, added_branches);
+        a.rebuild_mutation_map(a.start, a.end);
     } else {
         a.add(a.joining_branches, a.removed_branches);
     }
@@ -155,6 +158,7 @@ void Threader_smc::fast_terminal_rethread(ARG &a, tuple<double, Branch, double> 
     run_TSP(a);
     sample_joining_points(a);
     a.add(new_joining_branches, added_branches);
+    a.rebuild_mutation_map(a.start, a.end);
     a.smc_sample_recombinations();
     a.clear_remove_info();
 }
