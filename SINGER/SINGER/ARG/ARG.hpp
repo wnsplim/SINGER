@@ -139,8 +139,6 @@ public:
     
     void map_mutations(double x, double y);
 
-    void rebuild_mutation_map(double x, double y);
-    
     void remap_mutations();
     
     void map_mutation(double x, Branch joining_branch, Branch added_branch, const double *joining_state_prob);

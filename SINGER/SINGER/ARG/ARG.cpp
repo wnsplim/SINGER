@@ -656,29 +656,6 @@ void ARG::discount_unassayed() {
     }
 }
 
-void ARG::rebuild_mutation_map(double x, double y) {
-    Tree tree = Tree();
-    auto r_it = recombinations.begin();
-    while (r_it != recombinations.end() and r_it->first <= x) {
-        tree.forward_update(r_it->second);
-        ++r_it;
-    }
-    for (auto m_it = mutation_sites.lower_bound(x); m_it != mutation_sites.end() and *m_it < y; ++m_it) {
-        while (r_it->first <= *m_it) {
-            tree.forward_update(r_it->second);
-            ++r_it;
-        }
-        double m = *m_it;
-        set<Branch> branches = {};
-        for (auto &e : tree.parents) {
-            if (e.first->get_state(m) != e.second->get_state(m) and !(any_missing and e.first->is_missing(m))) {
-                branches.insert(Branch(e.first, e.second));
-            }
-        }
-        mutation_branches[m] = branches;
-    }
-}
-
 void ARG::map_mutations(double x, double y) {
     Tree tree = get_tree_at(x);
     auto recomb_it = recombinations.upper_bound(x);
