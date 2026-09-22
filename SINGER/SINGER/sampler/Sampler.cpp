@@ -739,10 +739,10 @@ void Sampler::internal_sample(int num_iters, int spacing) {
     Threader_smc threader = Threader_smc(bsp_c, tsp_q);
     while (sample_index < num_iters) {
         cout << get_time() << " Iteration: " << to_string(sample_index) << endl;
-        double updated_length = 0;
+        int moves = 0;
         cout << "Random seed: " << random_seed << endl;
         random_engine.seed(random_seed);
-        while (updated_length < spacing*arg.sequence_length) {
+        while (moves < spacing) {
             threader.reset();
             threader.pe->penalty = penalty;
             threader.be->penalty = penalty;
@@ -752,7 +752,7 @@ void Sampler::internal_sample(int num_iters, int spacing) {
             arg.ancestral_prob = polar;
             tuple<double, Branch, double> cut_point = arg.sample_internal_cut();
             threader.internal_rethread(arg, cut_point);
-            updated_length += arg.coordinates[threader.end_index] - arg.coordinates[threader.start_index];
+            moves += 1;
             arg.clear_remove_info();
         }
         // normalize();
@@ -775,10 +775,10 @@ void Sampler::internal_sample(int num_iters, int spacing) {
 void Sampler::fast_internal_sample(int num_iters, int spacing) {
     while (sample_index < num_iters) {
         cout << get_time() << " Iteration: " << to_string(sample_index) << endl;
-        double updated_length = 0;
+        int moves = 0;
         cout << "Random seed: " << random_seed << endl;
         random_engine.seed(random_seed);
-        while (updated_length < spacing*arg.sequence_length) {
+        while (moves < spacing) {
             Threader_smc threader = Threader_smc(bsp_c, tsp_q);
             threader.pe->penalty = penalty;
             threader.be->penalty = penalty;
@@ -788,7 +788,7 @@ void Sampler::fast_internal_sample(int num_iters, int spacing) {
             arg.ancestral_prob = polar;
             tuple<double, Branch, double> cut_point = arg.sample_internal_cut();
             threader.fast_internal_rethread(arg, cut_point);
-            updated_length += arg.coordinates[threader.end_index] - arg.coordinates[threader.start_index];
+            moves += 1;
             arg.clear_remove_info();
         }
         // normalize();
