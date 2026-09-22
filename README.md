@@ -58,7 +58,7 @@ The optional flags include:
 |**-ratio**|optional|the ratio between recombination and mutation rate, default at 1|
 |**-recomb_map**|optional|name of the file describing the recombination rate landscape|
 |**-n**|optional|the number of posterior samples, default at 100|
-|**-thin**|optional|the number of MCMC iterations between adjacent samples, default at 20|
+|**-thin**|optional|the number of MCMC iterations between adjacent samples, default at 200|
 |**-polar**|optional|the probability of correct polarization, default at 0.5 for unpolarized data, please use 0.99 for polarized data|
 |**-scaling_rep**|optional|the number of ARG rescaling rounds applied after the initial build and after each posterior sample, default at 5. Set to 0 to disable rescaling|
 |**-scaling_bin**|optional|the number of time bins used for ARG rescaling, default at 100|

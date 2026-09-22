@@ -277,7 +277,7 @@ def main():
     parser.add_argument('-start', type=float, required=True, help='Start position.')
     parser.add_argument('-end', type=float, required=True, help='End position.')
     parser.add_argument('-n', type=int, default=100, help='Number of MCMC samples. Default: 100.')
-    parser.add_argument('-thin', type=int, default=20, help='Thinning interval length. Default: 20.')
+    parser.add_argument('-thin', type=int, default=200, help='Number of MCMC iterations between adjacent samples. Default: 200.')
     parser.add_argument('-polar', type=float, default=0.5, help='Site flip probability. Default: 0.5.')
     parser.add_argument('-resume', action='store_true', help='Resume MCMC with this flag.')
     parser.add_argument('-ploidy', type=int, default=2, help="Ploidy of the vcf file (1 or 2). Default: 2.")
