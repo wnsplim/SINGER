@@ -59,17 +59,22 @@ void approx_coalescent_calculator::refresh() {
     int j0 = max(0, rebuild_from);
     if ((int) Lam.size() != m) {
         Lam.resize(m);
+        E.resize(m);
         G.resize(m);
         Q.resize(m);
         W.resize(m);
         B.resize(m);
         j0 = 0; // k = m - j shifts for the whole array when the size changes
     }
+    if (j0 == 0) {
+        E[0] = exp(-Lam[0]);
+    }
     for (int j = j0; j + 1 < m; j++) {
         double k = m - j;
         double dt = t[j+1] - t[j];
-        double ea = exp(-Lam[j]);
+        double ea = E[j];
         double eb = exp(-(Lam[j] + k*dt));
+        E[j+1] = eb;
         Lam[j+1] = Lam[j] + k*dt;
         G[j+1] = G[j] + (ea - eb)/k;
         Q[j+1] = Q[j] + ((t[j] - cut_time)*ea - (t[j+1] - cut_time)*eb)/k + (ea - eb)/k/k;
@@ -95,7 +100,7 @@ void approx_coalescent_calculator::at(double x, double &g, double &q) {
     }
     int j = (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
     double k = m - j;
-    double ea = exp(-Lam[j]);
+    double ea = E[j];
     double ex = exp(-(Lam[j] + k*(x - t[j])));
     g = G[j] + (ea - ex)/k;
     q = Q[j] + ((t[j] - cut_time)*ea - (x - cut_time)*ex)/k + (ea - ex)/k/k;
@@ -149,7 +154,7 @@ double approx_coalescent_calculator::recomb_mass(double s, double v) {
     }
     double wx = W[jx]*(1 - ex) + ex/kx;
     double lx = Lam[jx] + kx*dx;
-    double gx = G[jx] + (exp(-Lam[jx]) - exp(-lx))/kx;
+    double gx = G[jx] + (E[jx] - exp(-lx))/kx;
     double gv;
     if (isinf(v)) {
         gv = G[m-1] + exp(-Lam[m-1]);
@@ -157,7 +162,7 @@ double approx_coalescent_calculator::recomb_mass(double s, double v) {
         int jv = (int) (upper_bound(t.begin(), t.end(), v) - t.begin()) - 1;
         double kv = m - jv;
         double lv = Lam[jv] + kv*(v - t[jv]);
-        gv = G[jv] + (exp(-Lam[jv]) - exp(-lv))/kv;
+        gv = G[jv] + (E[jv] - exp(-lv))/kv;
     }
     return b2 + wx*(gv - gx)*exp(lx);
 }
@@ -189,7 +194,7 @@ pair<double, double> approx_coalescent_calculator::compute_time_weights(double x
         j += 1;
     }
     double time = x + Q1/P;
-    double w = exp(-Lam[j < m ? j : m-1])*((x - cut_time)*P + Q1)/first_moment;
+    double w = E[j < m ? j : m-1]*((x - cut_time)*P + Q1)/first_moment;
     if (y - x < 0.001) {
         time = 0.5*(x + y);
         w = (time - cut_time)*prob(x, y)/first_moment;

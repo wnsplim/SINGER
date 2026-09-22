@@ -51,6 +51,7 @@ private:
 
     vector<double> t = {};
     vector<double> Lam = {};
+    vector<double> E = {};
     vector<double> G = {};
     vector<double> Q = {};
     vector<double> W = {};
