@@ -778,7 +778,7 @@ int TSP::trace_back_helper(Interval *interval, int x) {
     double rho;
     vector<Interval *> &intervals = get_state_space(x);
     lower_bound = intervals.front()->lb;
-    trace_back_probs = vector<double>(intervals.size());
+    if (trace_back_probs.size() != intervals.size()) trace_back_probs.assign(intervals.size(), 0.0);
     while (p > q and x > y) {
         rho = rhos[x-1];
         compute_trace_back_probs(rho, interval, intervals);
