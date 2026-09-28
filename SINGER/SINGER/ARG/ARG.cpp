@@ -169,6 +169,49 @@ void ARG::rebuild_anchors() {
     anchor_dirty.clear();
 }
 
+void ARG::window_copy_into(ARG &c, double lo_pos) {
+    c.Ne = Ne;
+    c.root = root;
+    c.cut_node = cut_node;
+    c.cut_node_owner = cut_node_owner;
+    c.cut_time = cut_time;
+    c.anchors.clear();
+    c.anchor_dirty.clear();
+    c.anchor_step = anchor_step;
+    c.mutation_sites.clear();
+    for (auto it = mutation_sites.lower_bound(lo_pos); it != mutation_sites.end() and *it <= end; ++it) {
+        c.mutation_sites.insert(c.mutation_sites.end(), *it);
+    }
+    c.mutation_sites.insert(c.mutation_sites.end(), *mutation_sites.rbegin());
+    c.mutation_branches.clear();
+    c.recombinations.clear();
+    c.recombinations.insert(*recombinations.begin());
+    for (auto it = recombinations.lower_bound(lo_pos); it != recombinations.end() and it->first <= end; ++it) {
+        c.recombinations.insert(c.recombinations.end(), *it);
+    }
+    c.recombinations.insert(*recombinations.rbegin());
+    c.bin_num = bin_num;
+    c.penalty = penalty;
+    c.ancestral_prob = ancestral_prob;
+    c.any_missing = any_missing;
+    c.unassayed_sites = unassayed_sites;
+    c.sequence_length = sequence_length;
+    c.bin_size = bin_size;
+    if (c.coordinates.size() != coordinates.size()) {
+        c.coordinates = coordinates;
+        c.rhos = rhos;
+        c.thetas = thetas;
+    }
+    c.joining_branches = joining_branches;
+    c.removed_branches = removed_branches;
+    c.start = start;
+    c.end = end;
+    c.cut_pos = cut_pos;
+    c.cut_tree = cut_tree;
+    c.start_tree = start_tree;
+    c.end_tree = end_tree;
+}
+
 Node *ARG::get_query_node_at(double x) {
     auto query_it = removed_branches.upper_bound(x);
     query_it--;
@@ -397,6 +440,29 @@ void ARG::smc_sample_recombinations() {
         Recombination &r = it->second;
         if (r.pos != 0 and r.pos < sequence_length) {
             rsp.sample_recombination(r, cut_time, tree);
+            assert(r.start_time > 0);
+        }
+        tree.forward_update(r);
+        it++;
+    }
+}
+
+Branch ARG::lineage_branch_before(map<double, Branch> &lineage, double x) {
+    auto it = lineage.lower_bound(x);
+    if (it == lineage.begin()) {
+        return Branch();
+    }
+    return prev(it)->second;
+}
+
+void ARG::smc_sample_recombinations(map<double, Branch> &lineage) {
+    RSP_smc rsp = RSP_smc();
+    Tree tree = start_tree;
+    auto it = recombinations.upper_bound(start);
+    while (it->first < end) {
+        Recombination &r = it->second;
+        if (r.pos != 0 and r.pos < sequence_length) {
+            rsp.sample_recombination(r, cut_time, tree, lineage_branch_before(lineage, r.pos));
             assert(r.start_time > 0);
         }
         tree.forward_update(r);
@@ -933,6 +999,139 @@ double ARG::smc_prior_likelihood(double r) {
             log_likelihood -= rho*tree_length;
         }
         assert(!isnan(log_likelihood));
+    }
+    return log_likelihood;
+}
+
+double ARG::site_weight(const Flat_tree &tree, int bin, double pos, Node *summed) {
+    double theta = thetas[bin]/(coordinates[bin + 1] - coordinates[bin]);
+    Node *root_node = root.get();
+    double w[2] = {1.0, 1.0};
+    for (int k = 0; k < (int) tree.parents.size(); k++) {
+        Node *l = tree.parents[k].first;
+        Node *u = tree.parents[k].second;
+        if (u == root_node) {
+            for (int s = 0; s < 2; s++) {
+                double sm = (l == summed) ? s : l->get_state(pos);
+                w[s] *= (sm == 0) ? ancestral_prob : (1 - ancestral_prob)*penalty;
+            }
+            continue;
+        }
+        double length = penalty*theta*tree.lengths[k];
+        if (any_missing and l->missing_sites.size() > 0 and l->is_missing(pos)) {
+            w[0] *= 1 + length;
+            w[1] *= 1 + length;
+            continue;
+        }
+        if (l != summed and u != summed) {
+            if (l->get_state(pos) != u->get_state(pos)) {
+                w[0] *= length;
+                w[1] *= length;
+            }
+            continue;
+        }
+        for (int s = 0; s < 2; s++) {
+            double sl = (l == summed) ? s : l->get_state(pos);
+            double su = (u == summed) ? s : u->get_state(pos);
+            if (sl != su) {
+                w[s] *= length;
+            }
+        }
+    }
+    return (summed == nullptr) ? w[0] : w[0] + w[1];
+}
+
+double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, double y, double pos_p, const Tree &tree_p) {
+    Flat_tree tree;
+    tree.assign(tree_p);
+    for (auto it = recombinations.lower_bound(pos_p); it != recombinations.end() and it->first <= x; ++it) {
+        tree.forward_update(it->second);
+    }
+    auto recomb_it = recombinations.upper_bound(x);
+    auto mut_it = mutation_sites.lower_bound(x);
+    auto lin_it = lineage.begin();
+    double ll = 0;
+    double crho = -1;
+    double p = 1.0;
+    int since_full = 0;
+    int i_end = get_index(y);
+    for (int i = get_index(x); i < i_end; i++) {
+        double w = coordinates[i + 1] - coordinates[i];
+        double c = penalty*thetas[i]/w;
+        if (coordinates[i] == recomb_it->first) {
+            Recombination &r = recomb_it->second;
+            tree.forward_update(r);
+            recomb_it++;
+            if (c == crho and since_full < 256) {
+                for (const Branch &b : r.deleted_branches) {
+                    if (b.upper_node != root.get()) p /= 1 + crho*(b.upper_node->time - b.lower_node->time);
+                }
+                for (const Branch &b : r.inserted_branches) {
+                    if (b.upper_node != root.get()) p *= 1 + crho*(b.upper_node->time - b.lower_node->time);
+                }
+                since_full += 1;
+            } else {
+                crho = -1;
+            }
+        }
+        if (c != crho) {
+            crho = c;
+            p = 1.0;
+            Node *root_node = root.get();
+            for (int k = 0; k < (int) tree.parents.size(); k++) {
+                if (tree.parents[k].second != root_node) p *= 1 + crho*tree.lengths[k];
+            }
+            since_full = 0;
+        }
+        ll -= w*log1p((p - 1)/penalty);
+        double q = coordinates[i] + 0.5*w;
+        while (lin_it != lineage.end() and lin_it->first < q) {
+            ++lin_it;
+        }
+        Node *summed = (lin_it == lineage.begin()) ? Branch().upper_node : prev(lin_it)->second.upper_node;
+        while (*mut_it < coordinates[i + 1]) {
+            ll += log(site_weight(tree, i, *mut_it, summed));
+            mut_it++;
+        }
+    }
+    return ll;
+}
+
+double ARG::corrected_smc_prior(map<double, Branch> &lineage, int lo, int hi, double p, const Tree &tree_p) {
+    Flat_tree tree;
+    tree.assign(tree_p);
+    for (auto it = recombinations.lower_bound(p); it != recombinations.end() and it->first <= coordinates[lo]; ++it) {
+        tree.forward_update(it->second);
+    }
+    double log_likelihood = 0.0;
+    if (lo == 0) {
+        Tree full_tree = tree_p;
+        for (auto it = recombinations.lower_bound(p); it != recombinations.end() and it->first <= coordinates[lo]; ++it) {
+            full_tree.forward_update(it->second);
+        }
+        log_likelihood = full_tree.prior_likelihood();
+    }
+    RSP_smc rsp = RSP_smc();
+    rsp.set_tree(tree);
+    double visible_length = tree.length() - rsp.unchanged_recomb_length(tree);
+    auto recomb_it = recombinations.upper_bound(coordinates[lo]);
+    for (int i = lo; i < hi; i++) {
+        double rho = rhos[i];
+        if (coordinates[i+1] == recomb_it->first) {
+            Recombination &rec = recomb_it->second;
+            recomb_it++;
+            log_likelihood += log(rho);
+            log_likelihood += (rec.start_time > 0) ? rsp.log_start_density(rec) : rsp.log_start_marginal(rec, cut_time, lineage_branch_before(lineage, rec.pos));
+            tree.forward_update(rec);
+            rsp.set_tree(tree);
+            visible_length = tree.length() - rsp.unchanged_recomb_length(tree);
+        } else {
+            if (rho*visible_length >= 1) {
+                cerr << "bin " << i << " is too wide for one record per bin: rho*visible length = " << rho*visible_length << endl;
+                exit(1);
+            }
+            log_likelihood += log1p(-rho*visible_length);
+        }
     }
     return log_likelihood;
 }
@@ -1502,6 +1701,18 @@ tuple<double, Branch, double> ARG::sample_internal_cut() {
     tie(b, t) = cut_tree.sample_cut_point();
     while (t == b.lower_node->time or t == b.upper_node->time) {
         tie(b, t) = cut_tree.sample_cut_point();
+    }
+    return {cut_pos, b, t};
+}
+
+tuple<double, Branch, double> ARG::sample_uniform_cut() {
+    cut_pos = uniform_random()*sequence_length;
+    cut_tree = get_tree_at(cut_pos);
+    Branch b;
+    double t;
+    tie(b, t) = cut_tree.sample_uniform_cut_point();
+    while (t == b.lower_node->time or t == b.upper_node->time) {
+        tie(b, t) = cut_tree.sample_uniform_cut_point();
     }
     return {cut_pos, b, t};
 }

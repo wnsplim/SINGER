@@ -13,6 +13,7 @@ int main(int argc, const char * argv[]) {
     bool resume = false;
     bool debug = false;
     bool no_data = false;
+    string mode = "exact";
     double r = -1, m = -1, Ne = -1;
     int num_iters = 0;
     int spacing = 1;
@@ -21,9 +22,9 @@ int main(int argc, const char * argv[]) {
     string recomb_map_filename = "", mut_map_filename = "";
     double penalty = 0.01;
     double polar = 0.5;
-    int scaling_rep = 5;
+    int scaling_rep = -1;
     int scaling_bin = 100;
-    double epsilon_hmm = 0.001;
+    double epsilon_hmm = -1;
     double epsilon_psmc = 0.05;
     int ploidy = 2;
     int seed = 42;
@@ -49,6 +50,13 @@ int main(int argc, const char * argv[]) {
                 exit(1);
             }
             no_data = true;
+        }
+        else if (arg == "--mode") {
+            if (i + 1 >= argc || (string(argv[i+1]) != "original" && string(argv[i+1]) != "exact")) {
+                cerr << "Error: --mode flag expects original or exact. " << endl;
+                exit(1);
+            }
+            mode = argv[++i];
         }
         else if (arg == "-debug") {
             if (i + 1 < argc && argv[i+1][0] != '-') {
@@ -309,6 +317,13 @@ int main(int argc, const char * argv[]) {
         cerr << "-thin flag is invalid. " << endl;
         exit(1);
     }
+    bool exact = mode == "exact";
+    if (scaling_rep < 0) {
+        scaling_rep = exact ? 0 : 5;
+    }
+    if (epsilon_hmm < 0) {
+        epsilon_hmm = exact ? 0.1 : 0.001;
+    }
     Sampler sampler;
     if (r > 0 and m > 0) {
         sampler = Sampler(Ne, r, m);
@@ -328,6 +343,7 @@ int main(int argc, const char * argv[]) {
     sampler.set_input_file_prefix(input_filename);
     sampler.set_output_file_prefix(output_prefix);
     sampler.fast_mode = fast;
+    sampler.exact = exact;
     sampler.random_seed = seed;
     sampler.start = start_pos;
     sampler.end = end_pos;

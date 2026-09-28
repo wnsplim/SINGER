@@ -86,6 +86,8 @@ public:
     void anchors_changed(double lo, double hi);
 
     void rebuild_anchors();
+
+    void window_copy_into(ARG &c, double lo_pos);
     
     Node *get_query_node_at(double x);
     
@@ -104,6 +106,8 @@ public:
     void add(map<double, Branch> &new_joining_branches, map<double, Branch> &added_branches);
     
     void smc_sample_recombinations();
+
+    void smc_sample_recombinations(map<double, Branch> &lineage);
     
     void approx_sample_recombinations();
     
@@ -136,6 +140,8 @@ public:
     double get_arg_length(map<double, Branch> &new_joining_branches, map<double, Branch> &new_added_branches);
     
     tuple<double, Branch, double> sample_internal_cut();
+
+    tuple<double, Branch, double> sample_uniform_cut();
     
     tuple<double, Branch, double> sample_terminal_cut();
     
@@ -168,6 +174,14 @@ public:
     void clear_remove_info();
     
     double smc_prior_likelihood(double r);
+
+    double corrected_smc_prior(map<double, Branch> &lineage, int lo, int hi, double p, const Tree &tree_p);
+
+    double mutation_log_likelihood(map<double, Branch> &lineage, double x, double y, double p, const Tree &tree_p);
+
+    double site_weight(const Flat_tree &tree, int bin, double pos, Node *summed);
+
+    Branch lineage_branch_before(map<double, Branch> &lineage, double x);
     
     double data_likelihood(double m);
     

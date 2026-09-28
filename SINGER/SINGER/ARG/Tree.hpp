@@ -48,6 +48,8 @@ public:
     Branch find_joining_branch(Branch removed_branch);
     
     pair<Branch, double> sample_cut_point();
+
+    pair<Branch, double> sample_uniform_cut_point();
     
     void internal_cut(double cut_time);
     
@@ -82,7 +84,22 @@ public:
     void impute_states_helper(Node *n, map<Node *, double> &states);
     
     double random();
-    
+
+};
+
+class Flat_tree {
+
+public:
+
+    vector<pair<Node *, Node *>> parents = {};
+    vector<double> lengths = {};
+
+    void assign(const Tree &tree);
+
+    void forward_update(const Recombination &r);
+
+    double length() const;
+
 };
 
 #endif /* Tree_hpp */

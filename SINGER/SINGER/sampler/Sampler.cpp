@@ -750,8 +750,13 @@ void Sampler::internal_sample(int num_iters, int spacing) {
             threader.be->ancestral_prob = polar;
             arg.penalty = penalty;
             arg.ancestral_prob = polar;
-            tuple<double, Branch, double> cut_point = arg.sample_internal_cut();
-            threader.internal_rethread(arg, cut_point);
+            if (exact) {
+                tuple<double, Branch, double> cut_point = arg.sample_uniform_cut();
+                threader.exact_internal_rethread(arg, cut_point);
+            } else {
+                tuple<double, Branch, double> cut_point = arg.sample_internal_cut();
+                threader.internal_rethread(arg, cut_point);
+            }
             moves += 1;
             arg.clear_remove_info();
         }

@@ -20,6 +20,46 @@ double Tree::length() {
     return l;
 }
 
+void Flat_tree::assign(const Tree &tree) {
+    parents.assign(tree.parents.begin(), tree.parents.end());
+    lengths.clear();
+    for (auto &x : parents) {
+        lengths.push_back(x.second->time - x.first->time);
+    }
+}
+
+void Flat_tree::forward_update(const Recombination &r) {
+    auto key_less = [](const pair<Node *, Node *> &e, Node *n) { return compare_node()(e.first, n); };
+    for (const Branch &b : r.deleted_branches) {
+        auto it = lower_bound(parents.begin(), parents.end(), b.lower_node, key_less);
+        if (it != parents.end() and it->first == b.lower_node) {
+            lengths.erase(lengths.begin() + (it - parents.begin()));
+            parents.erase(it);
+        }
+    }
+    for (const Branch &b : r.inserted_branches) {
+        auto it = lower_bound(parents.begin(), parents.end(), b.lower_node, key_less);
+        double l = b.upper_node->time - b.lower_node->time;
+        if (it != parents.end() and it->first == b.lower_node) {
+            it->second = b.upper_node;
+            lengths[it - parents.begin()] = l;
+        } else {
+            lengths.insert(lengths.begin() + (it - parents.begin()), l);
+            parents.insert(it, {b.lower_node, b.upper_node});
+        }
+    }
+}
+
+double Flat_tree::length() const {
+    double l = 0;
+    for (int i = 0; i < (int) parents.size(); i++) {
+        if (parents[i].second->index != -1) {
+            l += lengths[i];
+        }
+    }
+    return l;
+}
+
 void Tree::delete_branch(const Branch &b) {
     assert(b.upper_node != nullptr and b.lower_node != nullptr);
     parents.erase(b.lower_node);
@@ -165,6 +205,24 @@ pair<Branch, double> Tree::sample_cut_point() {
     int index = (int) floor(candidates.size()*uniform_random());
     index = min((int) candidates.size() - 1, index);
     return {candidates[index], cut_time};
+}
+
+pair<Branch, double> Tree::sample_uniform_cut_point() {
+    double target = uniform_random()*length();
+    double acc = 0;
+    Branch last;
+    for (auto &x : parents) {
+        if (x.second->index == -1) {
+            continue;
+        }
+        double bl = x.second->time - x.first->time;
+        if (acc + bl >= target) {
+            return {Branch(x.first, x.second), x.first->time + (target - acc)};
+        }
+        acc += bl;
+        last = Branch(x.first, x.second);
+    }
+    return {last, 0.5*(last.lower_node->time + last.upper_node->time)};
 }
 
 void Tree::internal_cut(double cut_time) {

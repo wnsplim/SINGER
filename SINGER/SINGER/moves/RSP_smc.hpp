@@ -27,6 +27,16 @@ public:
     double sister_mass(double lo, double hi);
 
     void sample_recombination(Recombination &r, double cut_time, Tree &tree);
+
+    void sample_recombination(Recombination &r, double cut_time, Tree &tree, const Branch &own);
+
+    double log_start_density(Recombination &r);
+
+    double log_start_marginal(Recombination &r, double cut_time, const Branch &own);
+
+    void set_tree(const Flat_tree &tree);
+
+    double unchanged_recomb_length(const Flat_tree &tree);
     
     void approx_sample_recombination(Recombination &r, double cut_time);
     
@@ -47,6 +57,18 @@ private:
     int level_of(double s);
 
     double lambda(double s);
+
+    vector<double> node_times = {};
+    vector<double> a_sum = {}, e_sum = {}, eg_sum = {}, g_tail = {}, e_lev = {}, g_lev = {};
+    vector<double> prev_times = {}, prev_rates = {}, prev_lambda = {};
+
+    double exp_lambda_integral(double lo, double hi);
+
+    double draw_start_time(double lo, double hi);
+
+    vector<Branch> source_candidates(Recombination &r);
+
+    double start_lower_bound(const Branch &candidate, double cut_time, const Branch &own);
 
     double sample_start_time(Branch b, int density, double join_time, double cut_time);
     

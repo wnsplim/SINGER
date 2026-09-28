@@ -1072,6 +1072,154 @@ double TSP::ffbs_jump_logq(int x, Interval *iv) {
     return log(wsj) - log(ap);
 }
 
+int TSP::find_old_interval(int x, const Branch &b, double t) {
+    vector<Interval *> &intervals = get_state_space(x);
+    for (int i = 0; i < (int) intervals.size(); i++) {
+        Interval *iv = intervals[i];
+        if (iv->branch != b) continue;
+        if (pinned(iv)) {
+            if (iv->node == find_node) return i;
+        } else if (iv->lb < t and t < iv->ub) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void TSP::eval_time_at(Interval *interval, double t) {
+    if (pinned(interval)) return;
+    double sv = cc->surv(t);
+    double sd = cc->surv(interval->lb) - cc->surv(interval->ub);
+    if (sd > 0 and sv > 0) {
+        time_log_q += log(sv) - log(sd) + log(cc->rate(t));
+    } else {
+        time_log_q = -numeric_limits<double>::infinity();
+    }
+}
+
+double TSP::eval_joining_nodes(map<double, Branch> &old_jb, map<double, Branch> &old_ab,
+                              int start_index, vector<double> &coordinates) {
+    sel_log_q = 0;
+    time_log_q = 0;
+    auto old_branch_at = [&](int xx) {
+        double pos = coordinates[xx + start_index];
+        auto it = old_jb.upper_bound(pos);
+        if (it != old_jb.begin()) --it;
+        return it->second;
+    };
+    auto old_time_at = [&](int xx) {
+        double pos = coordinates[xx + start_index];
+        auto it = old_ab.upper_bound(pos);
+        if (it != old_ab.begin()) --it;
+        return it->second.upper_node->time;
+    };
+    auto old_node_at = [&](int xx) {
+        double pos = coordinates[xx + start_index];
+        auto it = old_ab.upper_bound(pos);
+        if (it != old_ab.begin()) --it;
+        return it->second.upper_node;
+    };
+    double neg_inf = -numeric_limits<double>::infinity();
+    auto fail = [&]() {
+        return neg_inf;
+    };
+    auto eval_curr_sel = [&](int xx, int idx) {
+        double ws = accumulate(forward_probs[xx].begin(), forward_probs[xx].end(), 0.0);
+        if (ws > 0 and forward_probs[xx][idx] > 0) {
+            sel_log_q += log(forward_probs[xx][idx] / ws);
+        } else {
+            sel_log_q = neg_inf;
+        }
+    };
+    int x = curr_index;
+    Branch b = old_branch_at(x);
+    double t = old_time_at(x);
+    find_node = old_node_at(x);
+    pin_active = false;
+    int oi = find_old_interval(x, b, t);
+    if (oi < 0) return fail();
+    Interval *interval = get_state_space(x)[oi];
+    eval_curr_sel(x, oi);
+    sample_index = oi;
+    eval_time_at(interval, t);
+    while (x >= 0) {
+        int y = get_prev_breakpoint(x);
+        Node *cur_node = old_node_at(x);
+        int xstop = y;
+        for (int xx = x; xx > y; xx--) {
+            if (old_node_at(xx - 1) != cur_node) { xstop = xx; break; }
+        }
+        for (int xx = x; xx > xstop; xx--) {
+            sel_log_q += ffbs_stay_logq(xx, interval);
+        }
+        x = xstop;
+        if (x == 0) {
+            break;
+        }
+        Interval *from = interval;
+        if (x == from->start_pos and from->source_interval != nullptr) {
+            if (old_node_at(x - 1) != cur_node) return fail();
+            x -= 1;
+            interval = from->source_interval;
+            vector<Interval *> &pv = get_state_space(x);
+            sample_index = get_interval_index(interval, pv);
+        } else if (x == from->start_pos) {
+            x -= 1;
+            Branch nb = old_branch_at(x);
+            double nt = old_time_at(x);
+            find_node = old_node_at(x);
+            pin_active = true;
+            int ni = find_old_interval(x, nb, nt);
+            if (ni < 0) return fail();
+            vector<Interval *> &pv = get_state_space(x);
+            pin_active = pv[ni]->node != nullptr;
+            if (!pinned(pv[ni]) and find_node == cur_node) return fail();
+            if (from->lb == from->ub) {
+                eval_curr_sel(x, ni);
+            } else {
+                double ws = 0;
+                for (int i = 0; i < (int) pv.size(); i++)
+                    ws += max(own_mass(pv[i]->time, from->lb, from->ub), epsilon) * forward_probs[x][i];
+                double num = max(own_mass(pv[ni]->time, from->lb, from->ub), epsilon) * forward_probs[x][ni];
+                if (ws > 0 and num > 0) {
+                    sel_log_q += log(num / ws);
+                } else {
+                    sel_log_q = neg_inf;
+                }
+            }
+            sample_index = ni;
+            interval = pv[ni];
+            eval_time_at(interval, nt);
+        } else {
+            sel_log_q += ffbs_jump_logq(x, from);
+            x -= 1;
+            Branch nb = old_branch_at(x);
+            double nt = old_time_at(x);
+            find_node = old_node_at(x);
+            pin_active = false;
+            int ni = find_old_interval(x, nb, nt);
+            if (ni < 0) return fail();
+            vector<Interval *> &pv = get_state_space(x);
+            if (trace_back_probs.size() != pv.size()) trace_back_probs.assign(pv.size(), 0.0);
+            sister_mass = sister_masses[x];
+            prev_rho = -1;
+            compute_trace_back_probs(rhos[x], from, pv);
+            double ws = jump_mass(from, pv, forward_probs[x]);
+            double num = trace_back_probs[ni] * forward_probs[x][ni];
+            if (ws > 0 and num > 0) {
+                sel_log_q += log(num / ws);
+            } else {
+                sel_log_q = neg_inf;
+            }
+            sample_index = ni;
+            interval = pv[ni];
+            eval_time_at(interval, nt);
+        }
+        prev_rho = -1;
+    }
+    return sel_log_q + time_log_q;
+}
+
 Node *TSP::sample_joining_node(Interval *interval) {
     Node *n = nullptr;
     double t;

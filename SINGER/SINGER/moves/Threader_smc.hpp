@@ -33,6 +33,8 @@ public:
     void thread(ARG &a, Node_ptr n);
     
     void internal_rethread(ARG &a, tuple<double, Branch, double> cut_point);
+
+    void exact_internal_rethread(ARG &a, tuple<double, Branch, double> cut_point);
     
     void terminal_rethread(ARG &a, tuple<double, Branch, double> cut_point);
     
@@ -60,7 +62,11 @@ public:
     shared_ptr<Polar_emission> pe = make_shared<Polar_emission>();
     map<double, Branch> new_joining_branches = {};
     map<double, Branch> added_branches = {};
-    
+    double pos_lo = 0;
+    Tree tree_lo;
+    ARG new_arg;
+    ARG old_arg;
+
     void get_boundary(ARG &a);
     
     void set_check_points(ARG &a);
@@ -82,6 +88,14 @@ public:
     void sample_joining_points(ARG &a);
     
     double acceptance_ratio(ARG &a);
+
+    bool has_bridges(ARG &a);
+
+    bool bridges_kept(ARG &a);
+
+    double cut_ratio(ARG &a);
+
+    double exact_acceptance_ratio(ARG &a);
     
     double random();
     

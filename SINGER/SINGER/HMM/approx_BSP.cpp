@@ -89,6 +89,9 @@ void approx_BSP::reset() {
     prev_rho = -1;
     prev_theta = -1;
     prev_node = nullptr;
+    eval_rp_times = nullptr;
+    eval_rp_n = 0;
+    eval_rp_rho = -1;
     dim = 0;
     recomb_sum = 0;
     weight_sum = 0;
@@ -339,6 +342,165 @@ map<double, Branch> approx_BSP::sample_joining_branches(int start_index, vector<
     }
     simplify(joining_branches);
     return joining_branches;
+}
+
+double approx_BSP::branch_log_q(map<double, Branch> &joining_branches, int start_index, vector<double> &coordinates) {
+    auto branch_at = [&](int x) {
+        auto it = joining_branches.upper_bound(coordinates[x + start_index]);
+        --it;
+        return it->second;
+    };
+    int x = curr_index;
+    vector<Interval_ptr> &last = get_state_space(x);
+    const double *fx = row(x);
+    double ws = accumulate(fx, fx + row_size(x), 0.0);
+    Branch b = branch_at(x);
+    vector<double> mass(last.size(), 0.0), prev_mass;
+    double total = 0;
+    for (int i = 0; i < (int) last.size(); i++) {
+        if (last[i]->branch == b) {
+            mass[i] = fx[i]/ws;
+            total += mass[i];
+        }
+    }
+    if (total <= 0) {
+        return -numeric_limits<double>::infinity();
+    }
+    for (double &v : mass) v /= total;
+    double lq = log(total);
+    auto jit = joining_branches.upper_bound(coordinates[x + start_index]);
+    --jit;
+    vector<int> on_branch;
+    vector<double> on_mass;
+    const vector<Interval_ptr> *on_space = nullptr;
+    Branch on_b;
+    while (x > 0) {
+        int y = get_prev_breakpoint(x);
+        vector<Interval_ptr> &curr = get_state_space(x);
+        while (jit->first > coordinates[x - 1 + start_index]) {
+            --jit;
+        }
+        if (x > y and jit->second == b) {
+            if (on_space != &curr or on_b != b) {
+                on_branch.clear();
+                for (int i = 0; i < (int) curr.size(); i++) {
+                    if (curr[i]->branch == b) on_branch.push_back(i);
+                }
+                on_mass.resize(on_branch.size());
+                on_space = &curr;
+                on_b = b;
+            }
+            vector<double> &ts = get_time_points(x);
+            vector<double> &rw = get_raw_weights(x);
+            double rho = rhos[x - 1];
+            double rs = recomb_sums[x - 1];
+            double wsum = weight_sums[x];
+            const double *fp = row(x - 1);
+            double jump = 0;
+            if (eval_rp_times != ts.data() or eval_rp_n != ts.size() or eval_rp_rho != rho) {
+                eval_recomb_probs.resize(ts.size());
+                for (int i = 0; i < (int) ts.size(); i++) eval_recomb_probs[i] = get_recomb_prob(rho, ts[i]);
+                eval_rp_times = ts.data();
+                eval_rp_n = ts.size();
+                eval_rp_rho = rho;
+            }
+            for (int k = 0; k < (int) on_branch.size(); k++) {
+                int i = on_branch[k];
+                on_mass[k] = 0;
+                if (mass[i] == 0) continue;
+                double stay = 1;
+                if (rs > 0 and curr[i]->full(cut_time)) {
+                    double rb = eval_recomb_probs[i];
+                    double non_recomb = (1 - rb)*fp[i];
+                    double all = non_recomb + rs*rw[i]*rb/wsum;
+                    stay = (all > 0) ? non_recomb/all : 0;
+                }
+                on_mass[k] += mass[i]*stay;
+                jump += mass[i]*(1 - stay);
+            }
+            if (jump > 0) {
+                for (int k = 0; k < (int) on_branch.size(); k++) {
+                    int i = on_branch[k];
+                    on_mass[k] += jump*eval_recomb_probs[i]*fp[i]/rs;
+                }
+            }
+            total = 0;
+            for (int k = 0; k < (int) on_branch.size(); k++) {
+                total += on_mass[k];
+            }
+            if (total <= 0) {
+                return -numeric_limits<double>::infinity();
+            }
+            for (int k = 0; k < (int) on_branch.size(); k++) {
+                mass[on_branch[k]] = on_mass[k]/total;
+            }
+            lq += log(total);
+            x -= 1;
+            continue;
+        }
+        vector<Interval_ptr> &prev = get_state_space(x - 1);
+        prev_mass.assign(prev.size(), 0.0);
+        if (x > y) {
+            vector<double> &ts = get_time_points(x);
+            vector<double> &rw = get_raw_weights(x);
+            double rho = rhos[x - 1];
+            double rs = recomb_sums[x - 1];
+            double wsum = weight_sums[x];
+            const double *fp = row(x - 1);
+            double jump = 0;
+            if (eval_rp_times != ts.data() or eval_rp_n != ts.size() or eval_rp_rho != rho) {
+                eval_recomb_probs.resize(ts.size());
+                for (int i = 0; i < (int) ts.size(); i++) eval_recomb_probs[i] = get_recomb_prob(rho, ts[i]);
+                eval_rp_times = ts.data();
+                eval_rp_n = ts.size();
+                eval_rp_rho = rho;
+            }
+            for (int i = 0; i < (int) curr.size(); i++) {
+                if (mass[i] == 0) continue;
+                double stay = 1;
+                if (rs > 0 and curr[i]->full(cut_time)) {
+                    double rb = eval_recomb_probs[i];
+                    double non_recomb = (1 - rb)*fp[i];
+                    double all = non_recomb + rs*rw[i]*rb/wsum;
+                    stay = (all > 0) ? non_recomb/all : 0;
+                }
+                prev_mass[i] += mass[i]*stay;
+                jump += mass[i]*(1 - stay);
+            }
+            if (jump > 0) {
+                for (int i = 0; i < (int) prev.size(); i++) {
+                    prev_mass[i] += jump*eval_recomb_probs[i]*fp[i]/rs;
+                }
+            }
+        } else {
+            for (int i = 0; i < (int) curr.size(); i++) {
+                if (mass[i] == 0) continue;
+                Interval_ptr iv = curr[i];
+                if (iv->start_pos == x) {
+                    double sw = accumulate(iv->source_weights.begin(), iv->source_weights.end(), 0.0);
+                    for (int k = 0; k < (int) iv->source_intervals.size(); k++) {
+                        prev_mass[get_interval_index(iv->source_intervals[k], prev)] += mass[i]*iv->source_weights[k]/sw;
+                    }
+                } else {
+                    prev_mass[get_interval_index(iv, prev)] += mass[i];
+                }
+            }
+        }
+        x -= 1;
+        b = branch_at(x);
+        total = 0;
+        for (int i = 0; i < (int) prev.size(); i++) {
+            if (prev[i]->branch != b) prev_mass[i] = 0;
+            total += prev_mass[i];
+        }
+        if (total <= 0) {
+            return -numeric_limits<double>::infinity();
+        }
+        for (double &v : prev_mass) v /= total;
+        lq += log(total);
+        mass.swap(prev_mass);
+    }
+    return lq;
 }
 
 Interval_ptr approx_BSP::make_interval(Branch b, double tl, double tu, int init_pos) {

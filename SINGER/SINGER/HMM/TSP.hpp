@@ -81,6 +81,10 @@ public:
     
     map<double, Node *> sample_joining_nodes(int start_index, vector<double> &coordinates);
 
+    double eval_joining_nodes(map<double, Branch> &old_jb, map<double, Branch> &old_ab, int start_index, vector<double> &coordinates);
+
+    int find_old_interval(int x, const Branch &b, double t);
+
     bool pin_active = false;
 
     bool pinned(Interval *iv);
@@ -92,6 +96,8 @@ public:
     double ffbs_stay_logq(int x, Interval *iv);
 
     double ffbs_jump_logq(int x, Interval *iv);
+
+    void eval_time_at(Interval *interval, double t);
 
 // private:
 
@@ -137,6 +143,7 @@ public:
     double log_h = 0;
     double sel_log_q = 0;
     double time_log_q = 0;
+    Node *find_node = nullptr;
     vector<double> trace_back_probs = {};
     vector<vector<double>> forward_probs = {};
     vector<double> emissions = vector<double>(4);

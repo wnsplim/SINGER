@@ -73,6 +73,10 @@ public:
     vector<double> mut_emit_probs = {};
     int sample_index = -1;
     vector<double> trace_back_probs = {};
+    vector<double> eval_recomb_probs = {};
+    const double *eval_rp_times = nullptr;
+    size_t eval_rp_n = 0;
+    double eval_rp_rho = -1;
     unique_ptr<double, void (*)(void *)> forward_probs = {nullptr, free};
     size_t forward_cap = 0;
     vector<size_t> row_starts = {0};
@@ -121,6 +125,8 @@ public:
     void mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
     
     map<double, Branch> sample_joining_branches(int start_index, vector<double> &coordinates);
+
+    double branch_log_q(map<double, Branch> &joining_branches, int start_index, vector<double> &coordinates);
     
     void set_dimensions();
     
