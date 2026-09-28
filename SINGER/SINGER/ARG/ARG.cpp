@@ -92,6 +92,7 @@ void ARG::add_sample(const Node_ptr &n) {
     removed_branches.clear();
     removed_branches[0] = Branch(n, root);
     removed_branches[sequence_length] = Branch();
+    anchors_changed(0, INT_MAX);
     start_tree = get_tree_at(0);
     cut_pos = 0;
     start = 0;
@@ -117,14 +118,55 @@ void ARG::add_new_node(double t) {
 }
  
 Tree ARG::get_tree_at(double x) {
-    Tree tree = Tree();
+    if (anchor_step == 0) {
+        anchor_step = max(8, (int) sqrt((double) recombinations.size()));
+        anchor_dirty.push_back({0, (double) INT_MAX});
+    }
+    if (!anchor_dirty.empty()) {
+        rebuild_anchors();
+    }
+    Tree tree;
     auto recomb_it = recombinations.begin();
+    auto a = anchors.upper_bound(x);
+    if (a != anchors.begin()) {
+        --a;
+        tree = a->second;
+        recomb_it = recombinations.upper_bound(a->first);
+    }
     while (recomb_it->first <= x) {
         Recombination &r = recomb_it->second;
         tree.forward_update(r);
         recomb_it++;
     }
     return tree;
+}
+
+void ARG::anchors_changed(double lo, double hi) {
+    anchors.erase(anchors.lower_bound(lo), anchors.upper_bound(hi));
+    anchor_dirty.push_back({lo, hi});
+}
+
+void ARG::rebuild_anchors() {
+    for (auto &d : anchor_dirty) {
+        Tree tree;
+        auto it = recombinations.begin();
+        auto a = anchors.lower_bound(d.first);
+        if (a != anchors.begin()) {
+            --a;
+            tree = a->second;
+            it = recombinations.upper_bound(a->first);
+        }
+        int count = 0;
+        while (it != recombinations.end() and it->first <= d.second) {
+            tree.forward_update(it->second);
+            count += 1;
+            if (count % anchor_step == 0 and it->first >= d.first) {
+                anchors[it->first] = tree;
+            }
+            ++it;
+        }
+    }
+    anchor_dirty.clear();
 }
 
 Node *ARG::get_query_node_at(double x) {
@@ -236,6 +278,7 @@ void ARG::remove(tuple<double, Branch, double> cut_point) {
     start = removed_branches.begin()->first;
     end = removed_branches.rbegin()->first;
     remove_empty_recombinations();
+    anchors_changed(start, end);
     remap_mutations();
     cut_tree.remove(center_branch, cut_node);
     // start_tree = modify_tree_to(start, cut_tree, cut_pos);
@@ -270,12 +313,14 @@ void ARG::remove(map<double, Branch> seed_branches) {
     removed_branches[end] = next_removed_branch;
     joining_branches[end] = next_joining_branch;
     remove_empty_recombinations();
+    anchors_changed(start, end);
     remap_mutations();
     start = removed_branches.begin()->first;
     end = removed_branches.rbegin()->first;
 }
 
 void ARG::remove_leaf(int index) {
+    anchors_changed(0, INT_MAX);
     Node *s = nullptr;
     for (Node *n : sample_nodes) {
         if (n->index == index) {
@@ -339,6 +384,7 @@ void ARG::add(map<double, Branch> &new_joining_branches, map<double, Branch> &ad
         }
     }
     remove_empty_recombinations();
+    anchors_changed(start, end);
     impute(new_joining_branches, added_branches);
     start_tree.add(added_branches.begin()->second, new_joining_branches.begin()->second, cut_node);
 }
@@ -1066,8 +1112,10 @@ void ARG::release_dead_nodes() {
             keep_branch(x.second);
         }
     }
-    for (auto &x : tree_map) {
-        keep_tree(x.second);
+    for (auto *m : {&anchors, &tree_map}) {
+        for (auto &x : *m) {
+            keep_tree(x.second);
+        }
     }
     keep_tree(cut_tree);
     keep_tree(start_tree);
@@ -1091,6 +1139,7 @@ void ARG::create_node_set() {
 }
 
 void ARG::write_nodes(string filename) {
+    anchors_changed(0, INT_MAX);
     node_set.clear();
     create_node_set();
     ofstream file;

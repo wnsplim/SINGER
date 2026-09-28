@@ -78,6 +78,14 @@ public:
     void add_new_node(double t);
     
     Tree get_tree_at(double x);
+
+    map<double, Tree> anchors = {};
+    vector<pair<double, double>> anchor_dirty = {};
+    int anchor_step = 0;
+
+    void anchors_changed(double lo, double hi);
+
+    void rebuild_anchors();
     
     Node *get_query_node_at(double x);
     
