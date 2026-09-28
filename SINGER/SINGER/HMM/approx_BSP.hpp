@@ -51,6 +51,7 @@ public:
 
     double prev_rho = -1;
     double prev_theta = -1;
+    double prev_width = -1;
     Node *prev_node = nullptr;
     
     int dim = 0;

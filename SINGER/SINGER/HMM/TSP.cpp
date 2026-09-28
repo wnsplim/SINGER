@@ -556,9 +556,10 @@ double TSP::get_prop(double lb1, double ub1, double lb2, double ub2) {
 }
 
 void TSP::compute_null_emit_probs(double theta, Node *query_node) {
-    if (theta == prev_theta and query_node == prev_node) {
+    if (theta == prev_theta and query_node == prev_node and eh->bin_width == prev_width) {
         return;
     }
+    prev_width = eh->bin_width;
     for (int i = 0; i < dim; i++) {
         null_emit_probs[i] = eh->null_emit(curr_branch, curr_intervals[i]->time, theta, query_node);
     }
