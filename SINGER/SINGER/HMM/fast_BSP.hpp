@@ -13,7 +13,7 @@
 #include "Tree.hpp"
 #include "Emission.hpp"
 #include "Interval.hpp"
-#include "approx_coalescent_calculator.hpp"
+#include "coalescent_calculator.hpp"
 
 using Interval_ptr = Interval *;
 
@@ -42,7 +42,7 @@ public:
     
     // coalescent computation
     // shared_ptr<fast_coalescent_calculator> cc;
-    shared_ptr<approx_coalescent_calculator> cc;
+    shared_ptr<coalescent_calculator> cc;
     
     // transfer at recombinations
     map<Interval_info, vector<Interval_ptr>> transfer_intervals = {};

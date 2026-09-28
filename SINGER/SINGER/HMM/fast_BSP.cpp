@@ -27,7 +27,7 @@ void fast_BSP::start(set<Branch> &start_branches, set<Interval_info> &start_inte
     double ub = 0;
     double p = 0;
     Interval_ptr new_interval = nullptr;
-    cc = make_shared<approx_coalescent_calculator>(cut_time);
+    cc = make_shared<coalescent_calculator>(cut_time);
     cc->start(start_branches);
     for (const Branch &b : reduced_branches) {
         if (b.upper_node->time > cut_time) {
@@ -56,7 +56,7 @@ void fast_BSP::start(Tree &start_tree, set<Interval_info> &start_intervals, doub
     double ub = 0;
     double p = 0;
     Interval_ptr new_interval = nullptr;
-    cc = make_shared<approx_coalescent_calculator>(cut_time);
+    cc = make_shared<coalescent_calculator>(cut_time);
     cc->start(start_tree);
     for (const Branch &b : reduced_branches) {
         if (b.upper_node->time > cut_time) {

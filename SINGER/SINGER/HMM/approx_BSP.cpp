@@ -114,7 +114,7 @@ void approx_BSP::start(set<Branch> &branches, double t) {
     double ub = 0;
     double p = 0;
     Interval_ptr new_interval = nullptr;
-    cc = make_shared<approx_coalescent_calculator>(cut_time);
+    cc = make_shared<coalescent_calculator>(cut_time);
     cc->start(valid_branches);
     for (const Branch &b : branches) {
         if (b.upper_node->time > cut_time) {
@@ -148,7 +148,7 @@ void approx_BSP::start(Tree &tree, double t) {
     double ub = 0;
     double p = 0;
     Interval_ptr new_interval = nullptr;
-    cc = make_shared<approx_coalescent_calculator>(cut_time);
+    cc = make_shared<coalescent_calculator>(cut_time);
     cc->start(valid_branches);
     for (auto &x : tree.parents) {
         if (x.second->time > cut_time) {

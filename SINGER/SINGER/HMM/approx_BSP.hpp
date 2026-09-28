@@ -12,7 +12,7 @@
 #include <deque>
 #include <fstream>
 #include "Tree.hpp"
-#include "approx_coalescent_calculator.hpp"
+#include "coalescent_calculator.hpp"
 #include "Interval.hpp"
 #include "Emission.hpp"
 #include "Binary_emission.hpp"
@@ -49,7 +49,7 @@ public:
     vector<pair<int, vector<double>>> weights = {{INT_MAX, {}}};
     
     // coalescent computation
-    shared_ptr<approx_coalescent_calculator> cc;
+    shared_ptr<coalescent_calculator> cc;
     
     // transfer at recombinations
     vector<pair<Interval_info, vector<Interval_ptr>>> transfer_intervals = {};
