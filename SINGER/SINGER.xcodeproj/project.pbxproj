@@ -38,7 +38,7 @@
 		6AD5CE142A3A7F410004CCE7 /* Interval.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6AD5CDF42A3A7F410004CCE7 /* Interval.cpp */; };
 		6AD5CE172A3BE5D80004CCE7 /* fast_coalescent_calculator.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6AD5CE152A3BE5D80004CCE7 /* fast_coalescent_calculator.cpp */; };
 		6AD5CE1A2A3E1FD50004CCE7 /* sub_BSP.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6AD5CE182A3E1FD50004CCE7 /* sub_BSP.cpp */; };
-		6AD5CE1D2A48FA240004CCE7 /* approx_coalescent_calculator.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6AD5CE1B2A48FA240004CCE7 /* approx_coalescent_calculator.cpp */; };
+		6AD5CE1D2A48FA240004CCE7 /* coalescent_calculator.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6AD5CE1B2A48FA240004CCE7 /* coalescent_calculator.cpp */; };
 		6ADD720C2A5C826500AF1A62 /* BSP.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6ADD720A2A5C826500AF1A62 /* BSP.cpp */; };
 		6ADD720F2A6061CB00AF1A62 /* Normalizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6ADD720D2A6061CB00AF1A62 /* Normalizer.cpp */; };
 		6AEF0D312C1A27A7002BDD8D /* Rate_map.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6AEF0D302C1A27A7002BDD8D /* Rate_map.cpp */; };
@@ -120,8 +120,8 @@
 		6AD5CE162A3BE5D80004CCE7 /* fast_coalescent_calculator.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = fast_coalescent_calculator.hpp; sourceTree = "<group>"; };
 		6AD5CE182A3E1FD50004CCE7 /* sub_BSP.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = sub_BSP.cpp; sourceTree = "<group>"; };
 		6AD5CE192A3E1FD50004CCE7 /* sub_BSP.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = sub_BSP.hpp; sourceTree = "<group>"; };
-		6AD5CE1B2A48FA240004CCE7 /* approx_coalescent_calculator.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = approx_coalescent_calculator.cpp; sourceTree = "<group>"; };
-		6AD5CE1C2A48FA240004CCE7 /* approx_coalescent_calculator.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = approx_coalescent_calculator.hpp; sourceTree = "<group>"; };
+		6AD5CE1B2A48FA240004CCE7 /* coalescent_calculator.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = coalescent_calculator.cpp; sourceTree = "<group>"; };
+		6AD5CE1C2A48FA240004CCE7 /* coalescent_calculator.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = coalescent_calculator.hpp; sourceTree = "<group>"; };
 		6ADD720A2A5C826500AF1A62 /* BSP.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = BSP.cpp; sourceTree = "<group>"; };
 		6ADD720B2A5C826500AF1A62 /* BSP.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = BSP.hpp; sourceTree = "<group>"; };
 		6ADD720D2A6061CB00AF1A62 /* Normalizer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Normalizer.cpp; sourceTree = "<group>"; };
@@ -166,8 +166,8 @@
 				6AEF0D2F2C1A27A7002BDD8D /* Rate_map.hpp */,
 				6AC081F12A8C26930021DD8E /* approx_BSP.cpp */,
 				6AC081F22A8C26930021DD8E /* approx_BSP.hpp */,
-				6AD5CE1B2A48FA240004CCE7 /* approx_coalescent_calculator.cpp */,
-				6AD5CE1C2A48FA240004CCE7 /* approx_coalescent_calculator.hpp */,
+				6AD5CE1B2A48FA240004CCE7 /* coalescent_calculator.cpp */,
+				6AD5CE1C2A48FA240004CCE7 /* coalescent_calculator.hpp */,
 				6AD5CDC92A3A7F410004CCE7 /* ARG.cpp */,
 				6AD5CDF72A3A7F410004CCE7 /* ARG.hpp */,
 				6AD5CDE32A3A7F410004CCE7 /* Binary_emission.cpp */,
@@ -305,7 +305,7 @@
 				6AD5CE0F2A3A7F410004CCE7 /* Pruner.cpp in Sources */,
 				6AD5CE0A2A3A7F410004CCE7 /* fast_BSP_smc.cpp in Sources */,
 				6AD5CDFF2A3A7F410004CCE7 /* ARG.cpp in Sources */,
-				6AD5CE1D2A48FA240004CCE7 /* approx_coalescent_calculator.cpp in Sources */,
+				6AD5CE1D2A48FA240004CCE7 /* coalescent_calculator.cpp in Sources */,
 				6AD5CE132A3A7F410004CCE7 /* BSP_smc.cpp in Sources */,
 				6AD5CE062A3A7F410004CCE7 /* succint_BSP.cpp in Sources */,
 				6AD5CE082A3A7F410004CCE7 /* fast_BSP.cpp in Sources */,

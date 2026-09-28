@@ -72,6 +72,8 @@ public:
     void run_fast_BSP(ARG &a);
     
     void run_TSP(ARG &a);
+
+    void run_TSP(ARG &a, map<double, Branch> &jb);
     
     void sample_joining_branches(ARG &a);
     

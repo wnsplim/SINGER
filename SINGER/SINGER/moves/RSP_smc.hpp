@@ -21,7 +21,11 @@ class RSP_smc {
 public:
     
     RSP_smc();
-    
+
+    void set_tree(Tree &tree);
+
+    double sister_mass(double lo, double hi);
+
     void sample_recombination(Recombination &r, double cut_time, Tree &tree);
     
     void approx_sample_recombination(Recombination &r, double cut_time);
@@ -35,7 +39,15 @@ public:
 private:
     
     map<double, int> coalescence_rates = {};
-    
+
+    vector<double> level_times = {};
+    vector<double> level_rates = {};
+    vector<double> level_lambda = {};
+
+    int level_of(double s);
+
+    double lambda(double s);
+
     double sample_start_time(Branch b, int density, double join_time, double cut_time);
     
     pair<Branch, double> sample_start_time(Branch b1, Branch b2, int density, double join_time, double cut_time);

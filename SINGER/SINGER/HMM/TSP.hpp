@@ -13,7 +13,7 @@
 #include "random_utils.hpp"
 #include "Interval.hpp"
 #include "Emission.hpp"
-#include "approx_coalescent_calculator.hpp"
+#include "coalescent_calculator.hpp"
 
 class TSP {
     
@@ -24,9 +24,16 @@ public:
     double gap = 0;
     int min_num = 1;
     double epsilon = 1e-7;
+    double sister_mass = 0;
+
+    double sister_factor(double s);
+
     set<double> check_points = {};
     shared_ptr<Emission> eh;
-    shared_ptr<approx_coalescent_calculator> cc;
+    shared_ptr<coalescent_calculator> cc;
+    shared_ptr<coalescent_calculator> cc1;
+
+    double per_length(double rho, double L);
     static int counter;
     
     TSP();
@@ -73,7 +80,19 @@ public:
     void mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
     
     map<double, Node *> sample_joining_nodes(int start_index, vector<double> &coordinates);
-    
+
+    bool pin_active = false;
+
+    bool pinned(Interval *iv);
+
+    double stay_mass(Interval *iv, vector<Interval *> &intervals, vector<double> &probs, double rho);
+
+    double jump_mass(Interval *iv, vector<Interval *> &intervals, vector<double> &probs);
+
+    double ffbs_stay_logq(int x, Interval *iv);
+
+    double ffbs_jump_logq(int x, Interval *iv);
+
 // private:
 
     int curr_index = 0;
@@ -82,24 +101,42 @@ public:
     vector<pair<int, vector<Interval *>>>  state_spaces = {{INT_MAX, {}}};
     
     vector<double> rhos = {}; // length: number of blocks - 1
+    vector<double> sister_masses = {};
     vector<double> thetas = {}; // length: number of blocks
     
     vector<double> lower_sums = {};
     vector<double> upper_sums = {};
     vector<double> diagonals = {};
     vector<double> factors = {};
+    vector<double> masses = {};
     vector<double> lower_diagonals = {};
     vector<double> upper_diagonals = {};
-    
+
     double prev_rho = -1;
     double prev_theta = -1;
     Node *prev_node = nullptr;
+
+    vector<double> cd_lb = {}, cd_ub = {}, cd_time = {};
+    vector<double> cd_diagonals = {}, cd_lower = {}, cd_upper = {}, cd_factors = {};
+    double cd_rho = -1, cd_sister_mass = -1, cd_top = 0;
+    bool cd_valid = false;
+    double cc_lowest_change = numeric_limits<double>::infinity();
+
+    Interval *tb_interval = nullptr;
+    double tb_lb = 0, tb_ub = 0, tb_sister_mass = -1, tb_rho = -1;
+    const Interval *const *tb_states = nullptr;
+    size_t tb_nstates = 0;
+    long tb_generation = -1;
+    long cc_generation = 0;
     
     int dim = 0;
     vector<double> temp = {};
     vector<double> null_emit_probs = {};
     vector<double> mut_emit_probs = {};
     int sample_index = -1;
+    double log_h = 0;
+    double sel_log_q = 0;
+    double time_log_q = 0;
     vector<double> trace_back_probs = {};
     vector<vector<double>> forward_probs = {};
     vector<double> emissions = vector<double>(4);
@@ -115,7 +152,11 @@ public:
     double psmc_cdf(double rho, double s, double t);
     
     double psmc_prob(double rho, double s, double t1, double t2);
-    
+
+    double jump_prob(double rho, double s, double t1, double t2);
+
+    double own_mass(double t, double lb, double ub);
+
     double get_exp_quantile(double p);
 
     void fill_interval_time(Interval *iv);

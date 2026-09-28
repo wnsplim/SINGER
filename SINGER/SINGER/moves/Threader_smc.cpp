@@ -312,15 +312,22 @@ void Threader_smc::run_fast_BSP(ARG &a) {
 }
 
 void Threader_smc::run_TSP(ARG &a) {
+    run_TSP(a, new_joining_branches);
+}
+
+void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb) {
     tsp.reserve_memory(end_index - start_index);
     tsp.set_gap(gap);
     tsp.set_emission(be);
-    tsp.cc = make_shared<approx_coalescent_calculator>(cut_time);
+    tsp.cc = make_shared<coalescent_calculator>(cut_time);
     tsp.cc->start(a.start_tree);
-    Branch start_branch = new_joining_branches.begin()->second;
+    tsp.cc1 = make_shared<coalescent_calculator>(cut_time);
+    tsp.cc1->extra = 1;
+    tsp.cc1->start(a.start_tree);
+    Branch start_branch = jb.begin()->second;
     tsp.start(start_branch, cut_time);
     auto recomb_it = a.recombinations.upper_bound(start);
-    auto join_it = new_joining_branches.upper_bound(start);
+    auto join_it = jb.upper_bound(start);
     auto mut_it = a.mutation_sites.lower_bound(start);
     auto query_it = a.removed_branches.lower_bound(start);
     Branch prev_branch = start_branch;
@@ -328,10 +335,18 @@ void Threader_smc::run_TSP(ARG &a) {
     Node *query_node = nullptr;
     vector<double> mut_set = {};
     bool varying = varying_rate(a, start_index, end_index);
-    Tree tree;
-    if (varying) {
-        tree = a.start_tree;
-    }
+    Tree tree = a.start_tree;
+    RSP_smc rsp;
+    auto set_sister_mass = [&](Branch &b) {
+        double lo = b.lower_node->time;
+        if (lo < cut_time) {
+            rsp.set_tree(tree);
+            tsp.sister_mass = rsp.sister_mass(lo, cut_time);
+        } else {
+            tsp.sister_mass = 0;
+        }
+    };
+    set_sister_mass(start_branch);
     double curr_rho = a.thetas[start_index]/(a.coordinates[start_index + 1] - a.coordinates[start_index]);
     double p_tree = branch_product(a.start_tree, be->penalty, curr_rho);
     be->any_missing = a.any_missing;
@@ -348,15 +363,16 @@ void Threader_smc::run_TSP(ARG &a) {
             Recombination &r = recomb_it->second;
             recomb_it++;
             tsp.transfer(r, prev_branch, next_branch);
-            if (varying) {
-                tree.forward_update(r);
-            } else {
+            tree.forward_update(r);
+            if (!varying) {
                 p_tree = update_branch_product(p_tree, r, be->penalty*curr_rho);
             }
             prev_branch = next_branch;
+            set_sister_mass(next_branch);
         } else if (prev_branch != next_branch) {
             tsp.recombine(prev_branch, next_branch);
             prev_branch = next_branch;
+            set_sister_mass(next_branch);
         } else if (a.coordinates[i] != start) {
             double rho = a.rhos[i];
             tsp.forward(rho);

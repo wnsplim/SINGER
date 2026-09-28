@@ -74,6 +74,7 @@ void TSP::reset() {
     curr_branch = Branch();
     curr_intervals.clear();
     rhos.clear();
+    sister_masses.clear();
     thetas.clear();
     lower_sums.clear();
     upper_sums.clear();
@@ -89,10 +90,16 @@ void TSP::reset() {
     prev_rho = -1;
     prev_theta = -1;
     prev_node = nullptr;
+    tb_generation = -1;
+    cc_generation = 0;
     dim = 0;
     sample_index = -1;
     lower_bound = 0;
     n_arena = 0;
+}
+
+double TSP::per_length(double rho, double L) {
+    return -expm1(-rho*L)/L;
 }
 
 void TSP::reserve_memory(int length) {
@@ -102,6 +109,8 @@ void TSP::reserve_memory(int length) {
 
 void TSP::start(Branch &branch, double t) {
     cut_time = t;
+    cd_valid = false;
+    cc_lowest_change = numeric_limits<double>::infinity();
     curr_index = 0;
     curr_branch = branch;
     lower_bound = max(cut_time, branch.lower_node->time);
@@ -118,11 +127,25 @@ void TSP::start(Branch &branch, double t) {
 
 void TSP::transfer(Recombination &r, Branch &prev_branch, Branch &next_branch) {
     rhos.emplace_back(0);
+    sister_masses.emplace_back(sister_mass);
     prev_rho = -1;
     prev_theta = -1;
     prev_node = nullptr;
     sanity_check(r);
+    size_t num_times = cc->num_times();
     cc->update(r);
+    cc1->update(r);
+    if (cc->num_times() != num_times) {
+        cc_lowest_change = -numeric_limits<double>::infinity();
+    } else {
+        if (r.deleted_node->time > cut_time) {
+            cc_lowest_change = min(cc_lowest_change, r.deleted_node->time);
+        }
+        if (r.inserted_node->time > cut_time) {
+            cc_lowest_change = min(cc_lowest_change, r.inserted_node->time);
+        }
+    }
+    cc_generation += 1;
     curr_index += 1;
     curr_branch = next_branch;
     lower_bound = max(cut_time, next_branch.lower_node->time);
@@ -170,6 +193,7 @@ void TSP::recombine(Branch &prev_branch, Branch &next_branch) {
     vector<Interval *> prev_intervals = curr_intervals;
     curr_intervals.clear();
     rhos.emplace_back(0);
+    sister_masses.emplace_back(sister_mass);
     prev_rho = -1;
     prev_theta = -1;
     prev_node = nullptr;
@@ -183,12 +207,20 @@ void TSP::recombine(Branch &prev_branch, Branch &next_branch) {
     compute_factors();
     double mass = accumulate(forward_probs[curr_index-1].begin(),
                              forward_probs[curr_index-1].begin() + prev_intervals.size(), 0.0);
+    vector<double> w(curr_intervals.size(), 0.0);
     double tot = 0;
     for (int j = 0; j < curr_intervals.size(); j++) {
-        tot += cc->prob(curr_intervals[j]->lb, curr_intervals[j]->ub);
+        double lb = max(curr_intervals[j]->lb, cut_time);
+        double ub = curr_intervals[j]->ub;
+        if (ub <= lb) continue;
+        for (int i = 0; i < prev_intervals.size(); i++) {
+            double p = forward_probs[curr_index-1][i];
+            if (p > 0) w[j] += p*own_mass(prev_intervals[i]->time, lb, ub);
+        }
+        tot += w[j];
     }
     for (int j = 0; j < curr_intervals.size(); j++) {
-        forward_probs[curr_index][j] += mass*cc->prob(curr_intervals[j]->lb, curr_intervals[j]->ub)/tot;
+        forward_probs[curr_index][j] += mass*w[j]/tot;
     }
     for (int i = 0; i < forward_probs[curr_index].size(); i++) {
         assert(forward_probs[curr_index][i] >= 0);
@@ -237,6 +269,7 @@ double TSP::recomb_cdf(double s, double t) {
 
 void TSP::forward(double rho) {
     rhos.emplace_back(rho);
+    sister_masses.emplace_back(sister_mass);
     compute_diagonals(rho);
     compute_lower_diagonals(rho);
     compute_upper_diagonals(rho);
@@ -317,9 +350,13 @@ void TSP::mut_emit(double theta, double bin_size, vector<double> &mut_set, Node 
 
 map<double, Node *> TSP::sample_joining_nodes(int start_index, vector<double> &coordinates) {
     prev_rho = -1;
+    log_h = 0;
+    sel_log_q = 0;
+    time_log_q = 0;
     map<double, Node *> joining_nodes = {};
     int x = curr_index;
     double pos = coordinates[x + start_index + 1];
+    pin_active = false;
     Interval *interval = sample_curr_interval(x);
     Node *n = sample_joining_node(interval);
     joining_nodes[pos] = nullptr;
@@ -337,14 +374,14 @@ map<double, Node *> TSP::sample_joining_nodes(int start_index, vector<double> &c
             } else {
                 x -= 1;
                 interval = sample_recomb_interval(interval, x);
+                pin_active = interval->node != nullptr;
                 n = sample_joining_node(interval);
-                // n = sample_joining_node(interval, n);
             }
         } else {
             x -= 1;
             interval = sample_prev_interval(interval, x);
+            pin_active = false;
             n = sample_joining_node(interval);
-            // n = sample_joining_node(interval, n);
         }
         prev_rho = -1;
     }
@@ -353,6 +390,10 @@ map<double, Node *> TSP::sample_joining_nodes(int start_index, vector<double> &c
 
 double TSP::non_recomb_prob(double rho, double s) {
     return exp(-rho*(s - cut_time));
+}
+
+double TSP::sister_factor(double s) {
+    return 2.0;
 }
 
 void TSP::fill_interval_time(Interval *iv) {
@@ -419,6 +460,52 @@ double TSP::psmc_prob(double rho, double s, double t1, double t2) {
     prob = max(prob, epsilon);
     assert(prob <= 1);
     return prob;
+}
+
+double TSP::own_mass(double t, double lb, double ub) {
+    lb = max(lb, cut_time);
+    if (ub <= lb) {
+        return 0;
+    }
+    double m = 0;
+    double tb = min(ub, t);
+    if (tb > lb) {
+        m += cc1->recomb_mass(t, tb) - cc1->recomb_mass(t, lb);
+    }
+    if (ub > t) {
+        double den = cc1->prob(t, ub);
+        if (den > 0) {
+            double w = (cc1->recomb_mass(t, ub) - cc1->recomb_mass(t, t))/den*cc1->surv(t);
+            m += w*cc->prob(max(lb, t), ub)/cc->surv(t);
+        }
+    }
+    return m;
+}
+
+double TSP::jump_prob(double rho, double s, double t1, double t2) {
+    double lb = max(t1, cut_time);
+    if (t2 <= lb) {
+        return epsilon;
+    }
+    double p;
+    double fs = sister_factor(s);
+    if (s - cut_time < 0.005) {
+        p = fs*per_length(rho, s - cut_time)*(s - cut_time)*(cc->surv(lb) - cc->surv(t2));
+    } else {
+        p = fs*per_length(rho, s - cut_time)*own_mass(s, lb, t2);
+    }
+    if (sister_mass > 0) {
+        double q = 0;
+        double tb = min(t2, s);
+        if (tb > lb) {
+            q += cc1->prob(lb, tb);
+        }
+        if (t2 > s) {
+            q += exp(-(s - cut_time))*cc->prob(max(lb, s), t2);
+        }
+        p += rho*sister_mass*q;
+    }
+    return max(p, epsilon);
 }
 
 void TSP::generate_intervals(Branch &next_branch, double lb, double ub) {
@@ -502,6 +589,7 @@ void TSP::set_dimensions() {
     null_emit_probs.resize(dim); null_emit_probs.assign(dim, 0);
     mut_emit_probs.resize(dim); mut_emit_probs.assign(dim, 0);
     factors.resize(dim); factors.assign(dim, 0);
+    masses.resize(dim); masses.assign(dim, 0);
 }
 
 double TSP::random() {
@@ -540,65 +628,120 @@ void TSP::compute_diagonals(double rho) {
     if (rho == prev_rho) {
         return;
     }
-    double t;
-    double base;
-    double lb = curr_intervals.front()->lb;
-    double ub = curr_intervals.back()->ub;
-    Interval *curr_interval = nullptr;
-    double diag = 0;
-    double stay_prob = 0;
-    double jump_prob = 0;
-    double full_jump_prob = 0;
+    if (cd_valid and rho == cd_rho and sister_mass == cd_sister_mass and cc_lowest_change > cd_top and (int) cd_lb.size() == dim) {
+        bool same = true;
+        for (int i = 0; i < dim and same; i++) {
+            Interval *iv = curr_intervals[i];
+            same = iv->lb == cd_lb[i] and iv->ub == cd_ub[i] and iv->time == cd_time[i];
+        }
+        if (same) {
+            diagonals = cd_diagonals;
+            lower_diagonals = cd_lower;
+            upper_diagonals = cd_upper;
+            factors = cd_factors;
+            return;
+        }
+    }
+    vector<double> A(dim), Bv(dim), BA(dim), BB(dim), GA(dim), GB(dim), HA(dim), HB(dim), SA(dim), SB(dim);
+    for (int j = 0; j < dim; j++) {
+        A[j] = max(curr_intervals[j]->lb, cut_time);
+        Bv[j] = curr_intervals[j]->ub;
+        BA[j] = cc1->recomb_mass(A[j] + 1, A[j]);
+        BB[j] = cc1->recomb_mass(Bv[j] + 1, Bv[j]);
+        GA[j] = cc->prob(cut_time, A[j]);
+        GB[j] = cc->prob(cut_time, Bv[j]);
+        HA[j] = cc1->prob(cut_time, A[j]);
+        HB[j] = cc1->prob(cut_time, Bv[j]);
+        SA[j] = cc->surv(A[j]);
+        SB[j] = cc->surv(Bv[j]);
+    }
+    double top = Bv[dim-1];
+    double a0 = A[0];
     for (int i = 0; i < dim; i++) {
-        curr_interval = curr_intervals[i];
-        t = curr_interval->time;
-        stay_prob = non_recomb_prob(rho, t);
-        full_jump_prob = psmc_prob(rho, t, lb, ub);
-        base = stay_prob + full_jump_prob;
-        jump_prob = psmc_prob(rho, t, curr_interval->lb, curr_interval->ub);
-        diag = stay_prob + jump_prob;
-        diagonals[i] = diag/base;
+        double t = curr_intervals[i]->time;
+        double stay;
+        stay = non_recomb_prob(rho, t);
+        double fs = sister_factor(t);
+        double Bt = cc1->recomb_mass(t + 1, t);
+        double Gt = cc->prob(cut_time, t);
+        double Ht = cc1->prob(cut_time, t);
+        double S = cc->surv(t);
+        double W = 0;
+        if (top > t) {
+            double den = cc1->prob(t, top);
+            if (den > 0) W = (cc1->recomb_mass(t, top) - cc1->recomb_mass(t, t))/den*cc1->surv(t);
+        }
+        bool small = t - cut_time < 0.005;
+        double pref = small ? 0 : per_length(rho, t - cut_time);
+        double pref0 = per_length(rho, t - cut_time)*(t - cut_time);
+        double sis = exp(-(t - cut_time));
+        auto jump = [&](double a, double b, double Ba, double Bb, double Ga, double Gb, double Ha, double Hb, double Sa, double Sb) {
+            if (b <= a) return epsilon;
+            double tb = min(b, t);
+            double p;
+            if (small) {
+                p = fs*pref0*(Sa - Sb);
+            } else {
+                double m = 0;
+                if (tb > a) m += (tb == b ? Bb : Bt) - Ba;
+                if (b > t) m += W*(Gb - (a >= t ? Ga : Gt))/S;
+                p = fs*pref*m;
+            }
+            if (sister_mass > 0) {
+                double q = 0;
+                if (tb > a) q += (tb == b ? Hb : Ht) - Ha;
+                if (b > t) q += sis*(Gb - (a >= t ? Ga : Gt));
+                p += rho*sister_mass*q;
+            }
+            return max(p, epsilon);
+        };
+        double full = jump(a0, top, BA[0], BB[dim-1], GA[0], GB[dim-1], HA[0], HB[dim-1], SA[0], SB[dim-1]);
+        double base = stay + full;
+        double self = jump(A[i], Bv[i], BA[i], BB[i], GA[i], GB[i], HA[i], HB[i], SA[i], SB[i]);
+        diagonals[i] = (stay + self)/base;
+        if (i > 0) {
+            lower_diagonals[i-1] = jump(A[i-1], Bv[i-1], BA[i-1], BB[i-1], GA[i-1], GB[i-1], HA[i-1], HB[i-1], SA[i-1], SB[i-1])/base;
+        }
+        if (i + 1 < dim) {
+            upper_diagonals[i+1] = jump(A[i+1], Bv[i+1], BA[i+1], BB[i+1], GA[i+1], GB[i+1], HA[i+1], HB[i+1], SA[i+1], SB[i+1])/base;
+            double a = max(Bv[i], cut_time);
+            double m = GB[dim-1] - GB[i];
+            factors[i] = (m > 0) ? jump(a, top, BB[i], BB[dim-1], GB[i], GB[dim-1], HB[i], HB[dim-1], SB[i], SB[dim-1])/base/m : 0;
+        }
         assert(!isnan(diagonals[i]));
     }
+    lower_diagonals[dim-1] = 0;
+    upper_diagonals[0] = 0;
+    factors[dim-1] = 0;
+    cd_lb.resize(dim); cd_ub.resize(dim); cd_time.resize(dim);
+    for (int i = 0; i < dim; i++) {
+        cd_lb[i] = curr_intervals[i]->lb;
+        cd_ub[i] = curr_intervals[i]->ub;
+        cd_time[i] = curr_intervals[i]->time;
+    }
+    cd_diagonals = diagonals;
+    cd_lower = lower_diagonals;
+    cd_upper = upper_diagonals;
+    cd_factors = factors;
+    cd_rho = rho;
+    cd_sister_mass = sister_mass;
+    cd_top = top;
+    cc_lowest_change = numeric_limits<double>::infinity();
+    cd_valid = true;
 }
 
 void TSP::compute_lower_diagonals(double rho) {
-    if (rho == prev_rho) {
-        return;
-    }
-    double t;
-    double base;
-    lower_diagonals[dim-1] = 0;
-    double lb = max(cut_time, curr_intervals.front()->lb);
-    double ub = curr_intervals.back()->ub;
-    for (int i = 0; i < dim - 1; i++) {
-        t = curr_intervals[i+1]->time;
-        base = psmc_prob(rho, t, lb, ub) + non_recomb_prob(rho, t);
-        lower_diagonals[i] = psmc_prob(rho, t, curr_intervals[i]->lb, curr_intervals[i]->ub)/base;
-    }
 }
 
 void TSP::compute_upper_diagonals(double rho) {
-    if (rho == prev_rho) {
-        return;
-    }
-    upper_diagonals[0] = 0;
-    double lb = max(cut_time, curr_intervals.front()->lb);
-    double ub = curr_intervals.back()->ub;
-    double t;
-    double base;
-    for (int i = 1; i < dim; i++) {
-        t = curr_intervals[i-1]->time;
-        base = psmc_prob(rho, t, lb, ub) + non_recomb_prob(rho, t);
-        upper_diagonals[i] = psmc_prob(rho, t, curr_intervals[i]->lb, curr_intervals[i]->ub)/base;
-        assert(!isnan(upper_diagonals[i]));
-    }
 }
 
 void TSP::compute_lower_sums() {
     lower_sums[0] = 0;
+    double u = 0;
     for (int i = 1; i < dim; i++) {
-        lower_sums[i] = upper_diagonals[i]*forward_probs[curr_index][i-1] + factors[i]*lower_sums[i-1];
+        u += factors[i-1]*forward_probs[curr_index][i-1];
+        lower_sums[i] = u*masses[i];
         assert(!isnan(lower_sums[i]));
     }
 }
@@ -608,18 +751,10 @@ void TSP::compute_upper_sums() {
 }
 
 void TSP::compute_factors() {
-    factors[0] = 0;
-    for (int i = 1; i < dim; i++) {
-        if (curr_intervals[i-1]->ub == curr_intervals[i-1]->lb) {
-            factors[i] = 0;
-        } else if (curr_intervals[i-1]->ub - curr_intervals[i-1]->lb < 1e-4) {
-            factors[i] = 5;
-        } else {
-            factors[i] = (curr_intervals[i]->s_lb - curr_intervals[i]->s_ub)/(curr_intervals[i-1]->s_lb - curr_intervals[i-1]->s_ub);
-            factors[i] = min(factors[i], 5.0);
-        }
-        assert(!isnan(factors[i]) and !isinf(factors[i]));
+    for (int i = 0; i < dim; i++) {
+        masses[i] = cc->prob(max(curr_intervals[i]->lb, cut_time), curr_intervals[i]->ub);
     }
+    prev_rho = -1;
 }
 
 void TSP::compute_emissions(vector<double> &mut_set, const Branch &branch, Node *node) {
@@ -645,13 +780,24 @@ void TSP::compute_trace_back_probs(double rho, Interval *interval, vector<Interv
     if (rho == prev_rho) {
         return;
     }
-    for (int i = 0; i < trace_back_probs.size(); i++) {
-        trace_back_probs[i] = psmc_prob(rho, intervals[i]->time, interval->lb, interval->ub);
-        if (intervals[i] == interval) {
-            trace_back_probs[i] += non_recomb_prob(rho, intervals[i]->time);
-        }
-        trace_back_probs[i] = max(epsilon, trace_back_probs[i]);
+    if (tb_generation == cc_generation and tb_interval == interval and tb_lb == interval->lb
+        and tb_ub == interval->ub and tb_sister_mass == sister_mass
+        and tb_states == (const Interval *const *) intervals.data() and tb_nstates == intervals.size()
+        and trace_back_probs.size() == intervals.size() and rho == tb_rho) {
+        prev_rho = rho;
+        return;
     }
+    for (int i = 0; i < trace_back_probs.size(); i++) {
+        trace_back_probs[i] = jump_prob(rho, intervals[i]->time, interval->lb, interval->ub);
+    }
+    tb_generation = cc_generation;
+    tb_interval = interval;
+    tb_lb = interval->lb;
+    tb_ub = interval->ub;
+    tb_sister_mass = sister_mass;
+    tb_states = (const Interval *const *) intervals.data();
+    tb_nstates = intervals.size();
+    tb_rho = rho;
 }
 
 void TSP::sanity_check(Recombination &r) {
@@ -700,6 +846,7 @@ Interval *TSP::sample_curr_interval(int x) {
         w -= forward_probs[x][i];
         if (w <= 0) {
             sample_index = i;
+            sel_log_q += log(forward_probs[x][i]/ws);
             return intervals[i];
         }
     }
@@ -712,23 +859,20 @@ Interval *TSP::sample_prev_interval(Interval *interval, int x) {
     lower_bound = intervals.front()->lb;
     double ws = 0;
     double rho = rhos[x];
+    sister_mass = sister_masses[x];
+    prev_rho = -1;
     compute_trace_back_probs(rho, interval, intervals);
     vector<double> &probs = forward_probs[x];
-    for (int i = 0; i < intervals.size(); i++) {
-        if (intervals[i] != interval) {
-            ws += trace_back_probs[i]*probs[i];
-        }
-    }
+    ws = jump_mass(interval, intervals, probs);
     double q = random();
     double w = ws*q;
     assert(ws > 0);
     for (int i = 0; i < intervals.size(); i++) {
-        if (intervals[i] != interval) {
-            w -= trace_back_probs[i]*forward_probs[x][i];
-            if (w <= 0) {
-                sample_index = i;
-                return intervals[i];
-            }
+        w -= trace_back_probs[i]*probs[i];
+        if (w <= 0) {
+            sample_index = i;
+            sel_log_q += log(trace_back_probs[i]*probs[i]/ws);
+            return intervals[i];
         }
     }
     cerr << "tsp prev sampling failed" << endl;
@@ -751,16 +895,17 @@ Interval *TSP::sample_recomb_interval(Interval *interval, int x) {
     Interval *prev_interval = nullptr;
     for (int i = 0; i < intervals.size(); i++) {
         prev_interval = intervals[i];
-        ws += recomb_prob(prev_interval->time, interval->lb, interval->ub)*forward_probs[x][i];
+        ws += max(own_mass(prev_interval->time, interval->lb, interval->ub), epsilon)*forward_probs[x][i];
     }
     assert(ws > 0);
     double q = random();
     double w = ws*q;
     for (int i = 0; i< intervals.size(); i++) {
         prev_interval = intervals[i];
-        w -= recomb_prob(prev_interval->time, interval->lb, interval->ub)*forward_probs[x][i];
+        w -= max(own_mass(prev_interval->time, interval->lb, interval->ub), epsilon)*forward_probs[x][i];
         if (w <= 0) {
             sample_index = i;
+            sel_log_q += log(max(own_mass(intervals[i]->time, interval->lb, interval->ub), epsilon)*forward_probs[x][i]/ws);
             return intervals[i];
         }
     }
@@ -779,20 +924,26 @@ int TSP::trace_back_helper(Interval *interval, int x) {
     vector<Interval *> &intervals = get_state_space(x);
     lower_bound = intervals.front()->lb;
     if (trace_back_probs.size() != intervals.size()) trace_back_probs.assign(intervals.size(), 0.0);
+    if (x > y) {
+        sister_mass = sister_masses[x-1];
+        prev_rho = -1;
+    }
     while (p > q and x > y) {
         rho = rhos[x-1];
         compute_trace_back_probs(rho, interval, intervals);
         prev_rho = rho;
         vector<double> &prev_probs = forward_probs[x - 1];
-        all_prob = inner_product(trace_back_probs.begin(), trace_back_probs.end(), prev_probs.begin(), 0.0);
+        non_recomb_prob = stay_mass(interval, intervals, prev_probs, rho);
+        all_prob = non_recomb_prob + jump_mass(interval, intervals, prev_probs);
         assert(all_prob > 0);
-        non_recomb_prob = trace_back_probs[sample_index]*forward_probs[x - 1][sample_index];
         shrinkage = non_recomb_prob/all_prob;
         assert(!isnan(shrinkage));
         p *= shrinkage;
         if (p <= q) {
+            sel_log_q += ffbs_jump_logq(x, interval);
             return x;
         }
+        sel_log_q += ffbs_stay_logq(x, interval);
         x -= 1;
     }
     assert(forward_probs[y][sample_index] > 0);
@@ -862,7 +1013,12 @@ Interval *TSP::search_point_interval(Recombination &r) {
 }
 
 double TSP::sample_time(double lb, double ub) {
-    return exp_median(lb, ub);
+    double ls = cc->surv(lb);
+    double us = cc->surv(ub);
+    double m = cc->surv_inv(ls - uniform_random()*(ls - us));
+    if (m < lb) m = lb;
+    if (m > ub) m = ub;
+    return m;
 }
 
 double TSP::exp_median(double lb, double ub) {
@@ -878,13 +1034,60 @@ double TSP::exp_median(double lb, double ub) {
 }
 
 
+bool TSP::pinned(Interval *iv) {
+    return iv->node != nullptr and (iv->lb == iv->ub or pin_active);
+}
+
+double TSP::stay_mass(Interval *iv, vector<Interval *> &intervals, vector<double> &probs, double rho) {
+    int fi = get_interval_index(iv, intervals);
+    return non_recomb_prob(rho, iv->time)*probs[fi];
+}
+
+double TSP::jump_mass(Interval *iv, vector<Interval *> &intervals, vector<double> &probs) {
+    return inner_product(trace_back_probs.begin(), trace_back_probs.end(), probs.begin(), 0.0);
+}
+
+double TSP::ffbs_stay_logq(int x, Interval *iv) {
+    vector<Interval *> &pv = get_state_space(x);
+    if (trace_back_probs.size() != pv.size()) trace_back_probs.assign(pv.size(), 0.0);
+    sister_mass = sister_masses[x - 1];
+    prev_rho = -1;
+    compute_trace_back_probs(rhos[x - 1], iv, pv);
+    double nr = stay_mass(iv, pv, forward_probs[x - 1], rhos[x - 1]);
+    double ap = nr + jump_mass(iv, pv, forward_probs[x - 1]);
+    if (ap <= 0 or nr <= 0) return -numeric_limits<double>::infinity();
+    return log(nr) - log(ap);
+}
+
+double TSP::ffbs_jump_logq(int x, Interval *iv) {
+    vector<Interval *> &pv = get_state_space(x);
+    if (trace_back_probs.size() != pv.size()) trace_back_probs.assign(pv.size(), 0.0);
+    sister_mass = sister_masses[x - 1];
+    prev_rho = -1;
+    compute_trace_back_probs(rhos[x - 1], iv, pv);
+    double nr = stay_mass(iv, pv, forward_probs[x - 1], rhos[x - 1]);
+    double wsj = jump_mass(iv, pv, forward_probs[x - 1]);
+    double ap = nr + wsj;
+    if (ap <= 0 or wsj <= 0) return -numeric_limits<double>::infinity();
+    return log(wsj) - log(ap);
+}
+
 Node *TSP::sample_joining_node(Interval *interval) {
     Node *n = nullptr;
     double t;
-    if (interval->node != nullptr) {
+    if (pinned(interval)) {
         n = interval->node;
     } else {
+        if (interval->ub - interval->lb > 0.005) {
+            double sd = cc->surv(interval->lb) - cc->surv(interval->ub);
+            if (sd > 0) log_h += log(sd);
+        }
         t = sample_time(interval->lb, interval->ub);
+        {
+            double sv = cc->surv(t);
+            double sd = cc->surv(interval->lb) - cc->surv(interval->ub);
+            if (sd > 0 and sv > 0) time_log_q += log(sv) - log(sd) + log(cc->rate(t));
+        }
         node_owner.push_back(new_node(t));
         n = node_owner.back().get();
         n->set_index(counter);

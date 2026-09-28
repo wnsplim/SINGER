@@ -10,6 +10,62 @@
 RSP_smc::RSP_smc() {
 }
 
+void RSP_smc::set_tree(Tree &tree) {
+    vector<double> node_times;
+    for (auto &x : tree.parents) {
+        if (x.first->time > 0) {
+            node_times.push_back(x.first->time);
+        }
+    }
+    sort(node_times.begin(), node_times.end());
+    level_times.assign(1, 0.0);
+    for (double t : node_times) {
+        if (t != level_times.back()) {
+            level_times.push_back(t);
+        }
+    }
+    int m = (int) level_times.size();
+    level_rates.resize(m);
+    level_lambda.assign(m, 0.0);
+    for (int j = 0; j < m; j++) {
+        level_rates[j] = 1.0 + (node_times.end() - upper_bound(node_times.begin(), node_times.end(), level_times[j]));
+        if (j > 0) {
+            level_lambda[j] = level_lambda[j-1] + level_rates[j-1]*(level_times[j] - level_times[j-1]);
+        }
+    }
+}
+
+int RSP_smc::level_of(double s) {
+    const double *base = level_times.data();
+    int len = (int) level_times.size();
+    while (len > 1) {
+        int half = len/2;
+        base = (base[half] <= s) ? base + half : base;
+        len -= half;
+    }
+    return (int) (base - level_times.data());
+}
+
+double RSP_smc::lambda(double s) {
+    int j = level_of(s);
+    return level_lambda[j] + level_rates[j]*(s - level_times[j]);
+}
+
+double RSP_smc::sister_mass(double lo, double hi) {
+    double lam_hi = lambda(hi) + hi;
+    double total = 0;
+    int j = level_of(lo);
+    double a = lo;
+    while (a < hi) {
+        double b = (j + 1 < (int) level_times.size()) ? min(level_times[j+1], hi) : hi;
+        double k = level_rates[j] + 1;
+        total += (exp(lambda(b) + b - lam_hi) - exp(lambda(a) + a - lam_hi))/k;
+        a = b;
+        j += 1;
+    }
+    return total;
+}
+
 double RSP_smc::sample_start_time(Branch b, int density, double join_time, double cut_time) {
     double lb = b.lower_node->time;
     double ub = b.upper_node->time;
