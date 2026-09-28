@@ -311,7 +311,7 @@ int main(int argc, const char * argv[]) {
     }
     bool exact = mode == "exact";
     if (scaling_rep < 0) {
-        scaling_rep = exact ? 0 : 5;
+        scaling_rep = exact ? 1 : 5;
     }
     if (epsilon_hmm < 0) {
         epsilon_hmm = exact ? 0.1 : 0.001;
