@@ -77,27 +77,6 @@ void Tree::insert_branch(const Branch &b) {
     children[b.upper_node].insert(b.lower_node);
 }
 
-void Tree::internal_insert_branch(const Branch &b, double cut_time) {
-    if (b.upper_node->time <= cut_time) {
-        return;
-    }
-    parents[b.lower_node] = b.upper_node;
-    children[b.upper_node].insert(b.lower_node);
-}
-
-void Tree::internal_delete_branch(const Branch &b, double cut_time) {
-    if (b.upper_node->time <= cut_time) {
-        return;
-    }
-    parents.erase(b.lower_node);
-    unordered_set<Node *> &children_nodes = children[b.upper_node];
-    if (children_nodes.size() == 1) {
-        children.erase(b.upper_node);
-    } else {
-        children_nodes.erase(b.lower_node);
-    }
-}
-
 void Tree::forward_update(Recombination &r) {
     int prev_size = (int) parents.size();
     for (const Branch &b : r.deleted_branches) {
@@ -123,7 +102,6 @@ void Tree::backward_update(Recombination &r) {
 }
 
 void Tree::remove(Branch b, Node *n) {
-    // assert(branches.count(b) > 0);
     assert(b.upper_node->index >= 0);
     Branch joining_branch = find_joining_branch(b);
     Node *sibling = find_sibling(b.lower_node);
@@ -132,8 +110,6 @@ void Tree::remove(Branch b, Node *n) {
     Branch parent_branch = Branch(b.upper_node, parent);
     Branch cut_branch = Branch(b.lower_node, n);
     delete_branch(b);
-    // assert(branches.count(sibling_branch) > 0);
-    // assert(branches.count(parent_branch) > 0);
     delete_branch(sibling_branch);
     delete_branch(parent_branch);
     insert_branch(joining_branch);
@@ -152,23 +128,6 @@ void Tree::add(Branch added_branch, Branch joining_branch, Node *n) {
     insert_branch(upper_branch);
     insert_branch(added_branch);
 }
-
-/*
-Node *Tree::find_sibling(Node *n) {
-    Node *p = parents[n];
-    Branch b = Branch(n, p);
-    set<Branch>::iterator branch_it = branches.find(b);
-    branch_it++;
-    Branch candidate = *branch_it;
-    if (candidate.upper_node != p) {
-        branch_it--;
-        branch_it--;
-    }
-    candidate = *branch_it;
-    Node_ptr s = (*branch_it).lower_node;
-    return s;
-}
- */
 
 Node *Tree::find_sibling(Node *n) {
     Node *p = parents[n];
@@ -225,34 +184,6 @@ pair<Branch, double> Tree::sample_uniform_cut_point() {
     return {last, 0.5*(last.lower_node->time + last.upper_node->time)};
 }
 
-void Tree::internal_cut(double cut_time) {
-    for (auto it = parents.begin(); it != parents.end();) {
-        if (it->second->time <= cut_time) {
-            it = parents.erase(it);
-        } else {
-            ++it;
-        }
-    }
-}
-
-void Tree::internal_forward_update(Recombination &r, double cut_time) {
-    for (const Branch &b : r.deleted_branches) {
-        internal_delete_branch(b, cut_time);
-    }
-    for (const Branch &b : r.inserted_branches) {
-        internal_insert_branch(b, cut_time);
-    }
-}
-
-void Tree::internal_backward_update(Recombination &r, double cut_time) {
-    for (const Branch &b : r.inserted_branches) {
-        internal_delete_branch(b, cut_time);
-    }
-    for (const Branch &b : r.deleted_branches) {
-        internal_insert_branch(b, cut_time);
-    }
-}
-
 double Tree::prior_likelihood() {
     double log_likelihood = 0;
     set<double> coalescence_times = {};
@@ -270,103 +201,8 @@ double Tree::prior_likelihood() {
     return log_likelihood;
 }
 
-double Tree::data_likelihood(double theta, double pos) {
-    double log_likelihood = 0;
-    double branch_likelihood = 0;
-    for (auto &x : parents) {
-        Branch b = Branch(x.first, x.second);
-        if (b.length() != numeric_limits<double>::infinity()) {
-            double sl = b.lower_node->get_state(pos);
-            double su = b.upper_node->get_state(pos);
-            if (sl != su) {
-                branch_likelihood = log(theta) + log(b.length()) - theta*b.length();
-            } else {
-                branch_likelihood = -theta*b.length();
-            }
-            log_likelihood += branch_likelihood;
-        }
-    }
-    return log_likelihood;
-}
-
-double Tree::null_likelihood(double theta) {
-    return -theta*length();
-}
-
-double Tree::data_likelihood(double theta, double bin_size, set<double> mutations) {
-    double log_likelihood = 0;
-    for (double x : mutations) {
-        log_likelihood += data_likelihood(theta/bin_size, x);
-    }
-    double prop = 1 - mutations.size()/bin_size;
-    log_likelihood += null_likelihood(-theta*prop);
-    return log_likelihood;
-}
-
-double Tree::transition_likelihood(Recombination &r) {
-    double log_likelihood = 0;
-    log_likelihood -= log(length());
-    set<double> coalescence_times = {};
-    for (auto &x : parents) {
-        if (x.second->time > r.start_time) {
-            coalescence_times.insert(x.second->time);
-        }
-    }
-    vector<double> sorted_coalescence_times = vector(coalescence_times.begin(), coalescence_times.end());
-    int num_leaves = (int) sorted_coalescence_times.size() - 1;
-    double base_time = r.start_time;
-    double join_time = r.inserted_node->time;
-    for (int i = 0; i < sorted_coalescence_times.size(); i++) {
-        if (sorted_coalescence_times[i] > join_time) {
-            log_likelihood += log_exp(num_leaves, join_time - base_time);
-            break;
-        } else {
-            log_likelihood += log_exp(num_leaves, sorted_coalescence_times[i] - base_time);
-            base_time = sorted_coalescence_times[i];
-            num_leaves -= 1;
-        }
-    }
-    return log_likelihood;
-}
-
-// private methods:
-
 double Tree::log_exp(double lambda, double x) {
     return -lambda*x + log(lambda);
-}
-
-int Tree::depth(Node *n) {
-    int depth = 0;
-    while (!isinf(n->time)) {
-        depth += 1;
-        n = parents[n];
-    }
-    return depth;
-}
-
-Node *Tree::LCA(Node *n1, Node *n2) {
-    set<Node *> ancestors = {};
-    while (!isinf(n1->time)) {
-        ancestors.insert(n1);
-        n1 = parents[n1];
-    }
-    while (!isinf(n2->time)) {
-        if (ancestors.count(n2) > 0) {
-            return n2;
-        }
-        n2 = parents[n2];
-    }
-    return n1;
-}
-
-int Tree::distance(Node *n1, Node *n2) {
-    if (n1 == n2) {
-        return 0;
-    }
-    Node *lca = LCA(n1, n2);
-    int depth1 = depth(n1) - depth(lca);
-    int depth2 = depth(n2) - depth(lca);
-    return depth1 + depth2;
 }
 
 void Tree::impute_states(double m, set<Branch> &mutation_branches) {

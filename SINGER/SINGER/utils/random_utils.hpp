@@ -21,8 +21,6 @@ extern std::uniform_real_distribution<> uniform_distribution;
 
 double uniform_random();
 
-void set_seed(unsigned seed);
-
 std::string get_time();
 
 #endif /* random_utils_hpp */

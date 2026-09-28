@@ -90,8 +90,6 @@ void coalescent_calculator::refresh() {
     rebuild_from = m;
 }
 
-void coalescent_calculator::compute_first_moment() {}
-
 void coalescent_calculator::at(double x, double &g, double &q) {
     int m = (int) t.size();
     if (isinf(x)) {

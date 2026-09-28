@@ -40,51 +40,35 @@ public:
     
     bool create(const Branch &b);
     
-    void find_nodes(); // find deleted/inserted nodes;
-    
-    void find_target_branch(); // find target branch;
-    
-    void find_recomb_info(); // find other branches;
-    
+    void find_nodes();
+
+    void find_target_branch();
+
+    void find_recomb_info();
+
     Branch trace_forward(double t, Branch curr_branch);
-    
+
     Branch trace_backward(double t, Branch curr_branch);
-    
+
     Branch next_joining_branch(Branch removed_branch, Branch joining_branch);
-    
-    Branch prev_joining_branch(Branch removed_branch, Branch joining_branch);
-    
+
     void remove(Branch prev_removed_branch, Branch next_removed_branch, Branch prev_split_branch, Branch next_split_branch, Node *cut_node);
-    
-    void remove(Branch prev_removed_branch, Branch next_removed_branch, Branch prev_split_branch, Branch next_split_branch);
-    
+
     void add(Branch prev_added_branch, Branch next_added_branch, Branch prev_joining_branch, Branch next_joining_branch, Node *cut_node);
-    
+
     void break_front(Branch next_removed_branch, Branch next_split_branch, Node *cut_node);
-    
+
     void break_end(Branch next_removed_branch, Branch next_split_branch, Node *cut_node);
-    
-    void break_front(Branch next_removed_branch, Branch next_split_branch);
-    
-    void break_end(Branch next_removed_branch, Branch next_split_branch);
-    
-    void fix_front(Branch next_added_branch, Branch next_joining_branch, Node *cut_node);
-    
-    void fix_end(Branch prev_added_branch, Branch prev_joining_branch, Node *cut_node);
-    
-    Branch next_added_branch(Branch prev_joining_branch, Branch prev_added_branch, Node *base_node);
-    
-// private:
-    
+
     void simplify_branches();
     
     void add_deleted_branch(Branch b);
     
     void add_inserted_branch(Branch b);
     
-    Branch search_upper_node(Node *n); // search in the deleted branches a non-source branch with n as upper node
-    
-    Branch search_lower_node(Node *n); // search in the deleted branches a non-source branch with n as lower node
+    Branch search_upper_node(Node *n);
+
+    Branch search_lower_node(Node *n);
     
 };
 

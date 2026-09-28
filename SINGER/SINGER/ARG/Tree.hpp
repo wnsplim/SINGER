@@ -30,11 +30,7 @@ public:
     void insert_branch(const Branch &b);
     
     void delete_branch(const Branch &b);
-    
-    void internal_insert_branch(const Branch &b, double cut_time);
-    
-    void internal_delete_branch(const Branch &b, double cut_time);
-    
+
     void forward_update(Recombination &r);
     
     void backward_update(Recombination &r);
@@ -50,35 +46,11 @@ public:
     pair<Branch, double> sample_cut_point();
 
     pair<Branch, double> sample_uniform_cut_point();
-    
-    void internal_cut(double cut_time);
-    
-    void internal_forward_update(Recombination &r, double cut_time);
-    
-    void internal_backward_update(Recombination &r, double cut_time);
-    
+
     double prior_likelihood();
-    
-    double data_likelihood(double theta, double pos);
-    
-    double null_likelihood(double theta);
-    
-    double data_likelihood(double theta, double bin_size, set<double> mutations);
-    
-    double transition_likelihood(Recombination& r);
-    
-// private:
-    
-    double tree_length = 0.0f;
-    
+
     double log_exp(double lambda, double x);
-    
-    int depth(Node *n);
-    
-    Node *LCA(Node *n1, Node *n2);
-    
-    int distance(Node *n1, Node *n2);
-    
+
     void impute_states(double m, set<Branch> &mutation_branches);
     
     void impute_states_helper(Node *n, map<Node *, double> &states);

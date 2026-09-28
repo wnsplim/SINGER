@@ -99,16 +99,14 @@ public:
 
     void eval_time_at(Interval *interval, double t);
 
-// private:
-
     int curr_index = 0;
     Branch curr_branch = Branch();
     vector<Interval *> curr_intervals = {};
     vector<pair<int, vector<Interval *>>>  state_spaces = {{INT_MAX, {}}};
-    
-    vector<double> rhos = {}; // length: number of blocks - 1
+
+    vector<double> rhos = {};
     vector<double> sister_masses = {};
-    vector<double> thetas = {}; // length: number of blocks
+    vector<double> thetas = {};
     
     vector<double> lower_sums = {};
     vector<double> upper_sums = {};
@@ -146,25 +144,12 @@ public:
     Node *find_node = nullptr;
     vector<double> trace_back_probs = {};
     vector<vector<double>> forward_probs = {};
-    vector<double> emissions = vector<double>(4);
-    
-    double recomb_cdf(double s, double t);
-    
-    double recomb_prob(double s, double t1, double t2);
-    
+
     double non_recomb_prob(double rho, double s);
-    
-    double standard_recomb_cdf(double rho, double s, double t);
-    
-    double psmc_cdf(double rho, double s, double t);
-    
-    double psmc_prob(double rho, double s, double t1, double t2);
 
     double jump_prob(double rho, double s, double t1, double t2);
 
     double own_mass(double t, double lb, double ub);
-
-    double get_exp_quantile(double p);
 
     void fill_interval_time(Interval *iv);
     
@@ -181,19 +166,13 @@ public:
     void compute_mut_emit_probs(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
     
     void compute_diagonals(double rho);
-    
-    void compute_lower_diagonals(double rho);
-    
-    void compute_upper_diagonals(double rho);
-    
+
     void compute_lower_sums();
-    
+
     void compute_upper_sums();
-    
+
     void compute_factors();
-    
-    void compute_emissions(vector<double> &mut_set, const Branch &branch, Node *node);
-    
+
     void compute_trace_back_probs(double rho, Interval *interval, vector<Interval *> &intervals);
     
     void sanity_check(Recombination &r);
@@ -221,9 +200,7 @@ public:
     int trace_back_helper(Interval *interval, int x);
     
     double sample_time(double lb, double ub);
-    
-    double exp_median(double lb, double ub);
-    
+
     Node *sample_joining_node(Interval *interval);
 };
 

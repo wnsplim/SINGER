@@ -36,16 +36,12 @@ public:
     Node(double t);
     
     void set_index(int index);
-    
-    void print();
-    
+
     void add_mutation(double pos);
-    
+
     double get_state(double pos);
-    
+
     void write_state(double pos, double s);
-    
-    void read_mutation(string filename);
 
     void set_site(double pos, double s);
 
@@ -56,31 +52,6 @@ public:
     void add_missing(double pos);
 
     bool is_missing(double pos);
-
-/*
-public:
-    
-    unordered_set<double> mutation_sites = {};
-    // unordered_set<double> ambiguous_sites = {};
-    
-    int index = 0;
-    
-    double time = 0;
-    
-    Node(double t);
-    
-    void set_index(int index);
-    
-    void print();
-    
-    void add_mutation(double pos);
-    
-    double get_state(double pos);
-    
-    void write_state(double pos, double s);
-    
-    void read_mutation(string filename);
- */
 };
 
 shared_ptr<Node> new_node(double t);

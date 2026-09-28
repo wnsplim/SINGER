@@ -18,10 +18,6 @@ double uniform_random() {
     return q;
 }
 
-void set_seed(unsigned seed) {  // Implement the set_seed function
-    random_engine.seed(seed);
-}
-
 std::string get_time() {
     using namespace std::chrono;
     auto now = system_clock::now();
@@ -29,7 +25,7 @@ std::string get_time() {
     auto timer = system_clock::to_time_t(now);
     std::tm bt = *std::localtime(&timer);
     std::ostringstream oss;
-    oss << "[" << std::put_time(&bt, "%H:%M:%S"); // HH:MM:SS
+    oss << "[" << std::put_time(&bt, "%H:%M:%S");
     oss << '.' << std::setfill('0') << std::setw(3) << ms.count() << "]";
     return oss.str();
 }

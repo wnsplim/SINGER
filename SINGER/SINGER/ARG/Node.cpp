@@ -75,18 +75,6 @@ void Node::write_state(double pos, double s) {
     return;
 }
 
-void Node::read_mutation(string filename) {
-    ifstream fin(filename);
-    if (!fin.good()) {
-        cerr << "input file not found" << endl;
-        exit(1);
-    }
-    double x;
-    while (fin >> x) {
-        add_mutation(x);
-    }
-}
-
 shared_ptr<Node> new_node(double t) {
     return make_shared<Node>(t);
 }
@@ -124,53 +112,3 @@ void Node::move_iterator(double m) {
     }
     assert(it->first <= m and next(it)->first > m);
 }
-
-/*
-Node::Node(double t) {
-    time = t;
-}
-
-void Node::set_index(int index) {
-    this->index = index;
-}
-
-void Node::add_mutation(double pos) {
-    mutation_sites.insert(pos);
-}
-
-double Node::get_state(double pos) {
-    if (mutation_sites.count(pos) > 0) {
-        return 1;
-    } else {
-        return 0;
-    }
-}
-
-void Node::write_state(double pos, double s) {
-    if (s == 0) {
-        mutation_sites.erase(pos);
-        // ambiguous_sites.erase(pos);
-        return;
-    } else if (s == 1) {
-        // ambiguous_sites.erase(pos);
-        mutation_sites.insert(pos);
-    }
-    return;
-}
-
-void Node::read_mutation(string filename) {
-    ifstream fin(filename);
-    if (!fin.good()) {
-        cerr << "input file not found" << endl;
-        exit(1);
-    }
-    double x;
-    while (fin >> x) {
-        add_mutation(x);
-    }
-}
-
-shared_ptr<Node> new_node(double t) {
-    return make_shared<Node>(t);
-}
-*/

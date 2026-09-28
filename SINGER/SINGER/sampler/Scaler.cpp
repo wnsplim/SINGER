@@ -20,7 +20,6 @@ void Scaler::reset() {
 }
 
 void Scaler::compute_deltas(ARG &a) {
-    // the base case
     unordered_map<Node *, double> node_start = {};
     map<Node *, double, compare_node> node_span = {};
     for (const Branch &b : a.recombinations.begin()->second.inserted_branches) {
@@ -42,7 +41,6 @@ void Scaler::compute_deltas(ARG &a) {
         Node *n = x.first;
         node_span[n] += a.sequence_length - node_start[n];
     }
-    // the root case
     unordered_map<Node *, double> root_start = {};
     Branch prev_branch;
     Branch next_branch;
@@ -95,7 +93,7 @@ void Scaler::compute_old_grid() {
     rates.resize(sorted_nodes.size());
     accumulated_arg_length.resize(sorted_nodes.size());
     partial_sum(node_deltas.begin(), node_deltas.end(), rates.begin());
-    assert(rates.back() > -1); // assures there is no negativitiy problem
+    assert(rates.back() > -1);
     for (int i = 1; i < sorted_nodes.size(); i++) {
         accumulated_arg_length[i] = accumulated_arg_length[i-1] + rates[i-1]*(sorted_nodes[i]->time - sorted_nodes[i-1]->time);
     }
@@ -121,7 +119,7 @@ void Scaler::compute_old_grid() {
 
 void Scaler::compute_new_grid(double theta) {
     for (auto &x : observed_arg_length) {
-        x /= theta; // convert mutation counts back to arg length
+        x /= theta;
     }
     double base_time = 0;
     double old_window_width = 0, scaling_factor = 0;

@@ -13,17 +13,13 @@
 #include <sstream>
 #include "ARG.hpp"
 #include "Polar_emission.hpp"
-#include "fast_BSP.hpp"
 #include "approx_BSP.hpp"
 #include "TSP.hpp"
-#include "Trace_pruner.hpp"
 
 class Threader_smc {
-    
+
 public:
-    
-    // Threader_smc(double c, double q, shared_ptr<Emission> e);
-    
+
     Threader_smc(double c, double q);
     
     ~Threader_smc();
@@ -35,25 +31,13 @@ public:
     void internal_rethread(ARG &a, tuple<double, Branch, double> cut_point);
 
     void exact_internal_rethread(ARG &a, tuple<double, Branch, double> cut_point);
-    
-    void terminal_rethread(ARG &a, tuple<double, Branch, double> cut_point);
-    
-    void fast_thread(ARG &a, Node_ptr n);
-    
-    void fast_internal_rethread(ARG &a, tuple<double, Branch, double> cut_point);
-    
-    void fast_terminal_rethread(ARG &a, tuple<double, Branch, double> cut_point);
-    
-// private:
-    
+
     double cut_time = 0;
     double start = 0;
     double end = 0;
     int start_index = 0;
     int end_index = 0;
-    Trace_pruner pruner = Trace_pruner();
     approx_BSP bsp = approx_BSP();
-    fast_BSP fbsp = fast_BSP();
     TSP tsp = TSP();
     double gap;
     double cutoff;
@@ -70,21 +54,15 @@ public:
     void get_boundary(ARG &a);
     
     void set_check_points(ARG &a);
-    
-    void run_pruner(ARG &a);
-    
+
     void run_BSP(ARG &a);
-    
-    void run_fast_BSP(ARG &a);
-    
+
     void run_TSP(ARG &a);
 
     void run_TSP(ARG &a, map<double, Branch> &jb);
     
     void sample_joining_branches(ARG &a);
-    
-    void sample_fast_joining_branches(ARG &a);
-    
+
     void sample_joining_points(ARG &a);
     
     double acceptance_ratio(ARG &a);
@@ -98,11 +76,7 @@ public:
     double exact_acceptance_ratio(ARG &a);
     
     double random();
-    
-    vector<double> expected_diff(double m);
-    
-    vector<double> observed_diff(ARG &a);
-    
+
 };
 
 #endif /* Threader_smc_hpp */

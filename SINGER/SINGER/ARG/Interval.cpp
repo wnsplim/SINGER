@@ -7,26 +7,13 @@
 
 #include "Interval.hpp"
 
-Interval::Interval() {}
-
 Interval::Interval(Branch b, double tl, double tu, int init_pos) {
     branch = b;
     lb = tl;
     ub = tu;
     assert(lb <= ub);
-    // assert(ub >= 0.001);
     assert(b.lower_node->time <= tl and b.upper_node->time >= tu);
     start_pos = init_pos;
-}
-
-void Interval::assign_weight(double w) {
-    weight = w;
-}
-
-void Interval::assign_time(double t) {
-    assert(t >= lb and t <= ub);
-    assert(!isinf(time));
-    time = t;
 }
 
 void Interval::fill_time() {
@@ -53,55 +40,6 @@ bool Interval::full(double t) {
     return lb == max(t, branch.lower_node->time) and ub == branch.upper_node->time;
 }
 
-bool Interval::operator<(const Interval &other) const {
-    if (start_pos != other.start_pos) {
-        return start_pos < other.start_pos;
-    }
-    if (branch != other.branch) {
-        return branch < other.branch;
-    }
-    if (ub != other.ub) {
-        return ub < other.ub;
-    }
-    return lb < other.lb;
-}
-
-bool Interval::operator==(const Interval &other) const {
-    if (start_pos != other.start_pos) {
-        return false;
-    }
-    if (branch != other.branch) {
-        return false;
-    }
-    if (ub != other.ub) {
-        return false;
-    }
-    if (lb != other.lb) {
-        return false;
-    }
-    return true;
-}
-
-bool Interval::operator!=(const Interval &other) const {
-    if (start_pos != other.start_pos) {
-        return true;
-    }
-    if (branch != other.branch) {
-        return true;
-    }
-    if (ub != other.ub) {
-        return true;
-    }
-    if (lb != other.lb) {
-        return true;
-    }
-    return false;
-}
-
-shared_ptr<Interval> create_interval(Branch b, double tl, double tu, int init_pos) {
-    return make_shared<Interval>(b, tl, tu, init_pos);
-}
-
 Interval_info::Interval_info() {
 }
 
@@ -111,38 +49,6 @@ Interval_info::Interval_info(Branch b, double tl, double tu) {
     branch = b;
     lb = tl;
     ub = tu;
-}
-
-bool Interval_info::operator==(const Interval_info& other) const {
-    if (seed_pos != other.seed_pos) {
-        return false;
-    }
-    if (branch != other.branch) {
-        return false;
-    }
-    if (ub != other.ub) {
-        return false;
-    }
-    if (lb != other.lb) {
-        return false;
-    }
-    return true;
-}
-
-bool Interval_info::operator!=(const Interval_info& other) const {
-    if (seed_pos != other.seed_pos) {
-        return true;
-    }
-    if (branch != other.branch) {
-        return true;
-    }
-    if (ub != other.ub) {
-        return true;
-    }
-    if (lb != other.lb) {
-        return true;
-    }
-    return false;
 }
 
 bool Interval_info::operator<(const Interval_info& other) const {

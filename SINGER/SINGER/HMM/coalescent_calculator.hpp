@@ -36,8 +36,6 @@ public:
 
     pair<double, double> compute_time_weights(double x, double y);
 
-    void compute_first_moment();
-
     double prob(double x, double y);
 
     double find_median(double x, double y);

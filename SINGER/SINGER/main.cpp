@@ -9,7 +9,6 @@
 #include "Sampler.hpp"
 
 int main(int argc, const char * argv[]) {
-    bool fast = false;
     bool resume = false;
     bool debug = false;
     bool no_data = false;
@@ -30,14 +29,7 @@ int main(int argc, const char * argv[]) {
     int seed = 42;
     for (int i = 1; i < argc; ++i) {
         string arg = argv[i];
-        if (arg == "-fast") {
-            if (i + 1 < argc && argv[i+1][0] != '-') {
-                cerr << "Error: -fast flag doesn't take any value. " << endl;
-                exit(1);
-            }
-            fast = true;
-        }
-        else if (arg == "-resume") {
+        if (arg == "-resume") {
             if (i + 1 < argc && argv[i+1][0] != '-') {
                 cerr << "Error: -resume flag doesn't take any value. " << endl;
                 exit(1);
@@ -342,7 +334,6 @@ int main(int argc, const char * argv[]) {
     sampler.set_precision(epsilon_hmm, epsilon_psmc);
     sampler.set_input_file_prefix(input_filename);
     sampler.set_output_file_prefix(output_prefix);
-    sampler.fast_mode = fast;
     sampler.exact = exact;
     sampler.random_seed = seed;
     sampler.start = start_pos;

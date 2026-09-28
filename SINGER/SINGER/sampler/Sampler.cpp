@@ -29,28 +29,12 @@ void Sampler::set_precision(double c, double q) {
     tsp_q = q;
 }
 
-void Sampler::set_pop_size(double n) {
-    Ne = n;
-}
-
 void Sampler::set_input_file_prefix(string f) {
     input_prefix = f;
 }
 
 void Sampler::set_output_file_prefix(string f) {
     output_prefix = f;
-}
-
-void Sampler::set_log_file_prefix(string f) {
-    log_prefix = f;
-}
-
-void Sampler::set_sequence_length(double x) {
-    sequence_length = x;
-}
-
-void Sampler::set_num_samples(int n) {
-    num_samples = n;
 }
 
 int Sampler::parse_genotype(const string &field, int expected_ploidy, int *calls) {
@@ -163,8 +147,7 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
             genotypes.resize(num_individuals);
             continue;
         } else if (line[0] == '#') {
-            continue; // skip these header lines
-        }
+            continue;        }
         istringstream iss(line);
         string chrom, id, ref, alt, qual, filter, info, format, genotype;
         long long pos;
@@ -172,12 +155,10 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
 
         if (pos < start_pos) {continue;}
         if (pos > end_pos) {break;}
-        if (pos == prev_pos) {continue;} // skip multi-allelic sites
-        if (ref.size() > 1 or alt.size() > 1 or alt == "*" or alt == ".") {
+        if (pos == prev_pos) {continue;}        if (ref.size() > 1 or alt.size() > 1 or alt == "*" or alt == ".") {
             removed_mutation += 1;
             continue;
-        } // skip multi-allelic sites or structural variant
-
+        }
         streampos old_pos = file.tellg();
         string next_line;
         if (getline(file, next_line)) {
@@ -208,7 +189,6 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
             }
         }
     }
-    num_samples = (int) sample_nodes.size();
     ordered_sample_nodes = vector<Node_ptr>(sample_nodes.begin(), sample_nodes.end());
     shuffle(ordered_sample_nodes.begin(), ordered_sample_nodes.end(), random_engine);
     sequence_length = end_pos - start_pos;
@@ -250,8 +230,7 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
             genotypes.resize(2*num_individuals);
             continue;
         } else if (line[0] == '#') {
-            continue; // skip these header lines
-        }
+            continue;        }
         istringstream iss(line);
         string chrom, id, ref, alt, qual, filter, info, format, genotype;
         long long pos;
@@ -259,12 +238,10 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
 
         if (pos < start_pos) {continue;}
         if (pos > end_pos) {break;}
-        if (pos == prev_pos) {continue;} // skip multi-allelic sites
-        if (ref.size() > 1 or alt.size() > 1 or alt == "*" or alt == ".") {
+        if (pos == prev_pos) {continue;}        if (ref.size() > 1 or alt.size() > 1 or alt == "*" or alt == ".") {
             removed_mutation += 1;
             continue;
-        } // skip multi-allelic sites or structural variant
-
+        }
         streampos old_pos = file.tellg();
         string next_line;
         if (getline(file, next_line)) {
@@ -297,7 +274,6 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
             }
         }
     }
-    num_samples = (int) sample_nodes.size();
     ordered_sample_nodes = vector<Node_ptr>(sample_nodes.begin(), sample_nodes.end());
     shuffle(ordered_sample_nodes.begin(), ordered_sample_nodes.end(), random_engine);
     sequence_length = end_pos - start_pos;
@@ -346,13 +322,10 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
         string chrom, id, ref, alt, qual, filter, info, format, genotype;
         long long pos;
         iss >> chrom >> pos >> id >> ref >> alt >> qual >> filter >> info >> format;
-        if (pos == prev_pos) {continue;} // skip multi-allelic sites
-        if (pos >= end) {break;} // variant out of scope
-        if (ref.size() > 1 or alt.size() > 1 or alt == "*" or alt == ".") {
+        if (pos == prev_pos) {continue;}        if (pos >= end) {break;}        if (ref.size() > 1 or alt.size() > 1 or alt == "*" or alt == ".") {
             removed_mutation += 1;
             continue;
-        } // skip multi-allelic sites or structural variant
-        streampos old_pos = vcf_stream.tellg();
+        }        streampos old_pos = vcf_stream.tellg();
         string next_line;
         if (getline(vcf_stream, next_line)) {
             istringstream next_iss(next_line);
@@ -400,9 +373,7 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
     if (valid_mutation < 3) {
         cerr << "there are too few variants in this region, algorithm not run" << endl;
     }
-    num_samples = (int) sample_nodes.size();
     ordered_sample_nodes = vector<Node_ptr>(sample_nodes.begin(), sample_nodes.end());
-    // shuffle(ordered_sample_nodes.begin(), ordered_sample_nodes.end(), random_engine);
     sequence_length = end - start;
     cout << "valid mutations: " << valid_mutation << endl;
     cout << "removed mutations: " << removed_mutation << endl;
@@ -423,46 +394,6 @@ void Sampler::load_vcf(string prefix, double start, double end) {
     scan_missing(prefix, start, end, leaves, 2);
 }
 
-void Sampler::optimal_ordering() {
-    ordered_sample_nodes.clear();
-    set<Node_ptr, compare_node> covered_nodes = {};
-    set<double> covered_mutations = {};
-    while (mutation_sets.size() > 0) {
-        cout << "Curr number of nodes: " << ordered_sample_nodes.size() << endl;
-        cout << "Number of covered mutations: " << covered_mutations.size() << endl;
-        auto it = min_element(mutation_sets.begin(), mutation_sets.end(), [](const auto& l, const auto& r) {return l.second.size() < r.second.size();});
-        Node_ptr n = it->first;
-        set<double> curr_mutations = it->second;
-        mutation_sets.erase(n);
-        for (auto &x : mutation_sets) {
-            for (double m : curr_mutations) {
-                x.second.erase(m);
-            }
-        }
-        for (double m : curr_mutations) {
-            covered_mutations.insert(m);
-        }
-        ordered_sample_nodes.push_back(n);
-        covered_nodes.insert(n);
-    }
-    cout << "Finished ordering" << endl;
-}
-
-Node_ptr Sampler::build_node(int index, double time) {
-    Node_ptr n = new_node(time);
-    n->index = index;
-    string mutation_file = input_prefix + "_" + to_string(index) + ".txt";
-    n->read_mutation(mutation_file);
-    return n;
-}
-
-void Sampler::build_all_nodes() {
-    for (int i = 0; i < num_samples; i++) {
-        Node_ptr n = build_node(i, 0.0);
-        sample_nodes.insert(n);
-    }
-}
-
 void Sampler::build_singleton_arg() {
     double bin_size = max(1.0, rho_unit/recomb_rate);
     bin_size = min(bin_size, 100.0);
@@ -478,13 +409,6 @@ void Sampler::build_singleton_arg() {
         arg.compute_rhos_thetas(recomb_map, mut_map);
     }
     arg.discount_unassayed();
-}
-
-void Sampler::build_void_arg() {
-    double bin_size = rho_unit/recomb_rate;
-    arg = ARG(Ne, sequence_length);
-    arg.discretize(bin_size);
-    arg.compute_rhos_thetas(recomb_rate, mut_rate);
 }
 
 void Sampler::iterative_start() {
@@ -511,7 +435,6 @@ void Sampler::iterative_start() {
         write_iterative_start();
     }
     cout << "orignal ARG length: " << arg.get_arg_length() << endl;
-    // normalize();
     rescale();
     cout << "rescaled ARG length: " << arg.get_arg_length() << endl;
     string node_file = output_prefix + "_start_nodes_" + to_string(sample_index) + ".txt";
@@ -522,218 +445,6 @@ void Sampler::iterative_start() {
     string coord_file = output_prefix + "_coordinates.txt";
     arg.write_coordinates(coord_file);
 }
-
-void Sampler::fast_iterative_start() {
-    start_log();
-    build_singleton_arg();
-    auto it = ordered_sample_nodes.begin();
-    it++;
-    while (it != ordered_sample_nodes.end()) {
-        random_engine.seed(random_seed);
-        Threader_smc threader = Threader_smc(bsp_c, tsp_q);
-        threader.pe->penalty = penalty;
-        threader.be->penalty = penalty;
-        threader.pe->ancestral_prob = polar;
-        threader.be->ancestral_prob = polar;
-        arg.penalty = penalty;
-        arg.ancestral_prob = polar;
-        Node_ptr n = *it;
-        if (arg.sample_nodes.size() > 1) {
-            threader.fast_thread(arg, n);
-        } else {
-            threader.thread(arg, n);
-        }
-        arg.check_incompatibility();
-        cout << "Number of flippings: " << arg.count_flipping() << endl;
-        it++;
-        random_seed = random_engine();
-        write_iterative_start();
-    }
-    cout << "orignal ARG length: " << arg.get_arg_length() << endl;
-    // normalize();
-    rescale();
-    cout << "rescaled ARG length: " << arg.get_arg_length() << endl;
-    string node_file = output_prefix + "_fast_start_nodes_" + to_string(sample_index) + ".txt";
-    string branch_file= output_prefix + "_fast_start_branches_" + to_string(sample_index) + ".txt";
-    string recomb_file = output_prefix + "_fast_start_recombs_" + to_string(sample_index) + ".txt";
-    string mut_file = output_prefix + "_fast_start_muts_" + to_string(sample_index) + ".txt";
-    arg.write(node_file, branch_file, recomb_file, mut_file);
-    string coord_file = output_prefix + "_fast_coordinates.txt";
-    arg.write_coordinates(coord_file);
-}
-
-/*
-void Sampler::recombination_climb(int num_iters, int spacing) {
-    for (int i = 0; i < num_iters; i++) {
-        cout << get_time() << " Iteration: " << to_string(i) << endl;
-        double updated_length = 0;
-        random_seed = rand();
-        srand(random_seed);
-        while (updated_length < spacing*arg.sequence_length) {
-            Threader_smc threader = Threader_smc(bsp_c, tsp_q);
-            threader.pe->penalty = penalty;
-            threader.be->penalty = penalty;
-            threader.pe->ancestral_prob = polar;
-            threader.be->ancestral_prob = polar;
-            arg.penalty = penalty;
-            arg.ancestral_prob = polar;
-            tuple<double, Branch, double> cut_point = arg.sample_recombination_cut();
-            threader.internal_rethread(arg, cut_point);
-            updated_length += arg.coordinates[threader.end_index] - arg.coordinates[threader.start_index];
-            arg.clear_remove_info();
-        }
-        arg.check_incompatibility();
-        string node_file = output_prefix + "_nodes_" + to_string(sample_index) + ".txt";
-        string branch_file= output_prefix + "_branches_" + to_string(sample_index) + ".txt";
-        string recomb_file = output_prefix + "_recombs_" + to_string(sample_index) + ".txt";
-        string mut_file = output_prefix + "_muts_" + to_string(sample_index) + ".txt";
-        arg.write(node_file, branch_file, recomb_file);
-        sample_index += 1;
-        cout << "Number of trees: " << arg.recombinations.size() << endl;
-    }
-}
-
-void Sampler::mutation_climb(int num_iters, int spacing) {
-    for (int i = 0; i < num_iters; i++) {
-        cout << get_time() << " Iteration: " << to_string(i) << endl;
-        double updated_length = 0;
-        random_seed = rand();
-        srand(random_seed);
-        while (updated_length < spacing*arg.sequence_length) {
-            Threader_smc threader = Threader_smc(bsp_c, tsp_q);
-            threader.pe->penalty = penalty;
-            threader.be->penalty = penalty;
-            threader.pe->ancestral_prob = polar;
-            threader.be->ancestral_prob = polar;
-            arg.penalty = penalty;
-            arg.ancestral_prob = polar;
-            tuple<double, Branch, double> cut_point = arg.sample_mutation_cut();
-            threader.internal_rethread(arg, cut_point);
-            updated_length += arg.coordinates[threader.end_index] - arg.coordinates[threader.start_index];
-            arg.clear_remove_info();
-        }
-        arg.check_incompatibility();
-        string node_file = output_prefix + "_nodes_" + to_string(sample_index) + ".txt";
-        string branch_file= output_prefix + "_branches_" + to_string(sample_index) + ".txt";
-        string recomb_file = output_prefix + "_recombs_" + to_string(sample_index) + ".txt";
-        string mut_file = output_prefix + "_muts_" + to_string(sample_index) + ".txt";
-        arg.write(node_file, branch_file, recomb_file, mut_file);
-        sample_index += 1;
-        cout << "Number of trees: " << arg.recombinations.size() << endl;
-    }
-}
-
-void Sampler::fast_recombination_climb(int num_iters, int spacing) {
-    for (int i = 0; i < num_iters; i++) {
-        cout << get_time() << " Iteration: " << to_string(sample_index) << endl;
-        double updated_length = 0;
-        random_seed = rand();
-        srand(random_seed);
-        while (updated_length < spacing*arg.sequence_length) {
-            Threader_smc threader = Threader_smc(bsp_c, tsp_q);
-            threader.pe->penalty = penalty;
-            threader.be->penalty = penalty;
-            threader.pe->ancestral_prob = polar;
-            threader.be->ancestral_prob = polar;
-            arg.penalty = penalty;
-            arg.ancestral_prob = polar;
-            tuple<double, Branch, double> cut_point = arg.sample_recombination_cut();
-            threader.fast_internal_rethread(arg, cut_point);
-            updated_length += arg.coordinates[threader.end_index] - arg.coordinates[threader.start_index];
-            arg.clear_remove_info();
-        }
-        arg.check_incompatibility();
-        string node_file = output_prefix + "_fast_nodes_" + to_string(sample_index) + ".txt";
-        string branch_file= output_prefix + "_fast_branches_" + to_string(sample_index) + ".txt";
-        string recomb_file = output_prefix + "_fast_recombs_" + to_string(sample_index) + ".txt";
-        arg.write(node_file, branch_file, recomb_file);
-        sample_index += 1;
-        cout << "Number of trees: " << arg.recombinations.size() << endl;
-    }
-}
-
-void Sampler::fast_mutation_climb(int num_iters, int spacing) {
-    for (int i = 0; i < num_iters; i++) {
-        cout << get_time() << " Iteration: " << to_string(sample_index) << endl;
-        double updated_length = 0;
-        random_seed = rand();
-        srand(random_seed);
-        while (updated_length < spacing*arg.sequence_length) {
-            Threader_smc threader = Threader_smc(bsp_c, tsp_q);
-            threader.pe->penalty = penalty;
-            threader.be->penalty = penalty;
-            threader.pe->ancestral_prob = polar;
-            threader.be->ancestral_prob = polar;
-            arg.penalty = penalty;
-            arg.ancestral_prob = polar;
-            tuple<double, Branch, double> cut_point = arg.sample_mutation_cut();
-            threader.fast_internal_rethread(arg, cut_point);
-            updated_length += arg.coordinates[threader.end_index] - arg.coordinates[threader.start_index];
-            arg.clear_remove_info();
-        }
-        arg.check_incompatibility();
-        string node_file = output_prefix + "_fast_nodes_" + to_string(sample_index) + ".txt";
-        string branch_file= output_prefix + "_fast_branches_" + to_string(sample_index) + ".txt";
-        string recomb_file = output_prefix + "_fast_recombs_" + to_string(sample_index) + ".txt";
-        arg.write(node_file, branch_file, recomb_file);
-        sample_index += 1;
-        cout << "Number of trees: " << arg.recombinations.size() << endl;
-    }
-}
- */
-
-/*
-void Sampler::terminal_sample(int num_iters) {
-    for (int i = 0; i < num_iters; i++) {
-        cout << get_time() << " Iteration: " << to_string(i) << endl;
-        random_seed = rand();
-        srand(random_seed);
-        Threader_smc threader = Threader_smc(bsp_c, tsp_q);
-        threader.pe->penalty = penalty;
-        threader.be->penalty = penalty;
-        threader.pe->ancestral_prob = polar;
-        threader.be->ancestral_prob = polar;
-        arg.penalty = penalty;
-        arg.ancestral_prob = polar;
-        tuple<int, Branch, double> cut_point = arg.sample_terminal_cut();
-        threader.terminal_rethread(arg, cut_point);
-        arg.clear_remove_info();
-        string node_file = output_prefix + "_nodes_" + to_string(sample_index) + ".txt";
-        string branch_file= output_prefix + "_branches_" + to_string(sample_index) + ".txt";
-        string recomb_file = output_prefix + "_recombs_" + to_string(sample_index) + ".txt";
-        arg.check_incompatibility();
-        arg.write(node_file, branch_file, recomb_file);
-        sample_index += 1;
-        cout << "Number of trees: " << arg.recombinations.size() << endl;
-    }
-}
-
-void Sampler::fast_terminal_sample(int num_iters) {
-    for (int i = 0; i < num_iters; i++) {
-        cout << get_time() << " Iteration: " << to_string(i) << endl;
-        double updated_length = 0;
-        random_seed = rand();
-        srand(random_seed);
-        Threader_smc threader = Threader_smc(bsp_c, tsp_q);
-        threader.pe->penalty = penalty;
-        threader.be->penalty = penalty;
-        threader.pe->ancestral_prob = polar;
-        threader.be->ancestral_prob = polar;
-        arg.penalty = penalty;
-        arg.ancestral_prob = polar;
-        tuple<double, Branch, double> cut_point = arg.sample_terminal_cut();
-        threader.fast_terminal_rethread(arg, cut_point);
-        updated_length += arg.coordinates[threader.end_index] - arg.coordinates[threader.start_index];
-        arg.clear_remove_info();
-        arg.check_incompatibility();
-        string node_file = output_prefix + "_fast_nodes_" + to_string(i) + ".txt";
-        string branch_file= output_prefix + "_fast_branches_" + to_string(i) + ".txt";
-        string recomb_file = output_prefix + "_fast_recombs_" + to_string(i) + ".txt";
-        arg.write(node_file, branch_file, recomb_file);
-        cout << "Number of trees: " << arg.recombinations.size() << endl;
-    }
-}
-*/
 
 void Sampler::internal_sample(int num_iters, int spacing) {
     Threader_smc threader = Threader_smc(bsp_c, tsp_q);
@@ -761,7 +472,6 @@ void Sampler::internal_sample(int num_iters, int spacing) {
             arg.clear_remove_info();
         }
         arg.release_dead_nodes();
-        // normalize();
         rescale();
         random_seed = random_engine();
         write_sample();
@@ -771,43 +481,6 @@ void Sampler::internal_sample(int num_iters, int spacing) {
         string branch_file= output_prefix + "_branches_" + to_string(sample_index) + ".txt";
         string recomb_file = output_prefix + "_recombs_" + to_string(sample_index) + ".txt";
         string mut_file = output_prefix + "_muts_" + to_string(sample_index) + ".txt";
-        sample_index += 1;
-        arg.write(node_file, branch_file, recomb_file, mut_file);
-        cout << "Number of trees: " << arg.recombinations.size() << endl;
-        cout << "Number of flippings: " << arg.count_flipping() << endl;
-    }
-}
-
-void Sampler::fast_internal_sample(int num_iters, int spacing) {
-    while (sample_index < num_iters) {
-        cout << get_time() << " Iteration: " << to_string(sample_index) << endl;
-        int moves = 0;
-        cout << "Random seed: " << random_seed << endl;
-        random_engine.seed(random_seed);
-        while (moves < spacing) {
-            Threader_smc threader = Threader_smc(bsp_c, tsp_q);
-            threader.pe->penalty = penalty;
-            threader.be->penalty = penalty;
-            threader.pe->ancestral_prob = polar;
-            threader.be->ancestral_prob = polar;
-            arg.penalty = penalty;
-            arg.ancestral_prob = polar;
-            tuple<double, Branch, double> cut_point = arg.sample_internal_cut();
-            threader.fast_internal_rethread(arg, cut_point);
-            moves += 1;
-            arg.clear_remove_info();
-        }
-        arg.release_dead_nodes();
-        // normalize();
-        rescale();
-        random_seed = random_engine();
-        write_sample();
-        arg.check_incompatibility();
-        cout << "Start: " << arg.start << " , End: " << arg.end << endl;
-        string node_file = output_prefix + "_fast_nodes_" + to_string(sample_index) + ".txt";
-        string branch_file= output_prefix + "_fast_branches_" + to_string(sample_index) + ".txt";
-        string recomb_file = output_prefix + "_fast_recombs_" + to_string(sample_index) + ".txt";
-        string mut_file = output_prefix + "_fast_muts_" + to_string(sample_index) + ".txt";
         sample_index += 1;
         arg.write(node_file, branch_file, recomb_file, mut_file);
         cout << "Number of trees: " << arg.recombinations.size() << endl;
@@ -829,93 +502,19 @@ void Sampler::debug_resume_internal_sample(int num_iters, int spacing) {
     retract_log(5);
     string log_file = output_prefix + ".log";
     vector<string> words = read_last_line(log_file);
-    if (words.size() == 0 or words[2] == "initial_thread" or words[0] == "Time") { // need to start from beginning
+    if (words.size() == 0 or words[2] == "initial_thread" or words[0] == "Time") {
         cout << "new seed: " << random_seed << endl;
         sample_index = 0;
         load_vcf(input_prefix, start, end);
         iterative_start();
         internal_sample(num_iters, spacing);
-    } else { // start from a previous sample
+    } else {
         read_resume_point(log_file);
         sample_index += 1;
         cout << "new seed: " << random_seed << endl;
         internal_sample(num_iters, spacing);
     }
 }
-
-/*
-void Sampler::resume_fast_internal_sample(int num_iters, int spacing) {
-    arg = ARG(Ne, sequence_length);
-    string node_file = output_prefix + "_fast_nodes_" + to_string(sample_index) + ".txt";
-    string branch_file= output_prefix + "_fast_branches_" + to_string(sample_index) + ".txt";
-    string recomb_file = output_prefix + "_fast_recombs_" + to_string(sample_index) + ".txt";
-    string mut_file = output_prefix + "_fast_muts_" + to_string(sample_index) + ".txt";
-    string coord_file = output_prefix + "_fast_coordinates.txt";
-    arg.read(node_file, branch_file, recomb_file, mut_file);
-    arg.read_coordinates(coord_file);
-    arg.compute_rhos_thetas(recomb_rate, mut_rate);
-    arg.start_tree = arg.get_tree_at(arg.start);
-    sample_index += 1;
-    bsp_c = 0.1;
-    for (int i = 0; i < num_iters; i++) {
-        cout << get_time() << " Iteration: " << to_string(sample_index) << endl;
-        double updated_length = 0;
-        while (updated_length < spacing*arg.sequence_length) {
-            Threader_smc threader = Threader_smc(bsp_c, tsp_q);
-            threader.pe->penalty = penalty;
-            threader.be->penalty = penalty;
-            threader.pe->ancestral_prob = polar;
-            threader.be->ancestral_prob = polar;
-            arg.penalty = penalty;
-            arg.ancestral_prob = polar;
-            tuple<double, Branch, double> cut_point = arg.sample_internal_cut();
-            threader.fast_internal_rethread(arg, cut_point);
-            updated_length += arg.coordinates[threader.end_index] - arg.coordinates[threader.start_index];
-            arg.clear_remove_info();
-        }
-        normalize();
-        arg.check_incompatibility();
-        cout << "Start: " << arg.start << " , End: " << arg.end << endl;
-        string node_file = output_prefix + "_fast_nodes_" + to_string(sample_index) + ".txt";
-        string branch_file= output_prefix + "_fast_branches_" + to_string(sample_index) + ".txt";
-        string recomb_file = output_prefix + "_fast_recombs_" + to_string(sample_index) + ".txt";
-        string mut_file = output_prefix + "_fast_muts_" + to_string(sample_index) + ".txt";
-        arg.write(node_file, branch_file, recomb_file, mut_file);
-        sample_index += 1;
-        cout << "Number of trees: " << arg.recombinations.size() << endl;
-        cout << "Number of flippings: " << arg.count_flipping() << endl;
-    }
-}
- */
-
-void Sampler::resume_fast_internal_sample(int num_iters, int spacing) {
-    string log_file = output_prefix + ".log";
-    read_resume_point(log_file);
-    sample_index += 1;
-    arg.check_incompatibility();
-    cout << "Number of trees: " << arg.recombinations.size() << endl;
-    cout << "Number of flippings: " << arg.count_flipping() << endl;
-    fast_internal_sample(num_iters, spacing);
-}
-
-void Sampler::debug_resume_fast_internal_sample(int num_iters, int spacing) {
-    retract_log(5);
-    string log_file = output_prefix + ".log";
-    vector<string> words = read_last_line(log_file);
-    if (words.size() == 0 or words[2] == "initial_thread" or words[0] == "Time") { // need to start from beginning
-        cout << "new seed: " << random_seed << endl;
-        sample_index = 0;
-        load_vcf(input_prefix, start, end);
-        fast_iterative_start();
-        fast_internal_sample(num_iters, spacing);
-    } else { // start from a previous sample
-        read_resume_point(log_file);
-        sample_index += 1;
-        cout << "new seed: " << random_seed << endl;
-        fast_internal_sample(num_iters, spacing);
-    }
-}
-
 
 void Sampler::rescale() {
     Scaler scaler = Scaler();
@@ -981,23 +580,6 @@ void Sampler::write_sample() {
     << TSP::counter << endl;
 }
 
-void Sampler::write_cut(tuple<double, Branch, double> cut_point) {
-    string filename = output_prefix + "_cut.log";
-    ofstream file(filename, ios::out|ios::app);
-    if (!file) {
-        cerr << "Error opening the file: " << filename << endl;
-        return;
-    }
-    file << get<0>(cut_point) << "\t"
-    << get<1>(cut_point).lower_node->index << "\t"
-    << get<1>(cut_point).upper_node->index << "\t"
-    << get<2>(cut_point) << "\t"
-    << arg.count_incompatibility() << "\t"
-    << arg.recombinations.size() << "\t"
-    << arg.count_flipping() << "\t"
-    << endl;
-}
-
 void Sampler::load_resume_arg() {
     arg = ARG(Ne, sequence_length);
     string node_file, branch_file, recomb_file, mut_file, coord_file;
@@ -1040,7 +622,6 @@ vector<string> Sampler::read_last_line(string filename) {
             }
         }
 
-        // Move one character backward
         file.seekg(-2, ios_base::cur);
     }
 
@@ -1063,52 +644,12 @@ void Sampler::read_resume_point(string filename) {
     vector<string> words = read_last_line(filename);
     int log_length = (int) words.size();
     TSP::counter = stoi(words[log_length - 1]);
-    // random_seed = stoi(words[log_length - 2]);
     sample_index = stoi(words[1]);
     load_resume_arg();
     arg.sequence_length = sequence_length;
     arg.end = stod(words[log_length - 3]);
     arg.end_tree = arg.get_tree_at(arg.end);
 }
-
-/*
-void Sampler::retract_log(int k) {
-    const std::string file_path = output_prefix + ".log";
-        std::ifstream in_file(file_path, std::ios::in | std::ios::ate);
-        
-        if (!in_file.is_open()) {
-            std::cerr << "Unable to open log file: " << file_path << std::endl;
-            return;
-        }
-        
-        char c;
-        int line_count = 0;
-        long pos = in_file.tellg();
-
-        while (pos > 0 && line_count < k) {
-            in_file.seekg(--pos, std::ios::beg);
-            in_file.get(c);
-            if (c == '\n') {
-                ++line_count;
-            }
-        }
-
-        if (line_count < k) {
-            pos = 0;
-        } else {
-            pos++;  // To keep the content before the '\n' of the (k+1)-th last line
-        }
-
-        in_file.seekg(0, std::ios::beg);
-        std::string content(pos, '\0');  // Create string to hold the content
-        in_file.read(&content[0], pos);  // Read the content of the file up to the position
-        in_file.close();
-
-        std::ofstream out_file(file_path, std::ios::out | std::ios::trunc);
-        out_file << content;  // Write back the retained content to the file
-        out_file.close();
-}
-*/
 
 void Sampler::retract_log(int k) {
     const std::string file_path = output_prefix + ".log";
@@ -1119,19 +660,16 @@ void Sampler::retract_log(int k) {
         return;
     }
 
-    // Store the first two lines
     std::string first_line, second_line;
-    in_file.seekg(0); // Go to the beginning of the file
+    in_file.seekg(0);
     std::getline(in_file, first_line);
     std::getline(in_file, second_line);
-    
-    // Now go back to the end of the file to perform the removal
+
     in_file.seekg(0, std::ios::end);
     char c;
     int line_count = 0;
     long pos = in_file.tellg();
 
-    // Count back 'k' lines from the end of the file
     while (pos > 0 && line_count < k) {
         in_file.seekg(--pos, std::ios::beg);
         in_file.get(c);
@@ -1140,24 +678,19 @@ void Sampler::retract_log(int k) {
         }
     }
 
-    // Adjust the position if we have enough lines to remove
     pos = (line_count < k) ? 0 : pos + 1;
 
-    // Read up to the determined position
     in_file.seekg(0, std::ios::beg);
     std::string content(pos, '\0');
     in_file.read(&content[0], pos);
     in_file.close();
 
-    // Check if the remaining content has fewer than two lines
     int remaining_lines = (int) std::count(content.begin(), content.end(), '\n') + (content.empty() ? 0 : 1);
 
     std::ofstream out_file(file_path, std::ios::out | std::ios::trunc);
     if (remaining_lines >= 2) {
-        // If we have two or more lines remaining, write the content back
         out_file << content;
     } else {
-        // If we have fewer than two lines, write back the first two lines
         out_file << first_line << '\n';
         if (!second_line.empty()) {
             out_file << second_line << '\n';

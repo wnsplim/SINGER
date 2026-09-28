@@ -13,8 +13,6 @@
 #include "Recombination.hpp"
 #include "Tree.hpp"
 #include "RSP_smc.hpp"
-#include "Reconstruction.hpp"
-#include "Fitch_reconstruction.hpp"
 #include "Rate_map.hpp"
 
 class ARG {
@@ -46,7 +44,6 @@ public:
     set<Node *, compare_node> node_set = {};
     map<double, Branch> joining_branches = {};
     map<double, Branch> removed_branches = {};
-    map<double, Tree> tree_map = {};
     
     double start = 0;
     double end = 0;
@@ -90,90 +87,48 @@ public:
     void window_copy_into(ARG &c, double lo_pos);
     
     Node *get_query_node_at(double x);
-    
-    Tree modify_tree_to(double x, Tree &reference_tree, double x0);
-    
-    Tree internal_modify_tree_to(double x, Tree &reference_tree, double x0);
 
     void remove(tuple<double, Branch, double> cut_point);
-    
-    void remove(map<double, Branch> seed_branches);
-    
-    void remove_leaf(int index);
-    
-    double get_updated_length();
-    
+
     void add(map<double, Branch> &new_joining_branches, map<double, Branch> &added_branches);
-    
-    void smc_sample_recombinations();
 
     void smc_sample_recombinations(map<double, Branch> &lineage);
-    
+
     void approx_sample_recombinations();
-    
+
     void adjust_recombinations();
-    
-    int count_incompatibility();
-    
+
     int count_flipping();
-    
+
     void read_coordinates(string filename);
-    
+
     void write_coordinates(string filename);
-    
-    void write(string node_file, string branch_file);
-    
-    void write(string node_file, string branch_file, string recomb_file);
-    
+
     void write(string node_file, string branch_file, string recomb_file, string mutation_file);
-    
-    void read(string node_file, string branch_file);
-    
-    void read(string node_file, string branch_file, string recomb_file);
-    
+
     void read(string node_file, string branch_file, string recomb_file, string mut_file);
-    
+
     double get_arg_length();
-    
-    double get_arg_length(double x, double y);
-    
-    double get_arg_length(map<double, Branch> &new_joining_branches, map<double, Branch> &new_added_branches);
-    
+
     tuple<double, Branch, double> sample_internal_cut();
 
     tuple<double, Branch, double> sample_uniform_cut();
-    
-    tuple<double, Branch, double> sample_terminal_cut();
-    
-    tuple<double, Branch, double> sample_recombination_cut();
-    
-    tuple<double, Branch, double> sample_mutation_cut();
-    
-    void impute_nodes(double x, double y);
-    
+
     void impute(map<double, Branch> &new_joining_branches, map<double, Branch> &added_branches);
-    
-    void map_mutations(double x, double y);
 
     void remap_mutations();
-    
+
     void map_mutation(double x, Branch joining_branch, Branch added_branch, const double *joining_state_prob);
 
     void joining_state_table(const Branch &joining_branch, const Branch &added_branch, double unit_theta, double *p);
 
     void discount_unassayed();
-    
-    void map_mutation(Tree tree, double x);
 
-    void check_mapping();
-    
     int num_unmapped();
-    
+
     void check_incompatibility();
-    
+
     void clear_remove_info();
-    
-    double smc_prior_likelihood(double r);
 
     double corrected_smc_prior(map<double, Branch> &lineage, int lo, int hi, double p, const Tree &tree_p);
 
@@ -182,25 +137,15 @@ public:
     double site_weight(const Flat_tree &tree, int bin, double pos, Node *summed);
 
     Branch lineage_branch_before(map<double, Branch> &lineage, double x);
-    
-    double data_likelihood(double m);
-    
-    double smc_likelihood(double r, double m);
-    
+
     set<double> get_check_points();
-    
+
     bool check_disjoint_nodes(double x, double y);
-    
-    // private:
-    
-    double random();
-    
+
     void new_recombination(double pos, Branch prev_added_branch, Branch prev_joining_branch, Branch next_added_branch, Branch next_joining_branch);
-    
+
     void remove_empty_recombinations();
-    
-    int count_incompatibility(Tree tree, double x);
-    
+
     void create_node_set();
     
     void write_nodes(string filename);
@@ -218,11 +163,7 @@ public:
     void read_recombs(string filename);
     
     void read_muts(string filename);
-    
-    // void normalize(double t, Distribution &d);
-    
-    // void normalize();
-    
+
 };
 
 bool compare_edge(const tuple<int, int, double, double>& edge1, const tuple<int, int, double, double>& edge2);

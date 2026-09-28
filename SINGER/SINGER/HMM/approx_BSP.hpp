@@ -23,24 +23,20 @@ class approx_BSP {
     
 public:
     
-    // basic setup
     double cut_time = 0.0;
     double cutoff = 0;
     double epsilon = 1e-30;
     shared_ptr<Emission> eh;
     set<double> check_points = {};
     
-    // pruning parameters
     double rho_unit = 0;
     int grace_period = 0;
     double penalty = 1;
     
-    // hmm running results
     vector<double> rhos = {};
-    vector<double> recomb_sums = {}; // length: number of blocks - 1
-    vector<double> weight_sums = {}; // length: number of blocks
-    
-    // hmm states
+    vector<double> recomb_sums = {};
+    vector<double> weight_sums = {};
+
     int curr_index = 0;
     vector<pair<int, vector<Interval_ptr>>>  state_spaces = {{INT_MAX, {}}};
     vector<Interval_ptr> curr_intervals = {};
@@ -48,19 +44,15 @@ public:
     vector<pair<int, vector<double>>> times = {{INT_MAX, {}}};
     vector<pair<int, vector<double>>> weights = {{INT_MAX, {}}};
     
-    // coalescent computation
     shared_ptr<coalescent_calculator> cc;
-    
-    // transfer at recombinations
+
     vector<pair<Interval_info, vector<Interval_ptr>>> transfer_intervals = {};
     vector<pair<Interval_info, vector<double>>> transfer_weights = {};
-    
-    // cache:
+
     double prev_rho = -1;
     double prev_theta = -1;
     Node *prev_node = nullptr;
     
-    // vector computation:
     int dim = 0;
     double recomb_sum = 0;
     double weight_sum = 0;
@@ -82,7 +74,6 @@ public:
     vector<size_t> row_starts = {0};
     size_t n_used = 0;
     
-    // states after pruning:
     bool states_change = false;
     set<Branch> valid_branches = {};
     
@@ -104,8 +95,6 @@ public:
 
     void reserve_memory(int length);
     
-    void start(set<Branch> &branches, double t);
-    
     void start(Tree &tree, double t);
     
     void set_cutoff(double x);
@@ -114,9 +103,9 @@ public:
     
     void set_check_points(set<double> &p);
     
-    void forward(double rho); // forward pass when there is no recombination (without emission). Also update recomb_sums and weight_sums.
-    
-    void transfer(Recombination &r); // forward pass when there is a recombination (without emission), and add a transition object. Also update active intervals, recomb_sums and weight_sums.
+    void forward(double rho);
+
+    void transfer(Recombination &r);
 
     double get_recomb_prob(double rho, double t);
     

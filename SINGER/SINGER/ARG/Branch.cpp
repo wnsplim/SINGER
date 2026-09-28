@@ -20,14 +20,6 @@ Branch::Branch(Node *l, Node *u) {
 
 Branch::Branch(const Node_ptr &l, const Node_ptr &u) : Branch(l.get(), u.get()) {}
 
-Branch::Branch(Node *l, const Node_ptr &u) : Branch(l, u.get()) {}
-
-Branch::Branch(const Node_ptr &l, Node *u) : Branch(l.get(), u) {}
-
-double Branch::length() {
-    return upper_node->time - lower_node->time;
-}
-
 bool Branch::operator<(const Branch &other) const {
     static compare_node cn;
     if (cn(upper_node, other.upper_node)) {

@@ -23,7 +23,6 @@ public:
 
     virtual double null_emit(Branch &branch, double time, double theta, Node *node) = 0;
     virtual double mut_emit(Branch &branch, double time, double theta, double bin_size, vector<double> &mut_set, Node *node) = 0;
-    virtual double emit(Branch &branch, double time, double theta, double bin_size, vector<double> &emissions, Node *node) = 0;
 
     void set_tree_product(double c, double rho, double p, double w) {
         crho = c*rho;
