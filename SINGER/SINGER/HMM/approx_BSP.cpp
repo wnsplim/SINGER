@@ -239,8 +239,7 @@ void approx_BSP::transfer(Recombination &r) {
 }
 
 double approx_BSP::get_recomb_prob(double rho, double t) {
-    double p = rho*(t - cut_time)*exp(-rho*(t - cut_time));
-    return p;
+    return -expm1(-rho*(t - cut_time));
 }
 
 void approx_BSP::null_emit(double theta, Node *query_node) {
