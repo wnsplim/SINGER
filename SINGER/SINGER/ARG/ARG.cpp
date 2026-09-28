@@ -1026,6 +1026,57 @@ int ARG::count_incompatibility(Tree tree, double x) {
     return max(0, count);
 }
 
+void ARG::release_dead_nodes() {
+    unordered_set<Node *> live = {cut_node};
+    auto keep_branch = [&](const Branch &b) {
+        live.insert(b.lower_node);
+        live.insert(b.upper_node);
+    };
+    auto keep_tree = [&](const Tree &t) {
+        for (auto &x : t.parents) {
+            live.insert(x.first);
+            live.insert(x.second);
+        }
+    };
+    for (auto &x : recombinations) {
+        const Recombination &r = x.second;
+        for (const Branch *b : {&r.source_branch, &r.target_branch, &r.source_sister_branch, &r.source_parent_branch,
+                                &r.recombined_branch, &r.merging_branch, &r.lower_transfer_branch, &r.upper_transfer_branch}) {
+            keep_branch(*b);
+        }
+        for (const Branch &b : r.deleted_branches) {
+            keep_branch(b);
+        }
+        for (const Branch &b : r.inserted_branches) {
+            keep_branch(b);
+        }
+        live.insert(r.deleted_node);
+        live.insert(r.inserted_node);
+    }
+    for (Node *n : sample_nodes) {
+        live.insert(n);
+    }
+    for (auto &x : mutation_branches) {
+        for (const Branch &b : x.second) {
+            keep_branch(b);
+        }
+    }
+    for (auto *m : {&joining_branches, &removed_branches}) {
+        for (auto &x : *m) {
+            keep_branch(x.second);
+        }
+    }
+    for (auto &x : tree_map) {
+        keep_tree(x.second);
+    }
+    keep_tree(cut_tree);
+    keep_tree(start_tree);
+    keep_tree(end_tree);
+    auto first_dead = partition(node_owner.begin(), node_owner.end(), [&](const Node_ptr &p) { return live.count(p.get()) > 0; });
+    dead_nodes.assign(make_move_iterator(first_dead), make_move_iterator(node_owner.end()));
+    node_owner.erase(first_dead, node_owner.end());
+}
+
 void ARG::create_node_set() {
     node_set.clear();
     for (auto &x : recombinations) {

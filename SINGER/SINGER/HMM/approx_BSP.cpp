@@ -46,7 +46,6 @@ static typename V::value_type::second_type &keyed_lookup(V &v, int key) {
 approx_BSP::approx_BSP() {}
 
 approx_BSP::~approx_BSP() {
-    vector<double>().swap(forward_probs);
     vector<size_t>().swap(row_starts);
     vector<pair<int, vector<Interval_ptr>>>().swap(state_spaces);
     vector<pair<int, vector<double>>>().swap(times);
@@ -54,8 +53,9 @@ approx_BSP::~approx_BSP() {
 }
 
 void approx_BSP::push_row(int n) {
-    if (n_used + n > forward_probs.size()) {
-        forward_probs.resize(max(n_used + n, 2*forward_probs.size() + n));
+    if (n_used + n > forward_cap) {
+        forward_cap = max(n_used + n, 2*forward_cap + n);
+        forward_probs.reset((double *) realloc(forward_probs.release(), forward_cap*sizeof(double)));
     }
     n_used += n;
     row_starts.push_back(n_used);

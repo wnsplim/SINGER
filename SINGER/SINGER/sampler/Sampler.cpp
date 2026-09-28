@@ -755,6 +755,7 @@ void Sampler::internal_sample(int num_iters, int spacing) {
             moves += 1;
             arg.clear_remove_info();
         }
+        arg.release_dead_nodes();
         // normalize();
         rescale();
         random_seed = random_engine();
@@ -791,6 +792,7 @@ void Sampler::fast_internal_sample(int num_iters, int spacing) {
             moves += 1;
             arg.clear_remove_info();
         }
+        arg.release_dead_nodes();
         // normalize();
         rescale();
         random_seed = random_engine();

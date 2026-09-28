@@ -73,7 +73,8 @@ public:
     vector<double> mut_emit_probs = {};
     int sample_index = -1;
     vector<double> trace_back_probs = {};
-    vector<double> forward_probs = {};
+    unique_ptr<double, void (*)(void *)> forward_probs = {nullptr, free};
+    size_t forward_cap = 0;
     vector<size_t> row_starts = {0};
     size_t n_used = 0;
     
@@ -83,7 +84,7 @@ public:
     
     size_t n_rows = 0;
 
-    double *row(int i) { return forward_probs.data() + row_starts[i]; }
+    double *row(int i) { return forward_probs.get() + row_starts[i]; }
 
     size_t row_size(int i) { return row_starts[i + 1] - row_starts[i]; }
 

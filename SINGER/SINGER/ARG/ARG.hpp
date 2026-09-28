@@ -40,6 +40,8 @@ public:
     vector<double> rhos = {};
     vector<double> thetas = {};
     vector<Node_ptr> node_owner = {};
+    vector<Node_ptr> dead_nodes = {};
+    void release_dead_nodes();
     set<Node *, compare_node> sample_nodes = {};
     set<Node *, compare_node> node_set = {};
     map<double, Branch> joining_branches = {};
