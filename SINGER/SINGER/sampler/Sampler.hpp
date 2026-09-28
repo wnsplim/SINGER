@@ -35,6 +35,8 @@ public:
     double sequence_length = 0;
     ARG arg;
     bool exact = false;
+    int ploidy = 2;
+    vector<double> tip_times = {};
     double bsp_c = 0.01;
     double tsp_q = 0.05;
     int random_seed = 0;
@@ -59,6 +61,12 @@ public:
     void set_output_file_prefix(string f);
 
     int parse_genotype(const string &field, int expected_ploidy, int *calls);
+
+    Node_ptr new_sample(int i);
+
+    vector<string> sample_names(string prefix);
+
+    void read_tip_ages(string filename, double g);
 
     void scan_missing(string prefix, double start_pos, double end_pos, vector<Node *> &leaves, int ploidy);
 

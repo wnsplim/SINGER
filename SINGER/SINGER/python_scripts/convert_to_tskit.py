@@ -14,10 +14,11 @@ def read_ts(node_file, edge_file):
     tables = tskit.TableCollection(sequence_length=length)
     node_table = tables.nodes
     edge_table = tables.edges
+    parents = set(edge_span[:, 2].astype(int))
     prev_time = -1
-    for t in node_time:
-        if (t == 0):
-            node_table.add_row(flags=tskit.NODE_IS_SAMPLE)
+    for i, t in enumerate(node_time):
+        if i not in parents:
+            node_table.add_row(flags=tskit.NODE_IS_SAMPLE, time=t)
         else:
             t = max(prev_time + 1e-4, t)
             node_table.add_row(time = t)

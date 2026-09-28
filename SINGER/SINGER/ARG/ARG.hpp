@@ -39,6 +39,8 @@ public:
     vector<double> thetas = {};
     vector<Node_ptr> node_owner = {};
     vector<Node_ptr> dead_nodes = {};
+    vector<Node *> node_list = {};
+    int num_samples = 0;
     void release_dead_nodes();
     set<Node *, compare_node> sample_nodes = {};
     set<Node *, compare_node> node_set = {};
@@ -72,7 +74,9 @@ public:
     
     void add_node(Node *n);
     
-    void add_new_node(double t);
+    void add_new_node(double t, bool sample);
+
+    void resort_after_time_change();
     
     Tree get_tree_at(double x);
 

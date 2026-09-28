@@ -1,6 +1,6 @@
 ![Logo](SINGER.png)
 # SINGER
-SINGER stands for **S**ampling and **IN**ference of **GE**nealogies with **R**ecombination, and it is a Bayesian method to do posterior sampling of Ancestral Recombination Graph under Sequentially Markovian Coalescent. SINGER works by iterative threading one haplotype to the partially-built ARG, until the ARG for all haplotypes have been built. After initialization, MCMC will be performed to update the ARG to explore the posterior distribution. For a full description and cite our method, you can check: [Deng, Yun, Rasmus Nielsen, and Yun S. Song. "Robust and accurate Bayesian inference of genome-wide genealogies for hundreds of genomes." Nature Genetics 57, 2124–2135 (2025).](https://doi.org/10.1038/s41588-025-02317-9)
+SINGER stands for **S**ampling and **IN**ference of **GE**nealogies with **R**ecombination, and it is a Bayesian method to do posterior sampling of Ancestral Recombination Graph under Sequentially Markovian Coalescent. SINGER works by iterative threading one haplotype to the partially-built ARG, until the ARG for all haplotypes have been built. After initialization, MCMC will be performed to update the ARG to explore the posterior distribution. For a full description and cite our method, you can check: [Deng, Y., Nielsen, R., and Song, Y. S. "Robust and accurate Bayesian inference of genome-wide genealogies for hundreds of genomes." Nature Genetics 57, 2124–2135 (2025).](https://doi.org/10.1038/s41588-025-02317-9)
 
 ## Requirements
 
@@ -57,6 +57,8 @@ The optional flags include:
 |**-polar**|optional|the probability of correct polarization, default at 0.5 for unpolarized data, please use 0.99 for polarized data|
 |**-scaling_rep**|optional|the number of ARG rescaling rounds applied after the initial build and after each posterior sample, default at 1. Set to 0 to disable rescaling|
 |**-scaling_bin**|optional|the number of time bins used for ARG rescaling, default at 100|
+|**-tip_ages**|optional|file with the sampling ages in calendar years before present, see [Heterochronous samples](#heterochronous-samples-ancient-dna)|
+|**-g**|optional|generation time in years, required with `-tip_ages`|
 
 The output files will be:
 
@@ -72,6 +74,32 @@ path_to_singer/convert_to_tskit.py -input prefix_of_arg_files -output prefix_of_
 ```
 
 This tool will convert ARG sample with index from `start_index` to `end_index`, with interval size `step_size`. 
+
+### Heterochronous samples (ancient DNA)
+
+For data sets containing samples from different time points (e.g., ancient DNA), provide the sampling ages and generation time:
+
+```
+path_to_singer/singer_master -m mutation_rate -vcf prefix_of_vcf_file -output prefix_of_output_file -start 0 -end 1e6 -tip_ages ages.txt -g 29
+```
+
+The tip ages file can be given in two formats, with the column count detected automatically. Ages are in calendar years before present, one per sample in the VCF (applied to both haplotypes of a diploid sample).
+
+With **two columns** (`name  calendar_age_BP`), each age is matched by `name` to a sample name in the VCF header. Example:
+
+```
+tsk_0    0
+tsk_1    3500
+tsk_2    8000
+```
+
+With **one column**, give ages positionally in VCF sample order. The same three samples:
+
+```
+0
+3500
+8000
+```
 
 
 ## Tools

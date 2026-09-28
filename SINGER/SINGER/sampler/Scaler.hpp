@@ -17,6 +17,8 @@ class Scaler {
 public:
     
     int num_windows = 100;
+    bool heterochronous = false;
+    unordered_map<Node *, vector<Node *>> children = {};
     vector<Node *> sorted_nodes = {};
     vector<double> node_deltas = {};
     vector<double> rates = {};

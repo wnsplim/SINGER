@@ -37,6 +37,96 @@ void Sampler::set_output_file_prefix(string f) {
     output_prefix = f;
 }
 
+Node_ptr Sampler::new_sample(int i) {
+    Node_ptr n = new_node(tip_times.empty() ? 0.0 : tip_times[i]);
+    n->is_sample = true;
+    n->set_index(i);
+    return n;
+}
+
+vector<string> Sampler::sample_names(string prefix) {
+    ifstream file(prefix + ".vcf");
+    string line;
+    vector<string> names;
+    while (getline(file, line)) {
+        if (line.substr(0, 6) == "#CHROM") {
+            istringstream iss(line);
+            string field;
+            int i = 0;
+            while (iss >> field) {
+                if (i >= 9) {
+                    names.push_back(field);
+                }
+                i += 1;
+            }
+            return names;
+        }
+    }
+    return names;
+}
+
+void Sampler::read_tip_ages(string filename, double g) {
+    ifstream fin(filename);
+    if (!fin.good()) {
+        cerr << "tip ages file not found: " << filename << endl;
+        exit(1);
+    }
+    vector<string> names = sample_names(input_prefix);
+    int n = ploidy*(int) names.size();
+    vector<pair<string, double>> rows;
+    int ncol = 0;
+    string line;
+    while (getline(fin, line)) {
+        istringstream iss(line);
+        vector<string> parts;
+        string tok;
+        while (iss >> tok) {
+            parts.push_back(tok);
+        }
+        if (parts.empty() or parts[0][0] == '#') {
+            continue;
+        }
+        if (ncol == 0) {
+            ncol = (int) parts.size();
+        }
+        if ((int) parts.size() != ncol or ncol > 2) {
+            cerr << "tip ages file: expected 1 column (ages in VCF sample order) or 2 columns (name age)" << endl;
+            exit(1);
+        }
+        rows.push_back({ncol == 2 ? parts[0] : "", stod(parts.back())});
+    }
+    if (rows.size() != names.size()) {
+        cerr << "tip ages file has " << rows.size() << " rows for " << names.size() << " samples in the VCF" << endl;
+        exit(1);
+    }
+    tip_times.assign(n, 0.0);
+    if (ncol == 1) {
+        for (int i = 0; i < n; i++) {
+            tip_times[i] = rows[i/ploidy].second;
+        }
+    } else {
+        map<string, double> by_name;
+        for (auto &r : rows) {
+            if (by_name.count(r.first) > 0) {
+                cerr << "tip ages file: duplicate name " << r.first << endl;
+                exit(1);
+            }
+            by_name[r.first] = r.second;
+        }
+        for (int i = 0; i < n; i++) {
+            auto it = by_name.find(names[i/ploidy]);
+            if (it == by_name.end()) {
+                cerr << "tip ages file has no row for " << names[i/ploidy] << endl;
+                exit(1);
+            }
+            tip_times[i] = it->second;
+        }
+    }
+    for (double &x : tip_times) {
+        x /= g*Ne;
+    }
+}
+
 int Sampler::parse_genotype(const string &field, int expected_ploidy, int *calls) {
     size_t stop = field.find(':');
     if (stop == string::npos) {
@@ -140,8 +230,7 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
             num_individuals = (int) fields.size() - 9;
             nodes.resize(num_individuals);
             for (int i = 0; i < num_individuals; i++) {
-                nodes[i] = new_node(0.0);
-                nodes[i]->set_index(i);
+                nodes[i] = new_sample(i);
                 sample_nodes.insert(nodes[i]);
             }
             genotypes.resize(num_individuals);
@@ -223,8 +312,7 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
             num_individuals = (int) fields.size() - 9;
             nodes.resize(2*num_individuals);
             for (int i = 0; i < 2*num_individuals; i++) {
-                nodes[i] = new_node(0.0);
-                nodes[i]->set_index(i);
+                nodes[i] = new_sample(i);
                 sample_nodes.insert(nodes[i]);
             }
             genotypes.resize(2*num_individuals);
@@ -353,8 +441,7 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
         if (nodes.size() == 0) {
             nodes.resize(genotypes.size());
             for (int i = 0; i < nodes.size(); i++) {
-                nodes[i] = new_node(0.0);
-                nodes[i]->set_index(i);
+                nodes[i] = new_sample(i);
                 sample_nodes.insert(nodes[i]);
             }
         } else {
@@ -387,9 +474,9 @@ void Sampler::load_vcf(string prefix, double start, double end) {
     } else {
         naive_read_vcf(prefix, start, end);
     }
-    vector<Node *> leaves;
+    vector<Node *> leaves(sample_nodes.size());
     for (const Node_ptr &n : sample_nodes) {
-        leaves.push_back(n.get());
+        leaves[n->index] = n.get();
     }
     scan_missing(prefix, start, end, leaves, 2);
 }
@@ -517,6 +604,9 @@ void Sampler::debug_resume_internal_sample(int num_iters, int spacing) {
 }
 
 void Sampler::rescale() {
+    if (scaling_rep == 0) {
+        return;
+    }
     Scaler scaler = Scaler();
     scaler.num_windows = scaling_bin;
     scaler.compute_deltas(arg);
@@ -588,9 +678,13 @@ void Sampler::load_resume_arg() {
     recomb_file = output_prefix + "_recombs_" + to_string(sample_index) + ".txt";
     mut_file = output_prefix + "_muts_" + to_string(sample_index) + ".txt";
     coord_file = output_prefix + "_coordinates.txt";
+    arg.num_samples = ploidy*(int) sample_names(input_prefix).size();
     arg.read(node_file, branch_file, recomb_file, mut_file);
     arg.read_coordinates(coord_file);
-    vector<Node *> leaves = vector<Node *>(arg.sample_nodes.begin(), arg.sample_nodes.end());
+    vector<Node *> leaves(arg.sample_nodes.size());
+    for (Node *n : arg.sample_nodes) {
+        leaves[n->index] = n;
+    }
     scan_missing(input_prefix, start, end, leaves, 2);
     arg.any_missing = any_missing;
     arg.unassayed_sites = unassayed_site_list;

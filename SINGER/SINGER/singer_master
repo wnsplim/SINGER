@@ -152,13 +152,65 @@ def calculate_diversity(vcf_file, start, end):
     nucleotide_diversity = total_diversity / segment_length
     return nucleotide_diversity
 
-def compute_Ne(vcf_prefix, start, end, m):
+def vcf_sample_names(vcf_prefix):
+    with open(vcf_prefix + ".vcf") as vcf:
+        for line in vcf:
+            if line.startswith("#CHROM"):
+                return line.strip().split('\t')[9:]
+    return []
+
+def read_tip_ages(tip_ages_file, vcf_prefix, ploidy):
+    names = vcf_sample_names(vcf_prefix)
+    n = ploidy*len(names)
+    rows = []
+    ncol = None
+    with open(tip_ages_file) as f:
+        for lineno, line in enumerate(f, 1):
+            parts = line.split()
+            if not parts or parts[0].startswith('#'):
+                continue
+            if ncol is None:
+                ncol = len(parts)
+            if len(parts) != ncol or ncol > 2:
+                raise ValueError(f"tip_ages line {lineno}: expected 1 column (ages in VCF sample order) or 2 columns (name age)")
+            rows.append((parts[0] if ncol == 2 else None, float(parts[-1])))
+    if len(rows) != len(names):
+        raise ValueError(f"tip_ages has {len(rows)} rows for {len(names)} samples in the VCF")
+    if ncol == 1:
+        return [rows[i//ploidy][1] for i in range(n)]
+    by_name = {}
+    for name, age in rows:
+        if name in by_name:
+            raise ValueError(f"tip_ages: duplicate name {name!r}")
+        by_name[name] = age
+    ages = []
+    for i in range(n):
+        if names[i//ploidy] not in by_name:
+            raise ValueError(f"tip_ages has no row for {names[i//ploidy]!r}")
+        ages.append(by_name[names[i//ploidy]])
+    return ages
+
+def compute_Ne(vcf_prefix, start, end, m, ages=None, g=None):
     vcf_filename = vcf_prefix + ".vcf"
     diversity = calculate_diversity(vcf_filename, start, end)
-    Ne = diversity/4/m
-    return Ne 
+    mean_abs_diff = 0.0
+    if ages:
+        gens = [a/g for a in ages]
+        n = len(gens)
+        pairs = [abs(gens[i] - gens[j]) for i in range(n) for j in range(i + 1, n)]
+        mean_abs_diff = sum(pairs)/len(pairs)
+    Ne = diversity/4/m - mean_abs_diff/4
+    if Ne <= 0:
+        raise ValueError(f"Estimated Ne is non-positive ({Ne:.1f}). Check that tip ages and mutation rate are in consistent units.")
+    print(f"Estimated Ne: {Ne:.1f}")
+    return Ne
 
-def run_rate_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed):
+def tip_flags(tip_ages, g):
+    if tip_ages is None:
+        return ""
+    return f" -tip_ages {tip_ages} -g {g}"
+
+def run_rate_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips):
     attempts = 0
     max_attempts = 100
     random.seed(seed)
@@ -167,8 +219,8 @@ def run_rate_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, 
     script_dir = os.path.dirname(os.path.realpath(__file__))
     singer_executable = os.path.join(script_dir, "singer")
 
-    start_cmd = f"{singer_executable} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -ploidy {ploidy}"
-    debug_cmd = f"{singer_executable} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -debug -ploidy {ploidy}"
+    start_cmd = f"{singer_executable} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -ploidy {ploidy}" + tips
+    debug_cmd = f"{singer_executable} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -debug -ploidy {ploidy}" + tips
 
     seeded_start_cmd = start_cmd + f" -seed {seed}"
     print(seeded_start_cmd)
@@ -184,7 +236,7 @@ def run_rate_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, 
         print("Auto-debug failed. Contact the author for help: yun_deng@berkeley.edu")
         sys.exit(1)
 
-def resume_rate_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, seed):
+def resume_rate_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips):
     attempts = 0
     max_attempts = 100
     random.seed(seed)
@@ -193,8 +245,8 @@ def resume_rate_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iter
     script_dir = os.path.dirname(os.path.realpath(__file__))
     singer_executable = os.path.join(script_dir, "singer")
 
-    resume_cmd = f"{singer_executable} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -resume"
-    debug_cmd = f"{singer_executable} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -debug"
+    resume_cmd = f"{singer_executable} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -resume -ploidy {ploidy}" + tips
+    debug_cmd = f"{singer_executable} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -debug -ploidy {ploidy}" + tips
 
     seeded_resume_cmd = resume_cmd + f" -seed {seed}"
     print(seeded_resume_cmd)
@@ -210,17 +262,17 @@ def resume_rate_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iter
         print("Auto-debug failed. Contact the author for help: yun_deng@berkeley.edu")
         sys.exit(1)
 
-def run_map_singer(Ne, mut_map_filename, recomb_map_filename, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed):
+def run_map_singer(Ne, mut_map_filename, recomb_map_filename, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips):
     attempts = 0
     max_attempts = 100
     random.seed(seed)
-    random_seeds = [random.randint(0, 2**30 - 1) for _ in range(max_attempts)]   
-   
+    random_seeds = [random.randint(0, 2**30 - 1) for _ in range(max_attempts)]
+
     script_dir = os.path.dirname(os.path.realpath(__file__))
-    singer_executable = os.path.join(script_dir, "singer") 
-    
-    start_cmd = f"{singer_executable} -Ne {Ne} -mut_map {mut_map_filename} -recomb_map {recomb_map_filename} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -ploidy {ploidy}"    
-    debug_cmd = f"{singer_executable} -Ne {Ne} -mut_map {mut_map_filename} -recomb_map {recomb_map_filename} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -debug -ploidy {ploidy}"    
+    singer_executable = os.path.join(script_dir, "singer")
+
+    start_cmd = f"{singer_executable} -Ne {Ne} -mut_map {mut_map_filename} -recomb_map {recomb_map_filename} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -ploidy {ploidy}" + tips
+    debug_cmd = f"{singer_executable} -Ne {Ne} -mut_map {mut_map_filename} -recomb_map {recomb_map_filename} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -debug -ploidy {ploidy}" + tips
 
     seeded_start_cmd = start_cmd + f" -seed {seed}"
     print(seeded_start_cmd)
@@ -237,7 +289,7 @@ def run_map_singer(Ne, mut_map_filename, recomb_map_filename, start, end, vcf_pr
         sys.exit(1)
 
 
-def resume_map_singer(Ne, mut_map_filename, recomb_map_filename, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, seed):
+def resume_map_singer(Ne, mut_map_filename, recomb_map_filename, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips):
     attempts = 0
     max_attempts = 100
     random.seed(seed)
@@ -246,8 +298,8 @@ def resume_map_singer(Ne, mut_map_filename, recomb_map_filename, start, end, vcf
     script_dir = os.path.dirname(os.path.realpath(__file__))
     singer_executable = os.path.join(script_dir, "singer")
 
-    resume_cmd = f"{singer_executable} -Ne {Ne} -mut_map {mut_map_filename} -recomb_map {recomb_map_filename} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -resume" 
-    debug_cmd = f"{singer_executable} -Ne {Ne} -mut_map {mut_map_filename} -recomb_filename {recomb_map_filename} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -debug"
+    resume_cmd = f"{singer_executable} -Ne {Ne} -mut_map {mut_map_filename} -recomb_map {recomb_map_filename} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -resume -ploidy {ploidy}" + tips
+    debug_cmd = f"{singer_executable} -Ne {Ne} -mut_map {mut_map_filename} -recomb_map {recomb_map_filename} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -debug -ploidy {ploidy}" + tips
       
     seeded_resume_cmd = resume_cmd + f" -seed {seed}"
     print(seeded_resume_cmd)
@@ -282,25 +334,31 @@ def main():
     parser.add_argument('-resume', action='store_true', help='Resume MCMC with this flag.')
     parser.add_argument('-ploidy', type=int, default=2, help="Ploidy of the vcf file (1 or 2). Default: 2.")
     parser.add_argument('-seed', type=int, default=42, help='Random seed for reproducibility. Default: 42.')
+    parser.add_argument('-tip_ages', type=str, help='File with the sample ages in years before present, one per haplotype in VCF haplotype order or one per individual. Requires -g.')
+    parser.add_argument('-g', type=float, help='Generation time in years, used with -tip_ages.')
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
 
     args = parser.parse_args()
-    
+
     if not args.m and not args.mut_map:
         parser.error("You must provide either -m or -mut_map")
 
+    if args.tip_ages and not args.g:
+        parser.error("You must provide -g with -tip_ages")
+    tips = tip_flags(args.tip_ages, args.g)
+    ages = read_tip_ages(args.tip_ages, args.vcf, args.ploidy) if args.tip_ages else None
 
     if args.m:
         if args.Ne < 0:
-            args.Ne = compute_Ne(args.vcf, args.start, args.end, args.m) 
+            args.Ne = compute_Ne(args.vcf, args.start, args.end, args.m, ages, args.g)
         if (args.resume):
-            resume_rate_singer(args.Ne, args.m, args.m*args.ratio, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.seed)
+            resume_rate_singer(args.Ne, args.m, args.m*args.ratio, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips)
         else:
-            run_rate_singer(args.Ne, args.m, args.m*args.ratio, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed) 
-    return 
+            run_rate_singer(args.Ne, args.m, args.m*args.ratio, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips)
+    return
 
     if args.mut_map and not args.m:
         args.m = compute_average_rate(args.mut_map, args.start, args.end) 
@@ -309,12 +367,12 @@ def main():
     
         if args.Ne < 0:
             args.m = compute_average_rate(args.mut_map, args.start, args.end)
-            args.Ne = compute_Ne(args.vcf, args.start, args.end, args.m)
+            args.Ne = compute_Ne(args.vcf, args.start, args.end, args.m, ages, args.g)
 
         if (args.resume):
-            resume_map_singer(args.Ne, args.mut_map, args.recomb_map, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.seed)
-        else: 
-            run_map_singer(args.Ne, args.mut_map, args.recomb_map, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed)
+            resume_map_singer(args.Ne, args.mut_map, args.recomb_map, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips)
+        else:
+            run_map_singer(args.Ne, args.mut_map, args.recomb_map, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips)
     return
 
 

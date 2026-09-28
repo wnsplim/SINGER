@@ -73,6 +73,8 @@ void TSP::reset() {
     curr_branch = Branch();
     curr_intervals.clear();
     rhos.clear();
+    swaps.clear();
+    applied = 0;
     sister_masses.clear();
     thetas.clear();
     lower_sums.clear();
@@ -146,6 +148,10 @@ void TSP::transfer(Recombination &r, Branch &prev_branch, Branch &next_branch) {
     }
     cc_generation += 1;
     curr_index += 1;
+    if (rewind) {
+        swaps.push_back({curr_index, {r.deleted_node->time, r.inserted_node->time}});
+        applied = swaps.size();
+    }
     curr_branch = next_branch;
     lower_bound = max(cut_time, next_branch.lower_node->time);
     if (prev_branch == r.source_branch and next_branch == r.merging_branch) {
@@ -322,7 +328,26 @@ void TSP::mut_emit(double theta, double bin_size, vector<double> &mut_set, Node 
     }
 }
 
+void TSP::rewind_to(int x) {
+    while (applied > 0 and swaps[applied - 1].first > x) {
+        cc->update(swaps[applied - 1].second.second, swaps[applied - 1].second.first);
+        cc1->update(swaps[applied - 1].second.second, swaps[applied - 1].second.first);
+        applied -= 1;
+        cc_generation += 1;
+    }
+}
+
+void TSP::forward_to(int x) {
+    while (applied < swaps.size() and swaps[applied].first <= x) {
+        cc->update(swaps[applied].second.first, swaps[applied].second.second);
+        cc1->update(swaps[applied].second.first, swaps[applied].second.second);
+        applied += 1;
+        cc_generation += 1;
+    }
+}
+
 map<double, Node *> TSP::sample_joining_nodes(int start_index, vector<double> &coordinates) {
+    forward_to(curr_index);
     prev_rho = -1;
     log_h = 0;
     sel_log_q = 0;
@@ -345,15 +370,18 @@ map<double, Node *> TSP::sample_joining_nodes(int start_index, vector<double> &c
             if (interval->source_interval != nullptr) {
                 x -= 1;
                 interval = sample_source_interval(interval, x);
+                rewind_to(x);
             } else {
                 x -= 1;
                 interval = sample_recomb_interval(interval, x);
+                rewind_to(x);
                 pin_active = interval->node != nullptr;
                 n = sample_joining_node(interval);
             }
         } else {
             x -= 1;
             interval = sample_prev_interval(interval, x);
+            rewind_to(x);
             pin_active = false;
             n = sample_joining_node(interval);
         }
@@ -963,6 +991,7 @@ void TSP::eval_time_at(Interval *interval, double t) {
 
 double TSP::eval_joining_nodes(map<double, Branch> &old_jb, map<double, Branch> &old_ab,
                               int start_index, vector<double> &coordinates) {
+    forward_to(curr_index);
     sel_log_q = 0;
     time_log_q = 0;
     auto old_branch_at = [&](int xx) {
@@ -1027,6 +1056,7 @@ double TSP::eval_joining_nodes(map<double, Branch> &old_jb, map<double, Branch> 
             interval = from->source_interval;
             vector<Interval *> &pv = get_state_space(x);
             sample_index = get_interval_index(interval, pv);
+            rewind_to(x);
         } else if (x == from->start_pos) {
             x -= 1;
             Branch nb = old_branch_at(x);
@@ -1051,6 +1081,7 @@ double TSP::eval_joining_nodes(map<double, Branch> &old_jb, map<double, Branch> 
                     sel_log_q = neg_inf;
                 }
             }
+            rewind_to(x);
             sample_index = ni;
             interval = pv[ni];
             eval_time_at(interval, nt);
@@ -1075,6 +1106,7 @@ double TSP::eval_joining_nodes(map<double, Branch> &old_jb, map<double, Branch> 
             } else {
                 sel_log_q = neg_inf;
             }
+            rewind_to(x);
             sample_index = ni;
             interval = pv[ni];
             eval_time_at(interval, nt);

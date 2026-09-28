@@ -80,6 +80,7 @@ void ARG::build_singleton_arg(const Node_ptr &n) {
 
 void ARG::add_sample(const Node_ptr &n) {
     node_owner.push_back(n);
+    n->is_sample = true;
     sample_nodes.insert(n.get());
     for (auto &x : n->mutation_sites) {
         mutation_sites.insert(x.first);
@@ -100,18 +101,36 @@ void ARG::add_node(Node *n) {
     }
 }
 
-void ARG::add_new_node(double t) {
+void ARG::add_new_node(double t, bool sample) {
     if (!isinf(t)) {
         Node_ptr n = new_node(t);
         n->index = (int) node_set.size();
+        n->is_sample = sample;
         node_owner.push_back(n);
         node_set.insert(n.get());
-        if (t == 0) {
+        node_list.push_back(n.get());
+        if (sample) {
             sample_nodes.insert(n.get());
         }
     }
 }
  
+void ARG::resort_after_time_change() {
+    for (auto &x : recombinations) {
+        Recombination &r = x.second;
+        r.deleted_branches = set<Branch>(r.deleted_branches.begin(), r.deleted_branches.end());
+        r.inserted_branches = set<Branch>(r.inserted_branches.begin(), r.inserted_branches.end());
+    }
+    for (auto &x : mutation_branches) {
+        x.second = set<Branch>(x.second.begin(), x.second.end());
+    }
+    node_set.clear();
+    create_node_set();
+    anchors_changed(0, INT_MAX);
+    start_tree = get_tree_at(start);
+    end_tree = get_tree_at(end);
+}
+
 Tree ARG::get_tree_at(double x) {
     if (anchor_step == 0) {
         anchor_step = max(8, (int) sqrt((double) recombinations.size()));
@@ -902,11 +921,23 @@ void ARG::write_nodes(string filename) {
     anchors_changed(0, INT_MAX);
     node_set.clear();
     create_node_set();
+    vector<Node *> order;
+    for (Node *n : node_set) {
+        if (n->is_sample) {
+            order.push_back(n);
+        }
+    }
+    sort(order.begin(), order.end(), [](Node *a, Node *b) { return a->index < b->index; });
+    for (Node *n : node_set) {
+        if (!n->is_sample) {
+            order.push_back(n);
+        }
+    }
     ofstream file;
     file.open(filename);
     int index = 0;
-    for (Node *n : node_set) {
-        if (n->time > 0) {
+    for (Node *n : order) {
+        if (!n->is_sample) {
             n->set_index(index);
         }
         file << std::setprecision(std::numeric_limits<double>::max_digits10) << n->time*Ne << "\n";
@@ -988,8 +1019,10 @@ void ARG::read_nodes(string filename) {
         exit(1);
     }
     double x;
+    int i = 0;
     while (fin >> x) {
-        add_new_node(x/Ne);
+        add_new_node(x/Ne, i < num_samples);
+        i += 1;
     }
 }
 
@@ -999,7 +1032,7 @@ void ARG::read_branches(string filename) {
         cerr << "input file not found" << endl;
         exit(1);
     }
-    vector<Node *> nodes = vector<Node *>(node_set.begin(), node_set.end());
+    vector<Node *> nodes = node_list;
     double x;
     double y;
     double p;
@@ -1050,7 +1083,7 @@ void ARG::read_recombs(string filename) {
         exit(1);
     }
     create_node_set();
-    vector<Node *> nodes = vector<Node *>(node_set.begin(), node_set.end());
+    vector<Node *> nodes = node_list;
     map<double, Branch> source_branches = {};
     map<double, double> start_times = {};
     double pos;
@@ -1099,7 +1132,7 @@ void ARG::read_muts(string filename) {
         exit(1);
     }
     create_node_set();
-    vector<Node *> nodes = vector<Node *>(node_set.begin(), node_set.end());
+    vector<Node *> nodes = node_list;
     double pos;
     int n1;
     int n2;

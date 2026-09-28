@@ -11,27 +11,36 @@ RSP_smc::RSP_smc() {
 }
 
 void RSP_smc::set_tree(Tree &tree) {
-    vector<double> node_times;
+    vector<pair<double, int>> events;
     for (auto &x : tree.parents) {
         if (x.first->time > 0) {
-            node_times.push_back(x.first->time);
+            events.push_back({x.first->time, x.first->is_sample ? -1 : 1});
         }
     }
-    sort(node_times.begin(), node_times.end());
+    sort(events.begin(), events.end());
+    set_levels(events);
+}
+
+void RSP_smc::set_levels(const vector<pair<double, int>> &events) {
+    int n = (int) events.size();
     level_times.assign(1, 0.0);
-    for (double t : node_times) {
-        if (t != level_times.back()) {
-            level_times.push_back(t);
-        }
+    level_lambda.assign(1, 0.0);
+    int above = 0;
+    for (auto &e : events) {
+        above += e.second;
     }
-    int m = (int) level_times.size();
-    level_rates.resize(m);
-    level_lambda.assign(m, 0.0);
-    for (int j = 0; j < m; j++) {
-        level_rates[j] = 1.0 + (node_times.end() - upper_bound(node_times.begin(), node_times.end(), level_times[j]));
-        if (j > 0) {
-            level_lambda[j] = level_lambda[j-1] + level_rates[j-1]*(level_times[j] - level_times[j-1]);
+    level_rates.assign(1, 1.0 + above);
+    int i = 0;
+    while (i < n) {
+        double t = events[i].first;
+        while (i < n and events[i].first == t) {
+            above -= events[i].second;
+            i++;
         }
+        int j = (int) level_times.size();
+        level_times.push_back(t);
+        level_rates.push_back(1.0 + above);
+        level_lambda.push_back(level_lambda[j-1] + level_rates[j-1]*(t - level_times[j-1]));
     }
 }
 
@@ -188,29 +197,13 @@ double RSP_smc::log_start_marginal(Recombination &r, double cut_time, const Bran
 }
 
 void RSP_smc::set_tree(const Flat_tree &tree) {
-    node_times.clear();
+    events.clear();
     for (auto &x : tree.parents) {
         if (x.first->time > 0) {
-            node_times.push_back(x.first->time);
+            events.push_back({x.first->time, x.first->is_sample ? -1 : 1});
         }
     }
-    int n = (int) node_times.size();
-    level_times.assign(1, 0.0);
-    level_rates.assign(1, 1.0 + n);
-    level_lambda.assign(1, 0.0);
-    int i = 0;
-    while (i < n) {
-        double t = node_times[i];
-        int e = i + 1;
-        while (e < n and node_times[e] == t) {
-            e++;
-        }
-        int j = (int) level_times.size();
-        level_times.push_back(t);
-        level_rates.push_back(1.0 + (n - e));
-        level_lambda.push_back(level_lambda[j-1] + level_rates[j-1]*(t - level_times[j-1]));
-        i = e;
-    }
+    set_levels(events);
 }
 
 double RSP_smc::unchanged_recomb_length(const Flat_tree &tree) {

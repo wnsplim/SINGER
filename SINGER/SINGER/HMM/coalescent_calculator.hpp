@@ -34,6 +34,8 @@ public:
 
     void update(Recombination &r);
 
+    void update(double t_old, double t_new);
+
     pair<double, double> compute_time_weights(double x, double y);
 
     double prob(double x, double y);
@@ -53,6 +55,8 @@ public:
 private:
 
     vector<double> t = {};
+    vector<int> sgn = {};
+    vector<int> kk = {};
     vector<double> Lam = {};
     vector<double> E = {};
     vector<double> G = {};
@@ -62,6 +66,8 @@ private:
     double tail_G = 0;
     double tail_Q = 0;
     int rebuild_from = 0;
+
+    void set_events(vector<pair<double, int>> &events);
 
     void refresh();
 

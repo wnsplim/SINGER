@@ -70,22 +70,41 @@ void Scaler::compute_deltas(ARG &a) {
         Node *n = x.first;
         node_span[n] += a.sequence_length - x.second;
     }
-    int num_samples = (int) a.sample_nodes.size();
-    sorted_nodes.resize(node_span.size() + num_samples);
-    node_deltas.resize(node_span.size() + num_samples);
-    int index = num_samples;
-    for (auto &x : node_span) {
-        sorted_nodes[index] = x.first;
-        node_deltas[index] = -x.second;
-        index++;
-    }
-    index = 0;
+    heterochronous = (*a.sample_nodes.rbegin())->time > 0;
+    sorted_nodes.clear();
+    node_deltas.clear();
     for (Node *n : a.sample_nodes) {
-        sorted_nodes[index] = n;
-        index++;
+        sorted_nodes.push_back(n);
+        node_deltas.push_back(n->time > 0 ? a.sequence_length : 0.0);
     }
-    double total_rate = accumulate(node_deltas.begin(), node_deltas.end(), 0.0);
+    for (auto &x : node_span) {
+        sorted_nodes.push_back(x.first);
+        node_deltas.push_back(-x.second);
+    }
+    double total_rate = accumulate(node_deltas.begin() + 1, node_deltas.end(), 0.0);
     node_deltas[0] = -total_rate;
+    children.clear();
+    if (heterochronous) {
+        vector<int> order(sorted_nodes.size());
+        iota(order.begin(), order.end(), 0);
+        compare_node cmp;
+        sort(order.begin(), order.end(), [&](int i, int j) { return cmp(sorted_nodes[i], sorted_nodes[j]); });
+        vector<Node *> nodes_sorted;
+        vector<double> deltas_sorted;
+        for (int i : order) {
+            nodes_sorted.push_back(sorted_nodes[i]);
+            deltas_sorted.push_back(node_deltas[i]);
+        }
+        sorted_nodes = nodes_sorted;
+        node_deltas = deltas_sorted;
+        for (auto &x : a.recombinations) {
+            for (const Branch &b : x.second.inserted_branches) {
+                if (b.upper_node != a.root.get()) {
+                    children[b.upper_node].push_back(b.lower_node);
+                }
+            }
+        }
+    }
 }
 
 void Scaler::compute_old_grid() {
@@ -175,6 +194,9 @@ void Scaler::rescale(ARG &a, double theta) {
     double old_t = 0;
     double new_t = 0;
     for (int i = 0; i < sorted_nodes.size(); i++) {
+        if (sorted_nodes[i]->is_sample) {
+            continue;
+        }
         while (sorted_nodes[i]->time > old_grid[k+1]) {
             k++;
             assert(k <= num_windows);
@@ -184,8 +206,22 @@ void Scaler::rescale(ARG &a, double theta) {
         sorted_nodes[i]->time = new_t;
         old_t = new_t;
     }
-    for (int i = 0; i < sorted_nodes.size() - 1; i++) {
-        assert(sorted_nodes[i]->time <= sorted_nodes[i+1]->time);
+    if (heterochronous) {
+        double last = 0;
+        for (Node *n : sorted_nodes) {
+            if (n->is_sample) {
+                continue;
+            }
+            double lb = 0;
+            for (Node *c : children[n]) {
+                lb = max(lb, c->time);
+            }
+            if (n->time <= lb) {
+                n->time = max(lb, last) + 1e-6;
+                last = n->time;
+            }
+        }
+        a.resort_after_time_change();
     }
     for (auto &x : a.recombinations) {
         x.second.start_time = -1;

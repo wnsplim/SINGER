@@ -46,11 +46,13 @@ private:
     vector<double> level_rates = {};
     vector<double> level_lambda = {};
 
+    void set_levels(const vector<pair<double, int>> &events);
+
     int level_of(double s);
 
     double lambda(double s);
 
-    vector<double> node_times = {};
+    vector<pair<double, int>> events = {};
     vector<double> a_sum = {}, e_sum = {}, eg_sum = {}, g_tail = {}, e_lev = {}, g_lev = {};
     vector<double> prev_times = {}, prev_rates = {}, prev_lambda = {};
 

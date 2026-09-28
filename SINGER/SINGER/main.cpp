@@ -13,6 +13,8 @@ int main(int argc, const char * argv[]) {
     bool debug = false;
     bool no_data = false;
     string mode = "exact";
+    string tip_ages_file = "";
+    double g = -1;
     double r = -1, m = -1, Ne = -1;
     int num_iters = 0;
     int spacing = 1;
@@ -42,6 +44,25 @@ int main(int argc, const char * argv[]) {
                 exit(1);
             }
             no_data = true;
+        }
+        else if (arg == "-tip_ages") {
+            if (i + 1 >= argc || argv[i+1][0] == '-') {
+                cerr << "Error: -tip_ages flag cannot be empty. " << endl;
+                exit(1);
+            }
+            tip_ages_file = argv[++i];
+        }
+        else if (arg == "-g") {
+            if (i + 1 >= argc || argv[i+1][0] == '-') {
+                cerr << "Error: -g flag cannot be empty. " << endl;
+                exit(1);
+            }
+            try {
+                g = stod(argv[++i]);
+            } catch (const invalid_argument&) {
+                cerr << "Error: -g flag expects a number. " << endl;
+                exit(1);
+            }
         }
         else if (arg == "--mode") {
             if (i + 1 >= argc || (string(argv[i+1]) != "original" && string(argv[i+1]) != "exact")) {
@@ -310,6 +331,10 @@ int main(int argc, const char * argv[]) {
         exit(1);
     }
     bool exact = mode == "exact";
+    if (tip_ages_file.size() > 0 and g <= 0) {
+        cerr << "Error: -g (generation time in years) must be provided with -tip_ages. " << endl;
+        exit(1);
+    }
     if (scaling_rep < 0) {
         scaling_rep = exact ? 1 : 5;
     }
@@ -334,6 +359,10 @@ int main(int argc, const char * argv[]) {
     sampler.set_precision(epsilon_hmm, epsilon_psmc);
     sampler.set_input_file_prefix(input_filename);
     sampler.set_output_file_prefix(output_prefix);
+    sampler.ploidy = ploidy;
+    if (tip_ages_file.size() > 0) {
+        sampler.read_tip_ages(tip_ages_file, g);
+    }
     sampler.exact = exact;
     sampler.random_seed = seed;
     sampler.start = start_pos;

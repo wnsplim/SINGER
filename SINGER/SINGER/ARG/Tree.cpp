@@ -185,18 +185,18 @@ pair<Branch, double> Tree::sample_uniform_cut_point() {
 }
 
 double Tree::prior_likelihood() {
-    double log_likelihood = 0;
-    set<double> coalescence_times = {};
-    int num_leaves = (int) (parents.size() + 1)/2;
+    vector<pair<double, int>> events;
     for (auto &x : parents) {
-        coalescence_times.insert(x.first->time);
-        coalescence_times.insert(x.second->time);
+        events.push_back({x.first->time, x.first->is_sample ? 1 : -1});
     }
-    vector<double> sorted_coalescence_times = vector(coalescence_times.begin(), coalescence_times.end());
-    for (int i = 0; i < num_leaves - 1; i++) {
-        double lambda = 0.5*(num_leaves - i)*(num_leaves - i - 1);
-        double t = sorted_coalescence_times[i+1] - sorted_coalescence_times[i];
-        log_likelihood += log_exp(lambda, t);
+    sort(events.begin(), events.end());
+    double log_likelihood = 0;
+    double prev = 0;
+    int k = 0;
+    for (auto &e : events) {
+        log_likelihood -= 0.5*k*(k - 1)*(e.first - prev);
+        k += e.second;
+        prev = e.first;
     }
     return log_likelihood;
 }

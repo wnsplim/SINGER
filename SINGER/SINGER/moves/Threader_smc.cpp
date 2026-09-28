@@ -31,7 +31,7 @@ void Threader_smc::reset() {
 
 void Threader_smc::thread(ARG &a, Node_ptr n) {
     cout << "Iteration: " << a.sample_nodes.size() << endl;
-    cut_time = 0;
+    cut_time = n->time;
     a.cut_time = cut_time;
     a.add_sample(n);
     get_boundary(a);
@@ -228,6 +228,7 @@ void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb) {
     tsp.cc1 = make_shared<coalescent_calculator>(cut_time);
     tsp.cc1->extra = 1;
     tsp.cc1->start(a.start_tree);
+    tsp.rewind = (*a.sample_nodes.rbegin())->time > cut_time;
     Branch start_branch = jb.begin()->second;
     tsp.start(start_branch, cut_time);
     auto recomb_it = a.recombinations.upper_bound(start);

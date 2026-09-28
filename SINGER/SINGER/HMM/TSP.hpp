@@ -106,6 +106,13 @@ public:
 
     vector<double> rhos = {};
     vector<double> sister_masses = {};
+    bool rewind = false;
+    vector<pair<int, pair<double, double>>> swaps = {};
+    size_t applied = 0;
+
+    void rewind_to(int x);
+
+    void forward_to(int x);
     vector<double> thetas = {};
     
     vector<double> lower_sums = {};

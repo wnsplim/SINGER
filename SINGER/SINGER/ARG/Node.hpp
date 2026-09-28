@@ -32,7 +32,9 @@ public:
     int index = 0;
     
     double time = 0;
-    
+
+    bool is_sample = false;
+
     Node(double t);
     
     void set_index(int index);
