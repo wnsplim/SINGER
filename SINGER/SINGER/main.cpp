@@ -12,6 +12,7 @@ int main(int argc, const char * argv[]) {
     bool fast = false;
     bool resume = false;
     bool debug = false;
+    bool no_data = false;
     double r = -1, m = -1, Ne = -1;
     int num_iters = 0;
     int spacing = 1;
@@ -41,6 +42,13 @@ int main(int argc, const char * argv[]) {
                 exit(1);
             }
             resume = true;
+        }
+        else if (arg == "-no_data") {
+            if (i + 1 < argc && argv[i+1][0] != '-') {
+                cerr << "Error: -no_data flag doesn't take any value. " << endl;
+                exit(1);
+            }
+            no_data = true;
         }
         else if (arg == "-debug") {
             if (i + 1 < argc && argv[i+1][0] != '-') {
@@ -314,6 +322,7 @@ int main(int argc, const char * argv[]) {
     sampler.penalty = penalty;
     sampler.polar = polar;
     sampler.scaling_rep = scaling_rep;
+    Threader_smc::no_data = no_data;
     sampler.scaling_bin = scaling_bin;
     sampler.set_precision(epsilon_hmm, epsilon_psmc);
     sampler.set_input_file_prefix(input_filename);

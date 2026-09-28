@@ -7,6 +7,8 @@
 
 #include "Threader_smc.hpp"
 
+bool Threader_smc::no_data = false;
+
 Threader_smc::Threader_smc(double c, double q) {
     cutoff = c;
     gap = q;
@@ -222,13 +224,13 @@ void Threader_smc::run_BSP(ARG &a) {
             p_tree = branch_product(tree, pe->penalty, rho);
             curr_rho = rho;
         }
-        pe->set_tree_product(pe->penalty, rho, p_tree, called_width(query_node, a, i));
+        pe->set_tree_product(pe->penalty, no_data ? 0.0 : rho, p_tree, called_width(query_node, a, i));
         mut_set.clear();
         while (*mut_it < a.coordinates[i + 1]) {
             mut_set.push_back(*mut_it);
             mut_it++;
         }
-        if (mut_set.size() > 0) {
+        if (mut_set.size() > 0 and !no_data) {
             bsp.mut_emit(a.thetas[i], w, mut_set, query_node);
         } else {
             bsp.null_emit(a.thetas[i], query_node);
@@ -291,13 +293,13 @@ void Threader_smc::run_fast_BSP(ARG &a) {
             p_tree = branch_product(tree, pe->penalty, rho);
             curr_rho = rho;
         }
-        pe->set_tree_product(pe->penalty, rho, p_tree, called_width(query_node, a, i));
+        pe->set_tree_product(pe->penalty, no_data ? 0.0 : rho, p_tree, called_width(query_node, a, i));
         mut_set.clear();
         while (*mut_it < a.coordinates[i+1]) {
             mut_set.push_back(*mut_it);
             mut_it++;
         }
-        if (mut_set.size() > 0) {
+        if (mut_set.size() > 0 and !no_data) {
             fbsp.mut_emit(a.thetas[i], w, mut_set, query_node);
         } else {
             fbsp.null_emit(a.thetas[i], query_node);
@@ -365,13 +367,13 @@ void Threader_smc::run_TSP(ARG &a) {
             p_tree = branch_product(tree, be->penalty, rho);
             curr_rho = rho;
         }
-        be->set_tree_product(be->penalty, rho, p_tree, called_width(query_node, a, i));
+        be->set_tree_product(be->penalty, no_data ? 0.0 : rho, p_tree, called_width(query_node, a, i));
         mut_set.clear();
         while (*mut_it < a.coordinates[i+1]) {
             mut_set.push_back(*mut_it);
             mut_it++;
         }
-        if (mut_set.size() > 0) {
+        if (mut_set.size() > 0 and !no_data) {
             tsp.mut_emit(a.thetas[i], w, mut_set, query_node);
         } else {
             tsp.null_emit(a.thetas[i], query_node);

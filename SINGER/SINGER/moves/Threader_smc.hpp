@@ -55,6 +55,7 @@ public:
     TSP tsp = TSP();
     double gap;
     double cutoff;
+    static bool no_data;
     shared_ptr<Binary_emission> be = make_shared<Binary_emission>();
     shared_ptr<Polar_emission> pe = make_shared<Polar_emission>();
     map<double, Branch> new_joining_branches = {};
