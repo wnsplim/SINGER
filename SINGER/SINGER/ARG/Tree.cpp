@@ -103,14 +103,14 @@ void Tree::remove(Branch b, Node *n) {
 void Tree::add(Branch added_branch, Branch joining_branch, Node *n) {
     Branch lower_branch = Branch(joining_branch.lower_node, added_branch.upper_node);
     Branch upper_branch = Branch(added_branch.upper_node, joining_branch.upper_node);
-    delete_branch(joining_branch);
-    insert_branch(lower_branch);
-    insert_branch(upper_branch);
-    insert_branch(added_branch);
     if (n != nullptr) {
         Branch cut_branch = Branch(added_branch.lower_node, n);
         delete_branch(cut_branch);
     }
+    delete_branch(joining_branch);
+    insert_branch(lower_branch);
+    insert_branch(upper_branch);
+    insert_branch(added_branch);
 }
 
 /*
