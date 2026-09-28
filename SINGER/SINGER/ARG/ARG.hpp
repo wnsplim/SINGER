@@ -126,7 +126,10 @@ public:
 
     void joining_state_table(const Branch &joining_branch, const Branch &added_branch, double unit_theta, double *p);
 
-    void discount_unassayed();
+    vector<double> assayed = {};
+    vector<pair<double, double>> masked = {};
+
+    void compute_assayed();
 
     int num_unmapped();
 

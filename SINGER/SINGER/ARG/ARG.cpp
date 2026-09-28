@@ -209,6 +209,7 @@ void ARG::window_copy_into(ARG &c, double lo_pos) {
     c.ancestral_prob = ancestral_prob;
     c.any_missing = any_missing;
     c.unassayed_sites = unassayed_sites;
+    c.assayed = assayed;
     c.sequence_length = sequence_length;
     c.bin_size = bin_size;
     if (c.coordinates.size() != coordinates.size()) {
@@ -510,18 +511,26 @@ void ARG::joining_state_table(const Branch &joining_branch, const Branch &added_
     }
 }
 
-void ARG::discount_unassayed() {
+void ARG::compute_assayed() {
     int n = (int) coordinates.size() - 1;
-    vector<int> dropped(n, 0);
+    assayed.resize(n);
+    for (int i = 0; i < n; i++) {
+        assayed[i] = coordinates[i+1] - coordinates[i];
+    }
     for (double x : unassayed_sites) {
         if (x >= 0 and x < sequence_length) {
-            dropped[get_index(x)] += 1;
+            assayed[get_index(x)] -= 1;
         }
     }
-    for (int i = 0; i < n; i++) {
-        double width = coordinates[i+1] - coordinates[i];
-        double assayed = max(0.0, width - dropped[i]);
-        thetas[i] *= assayed/width;
+    for (auto &m : masked) {
+        double lo = max(0.0, m.first);
+        double hi = min(sequence_length, m.second);
+        for (int i = get_index(lo); lo < hi and i < n and coordinates[i] < hi; i++) {
+            assayed[i] -= min(hi, coordinates[i+1]) - max(lo, coordinates[i]);
+        }
+    }
+    for (double &a : assayed) {
+        a = max(0.0, a);
     }
 }
 
@@ -725,7 +734,7 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
             }
             since_full = 0;
         }
-        ll -= w*log1p((p - 1)/penalty);
+        ll -= assayed[i]*log1p((p - 1)/penalty);
         double q = coordinates[i] + 0.5*w;
         while (lin_it != lineage.end() and lin_it->first < q) {
             ++lin_it;

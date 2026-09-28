@@ -59,6 +59,7 @@ The optional flags include:
 |**-scaling_bin**|optional|the number of time bins used for ARG rescaling, default at 100|
 |**-tip_ages**|optional|file with the sampling ages in calendar years before present, see [Heterochronous samples](#heterochronous-samples-ancient-dna)|
 |**-g**|optional|generation time in years, required with `-tip_ages`|
+|**-mask**|optional|BED file of regions without data (masked or unassayed)|
 
 The output files will be:
 

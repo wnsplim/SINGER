@@ -14,6 +14,7 @@ int main(int argc, const char * argv[]) {
     bool no_data = false;
     string mode = "exact";
     string tip_ages_file = "";
+    string mask_file = "";
     double g = -1;
     double r = -1, m = -1, Ne = -1;
     int num_iters = 0;
@@ -51,6 +52,13 @@ int main(int argc, const char * argv[]) {
                 exit(1);
             }
             tip_ages_file = argv[++i];
+        }
+        else if (arg == "-mask") {
+            if (i + 1 >= argc || argv[i+1][0] == '-') {
+                cerr << "Error: -mask flag cannot be empty. " << endl;
+                exit(1);
+            }
+            mask_file = argv[++i];
         }
         else if (arg == "-g") {
             if (i + 1 >= argc || argv[i+1][0] == '-') {
@@ -367,6 +375,9 @@ int main(int argc, const char * argv[]) {
     sampler.random_seed = seed;
     sampler.start = start_pos;
     sampler.end = end_pos;
+    if (mask_file.size() > 0) {
+        sampler.read_mask(mask_file);
+    }
     if (resume) {
         sampler.sequence_length = end_pos - start_pos;
         sampler.resume_internal_sample(num_iters, spacing);

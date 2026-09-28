@@ -187,25 +187,43 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
             file.seekg(old_pos);
         }
         int individual = 0;
-        int site_missing = 0;
+        vector<Node *> missing_leaves;
         while (iss >> genotype) {
             int n = parse_genotype(genotype, ploidy, calls);
             for (int k = 0; k < ploidy; k++) {
                 if ((k < n ? calls[k] : -1) < 0) {
-                    site_missing += 1;
-                    leaves[ploidy*individual + k]->add_missing(pos - start_pos);
+                    missing_leaves.push_back(leaves[ploidy*individual + k]);
                 }
             }
             individual += 1;
         }
-        if (site_missing > 0) {
-            any_missing = true;
-        }
-        if (site_missing == (int) leaves.size()) {
+        if (missing_leaves.size() == leaves.size()) {
             unassayed_site_list.push_back(pos - start_pos);
+        } else if (missing_leaves.size() > 0) {
+            any_missing = true;
+            for (Node *l : missing_leaves) {
+                l->add_missing(pos - start_pos);
+            }
         }
     }
     sort(unassayed_site_list.begin(), unassayed_site_list.end());
+}
+
+void Sampler::read_mask(string filename) {
+    ifstream fin(filename);
+    if (!fin.good()) {
+        cerr << "mask file not found: " << filename << endl;
+        exit(1);
+    }
+    string line, chrom;
+    double lo, hi;
+    while (getline(fin, line)) {
+        istringstream iss(line);
+        if (!(iss >> chrom >> lo >> hi)) {
+            continue;
+        }
+        masked.push_back({lo + 1 - start, hi + 1 - start});
+    }
 }
 
 void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end_pos) {
@@ -495,7 +513,8 @@ void Sampler::build_singleton_arg() {
     } else {
         arg.compute_rhos_thetas(recomb_map, mut_map);
     }
-    arg.discount_unassayed();
+    arg.masked = masked;
+    arg.compute_assayed();
 }
 
 void Sampler::iterative_start() {
@@ -693,7 +712,8 @@ void Sampler::load_resume_arg() {
     } else {
         arg.compute_rhos_thetas(recomb_map, mut_map);
     }
-    arg.discount_unassayed();
+    arg.masked = masked;
+    arg.compute_assayed();
 }
 
 vector<string> Sampler::read_last_line(string filename) {

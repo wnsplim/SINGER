@@ -72,6 +72,10 @@ public:
 
     vector<double> unassayed_site_list = {};
 
+    vector<pair<double, double>> masked = {};
+
+    void read_mask(string filename);
+
     bool any_missing = false;
 
     void naive_read_vcf_haploid(string prefix, double start_pos, double end_pos);

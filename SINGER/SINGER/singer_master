@@ -336,6 +336,7 @@ def main():
     parser.add_argument('-seed', type=int, default=42, help='Random seed for reproducibility. Default: 42.')
     parser.add_argument('-tip_ages', type=str, help='File with the sample ages in years before present, one per haplotype in VCF haplotype order or one per individual. Requires -g.')
     parser.add_argument('-g', type=float, help='Generation time in years, used with -tip_ages.')
+    parser.add_argument('-mask', type=str, help='BED file of regions without data; only the remaining bases enter the mutation model.')
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -349,6 +350,8 @@ def main():
     if args.tip_ages and not args.g:
         parser.error("You must provide -g with -tip_ages")
     tips = tip_flags(args.tip_ages, args.g)
+    if args.mask:
+        tips += f" -mask {args.mask}"
     ages = read_tip_ages(args.tip_ages, args.vcf, args.ploidy) if args.tip_ages else None
 
     if args.m:

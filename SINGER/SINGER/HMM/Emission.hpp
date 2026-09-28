@@ -58,7 +58,7 @@ inline double branch_product(Tree &tree, double c, double rho) {
 }
 
 inline double called_width(Node *query_node, ARG &a, int i) {
-    double w = a.coordinates[i + 1] - a.coordinates[i];
+    double w = a.assayed[i];
     if (!a.any_missing or query_node == nullptr or query_node->missing_sites.size() == 0) {
         return w;
     }
