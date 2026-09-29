@@ -44,6 +44,17 @@ Node_ptr Sampler::new_sample(int i) {
     return n;
 }
 
+static int iupac_mask(const string &allele) {
+    const string seq_nt16_str = "=ACMGRSVTWYHKDBN";
+    size_t mask = allele.size() == 1 ? seq_nt16_str.find(toupper(allele[0])) : 0;
+    return mask == string::npos ? 0 : (int) mask;
+}
+
+static bool is_unambiguous(const string &allele) {
+    int mask = iupac_mask(allele);
+    return mask == 1 or mask == 2 or mask == 4 or mask == 8;
+}
+
 vector<string> Sampler::sample_names(string prefix) {
     Vcf_reader file(prefix);
     string line;
@@ -169,7 +180,7 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
         if (pos < start_pos) {continue;}
         if (pos > end_pos) {break;}
         if (pos == prev_pos) {continue;}
-        if (ref.size() > 1 or alt.size() > 1 or alt == "*" or alt == ".") {
+        if (ref.size() > 1 or alt.size() > 1) {
             unassayed_site_list.push_back(pos - start_pos);
             continue;
         }
@@ -187,10 +198,12 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
         }
         int individual = 0;
         vector<Node *> missing_leaves;
+        bool known[2] = {is_unambiguous(ref), is_unambiguous(alt)};
         while (iss >> genotype) {
             int n = parse_genotype(genotype, ploidy, calls);
             for (int k = 0; k < ploidy; k++) {
-                if ((k < n ? calls[k] : -1) < 0) {
+                int c = k < n ? calls[k] : -1;
+                if (c < 0 or !known[c]) {
                     missing_leaves.push_back(leaves[ploidy*individual + k]);
                 }
             }
@@ -260,7 +273,7 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
 
         if (pos < start_pos) {continue;}
         if (pos > end_pos) {break;}
-        if (pos == prev_pos) {continue;}        if (ref.size() > 1 or alt.size() > 1 or alt == "*" or alt == ".") {
+        if (pos == prev_pos) {continue;}        if (!is_unambiguous(ref) or !is_unambiguous(alt)) {
             removed_mutation += 1;
             continue;
         }
@@ -339,7 +352,7 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
 
         if (pos < start_pos) {continue;}
         if (pos > end_pos) {break;}
-        if (pos == prev_pos) {continue;}        if (ref.size() > 1 or alt.size() > 1 or alt == "*" or alt == ".") {
+        if (pos == prev_pos) {continue;}        if (!is_unambiguous(ref) or !is_unambiguous(alt)) {
             removed_mutation += 1;
             continue;
         }
@@ -421,7 +434,7 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
         string chrom, id, ref, alt, qual, filter, info, format, genotype;
         long long pos;
         iss >> chrom >> pos >> id >> ref >> alt >> qual >> filter >> info >> format;
-        if (pos == prev_pos) {continue;}        if (pos >= end) {break;}        if (ref.size() > 1 or alt.size() > 1 or alt == "*" or alt == ".") {
+        if (pos == prev_pos) {continue;}        if (pos >= end) {break;}        if (!is_unambiguous(ref) or !is_unambiguous(alt)) {
             removed_mutation += 1;
             continue;
         }        string next_line;
