@@ -502,7 +502,7 @@ void Sampler::build_singleton_arg() {
     arg.any_missing = any_missing;
     arg.unassayed_sites = unassayed_site_list;
     if (recomb_map.coordinates.empty() and mut_map.coordinates.empty()) {
-        arg.discretize(min(max(1.0, rho_unit/recomb_rate), 100.0));
+        arg.discretize(min(max(1.0, round(rho_unit/recomb_rate)), 100.0));
     } else {
         arg.discretize(recomb_map, mut_map, start, rho_unit/Ne, recomb_rate/Ne);
     }
