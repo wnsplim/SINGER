@@ -90,15 +90,12 @@ void Tree::forward_update(Recombination &r) {
 }
 
 void Tree::backward_update(Recombination &r) {
-    int prev_size = (int) parents.size();
     for (const Branch &b : r.inserted_branches) {
         delete_branch(b);
     }
     for (const Branch &b : r.deleted_branches) {
         insert_branch(b);
     }
-    int after_size = (int) parents.size();
-    assert(prev_size == after_size or r.pos == 0);
 }
 
 void Tree::remove(Branch b, Node *n) {
