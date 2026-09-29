@@ -279,8 +279,7 @@ void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb) {
             prev_branch = next_branch;
             set_sister_mass(next_branch);
         } else if (a.coordinates[i] != start) {
-            double rho = a.rhos[i];
-            tsp.forward(rho);
+            tsp.forward(a.rhos[i - 1]);
         }
         double w = a.coordinates[i+1] - a.coordinates[i];
         double rho = a.thetas[i]/w;

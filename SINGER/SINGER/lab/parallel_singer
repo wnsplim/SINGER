@@ -13,8 +13,14 @@ def index_vcf(vcf_prefix, block_length):
     print(f"Indexing VCF file: {vcf_prefix}.vcf with block length: {block_length}")
     subprocess.run(["python", indexer, vcf_prefix, str(block_length)])
 
+def is_number(value):
+    try:
+        float(value)
+    except ValueError:
+        return False
+    return True
 
-def run_singer_in_parallel(vcf_prefix, output_prefix, mutation_rate, ratio, block_length, num_iters, thinning_interval, Ne, polar, num_cores):
+def run_singer_in_parallel(vcf_prefix, output_prefix, rates, block_length, num_iters, thinning_interval, Ne, polar, num_cores):
     """Run singer in parallel using the specified parameters."""
     
     # Read the breakpoints from the index file
@@ -30,7 +36,7 @@ def run_singer_in_parallel(vcf_prefix, output_prefix, mutation_rate, ratio, bloc
         start = breakpoints[i]
         
         # Base command
-        cmd = f"{singer_master_executable} -Ne {Ne} -m {mutation_rate} -ratio {ratio} -vcf {vcf_prefix} -output {output_prefix}_{i}_{i+1} -start {start} -end {start + block_length} -n {num_iters} -thin {thinning_interval} -polar {polar}"
+        cmd = f"{singer_master_executable} -Ne {Ne} {rates} -vcf {vcf_prefix} -output {output_prefix}_{i}_{i+1} -start {start} -end {start + block_length} -n {num_iters} -thin {thinning_interval} -polar {polar}"
         
         cmd_list.append(cmd)
 
@@ -48,8 +54,8 @@ def convert_long_ARG(vcf_prefix, output_prefix, num_iters, freq):
 def main():
     parser = argparse.ArgumentParser(description="Parallelize singer runs by cutting the chromosome")
     parser.add_argument('-Ne', type=float, required=True, help='Effective population size. Default: 1e4.')
-    parser.add_argument("-m", type=float, required=True, help="Mutation rate.")
-    parser.add_argument("-ratio", type=float, default=1, help="Recombination to mutation ratio. Default: 1.")
+    parser.add_argument("-m", type=str, required=True, help='Mutation rate per base per generation: a number, or a rate map file with lines "left right rate".')
+    parser.add_argument("-r", type=str, help="Recombination rate per base per generation: a number, or a rate map file. Default: the -m value when -m is a number.")
     parser.add_argument("-L", type=int, default=int(1e6), help="Block length. Default: 1e6.")
     parser.add_argument("-vcf", type=str, required=True, help="VCF file prefix (without .vcf or .vcf.gz extension).")
     parser.add_argument("-output", type=str, required=True, help="Output file prefix.")
@@ -64,11 +70,16 @@ def main():
         sys.exit(1)
 
     args = parser.parse_args()
+    if args.r is None:
+        if not is_number(args.m):
+            parser.error("You must provide -r when -m is a rate map file")
+        args.r = args.m
+    rates = f"-m {args.m} -r {args.r}"
 
     print("Parameters:")
     print(f"Effective population size: {args.Ne}")
     print(f"Mutation rate: {args.m}")
-    print(f"Recombination to mutation ratio: {args.ratio}")
+    print(f"Recombination rate: {args.r}")
     print(f"Block length: {args.L}")
     print(f"VCF file prefix: {args.vcf}")
     print(f"Output file prefix: {args.output}")
@@ -79,7 +90,7 @@ def main():
     print(f"Number of cores: {args.num_cores}") 
 
     index_vcf(args.vcf, args.L)
-    run_singer_in_parallel(args.vcf, args.output, args.m, args.ratio, args.L, args.n, args.thin, args.Ne, args.polar, args.num_cores)
+    run_singer_in_parallel(args.vcf, args.output, rates, args.L, args.n, args.thin, args.Ne, args.polar, args.num_cores)
     convert_long_ARG(args.vcf, args.output, args.n, args.freq)
 
 if __name__ == "__main__":

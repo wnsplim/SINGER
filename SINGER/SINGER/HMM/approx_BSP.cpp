@@ -522,6 +522,9 @@ void approx_BSP::compute_recomb_weights(double rho) {
         }
     }
     weight_sum = accumulate(recomb_weights.begin(), recomb_weights.end(), 0.0);
+    if (rho == 0) {
+        return;
+    }
     for (int i = 0; i < dim; i++) {
         recomb_weights[i] /= weight_sum;
     }

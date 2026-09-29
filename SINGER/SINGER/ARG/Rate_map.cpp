@@ -9,7 +9,7 @@
 
 Rate_map::Rate_map() {}
 
-void Rate_map::load_map(string mut_map_file) {
+void Rate_map::load_map(string mut_map_file, double start, double end) {
     ifstream fin(mut_map_file);
     if (!fin.good()) {
         cerr << "input rate map file not found" << endl;
@@ -21,12 +21,24 @@ void Rate_map::load_map(string mut_map_file) {
     double rate;
     double mut_dist;
     while (fin >> left >> right >> rate) {
+        if (coordinates.size() > 0 and left != sequence_length) {
+            cerr << "Error: each segment of the rate map " << mut_map_file << " must start where the previous one ends. " << endl;
+            exit(1);
+        }
         coordinates.push_back(left);
         mut_dist = rate_distances.back() + rate*(right - left);
         rate_distances.push_back(mut_dist);
+        sequence_length = right;
     }
-    sequence_length = right;
+    if (!fin.eof() or coordinates.empty()) {
+        cerr << "Error: every line of the rate map " << mut_map_file << " must be 'left right rate'. " << endl;
+        exit(1);
+    }
     coordinates.push_back(sequence_length);
+    if (coordinates.front() > start or sequence_length < end) {
+        cerr << "Error: the rate map " << mut_map_file << " must cover -start to -end. " << endl;
+        exit(1);
+    }
 }
 
 int Rate_map::find_index(double x) {
@@ -58,7 +70,6 @@ double Rate_map::segment_distance(double x, double y) {
     return cumulative_distance(y) - cumulative_distance(x);
 }
 
-double Rate_map::mean_rate() {
-    double mr = rate_distances.back()/sequence_length;
-    return mr;
+double Rate_map::mean_rate(double x, double y) {
+    return segment_distance(x, y)/(y - x);
 }

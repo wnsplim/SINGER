@@ -261,7 +261,7 @@ void TSP::forward(double rho) {
     for (int i = 0; i < dim; i++) {
         assert(forward_probs[curr_index][i] >= 0);
         forward_probs[curr_index][i] += diagonals[i]*forward_probs[curr_index-1][i] + lower_diagonals[i]*upper_sums[i];
-        if (curr_intervals[i]->lb != curr_intervals[i]->ub or forward_probs[curr_index][i] > 0) {
+        if (rho > 0 and (curr_intervals[i]->lb != curr_intervals[i]->ub or forward_probs[curr_index][i] > 0)) {
             forward_probs[curr_index][i] = max(epsilon, forward_probs[curr_index][i]);
         }
     }
@@ -429,6 +429,9 @@ double TSP::own_mass(double t, double lb, double ub) {
 }
 
 double TSP::jump_prob(double rho, double s, double t1, double t2) {
+    if (rho == 0) {
+        return 0;
+    }
     double lb = max(t1, cut_time);
     if (t2 <= lb) {
         return epsilon;
@@ -623,6 +626,7 @@ void TSP::compute_diagonals(double rho) {
         double pref0 = per_length(rho, t - cut_time)*(t - cut_time);
         double sis = exp(-(t - cut_time));
         auto jump = [&](double a, double b, double Ba, double Bb, double Ga, double Gb, double Ha, double Hb, double Sa, double Sb) {
+            if (rho == 0) return 0.0;
             if (b <= a) return epsilon;
             double tb = min(b, t);
             double p;

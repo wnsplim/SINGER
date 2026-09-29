@@ -20,9 +20,9 @@
 #include "Vcf_reader.hpp"
 
 class Sampler {
-    
+
 public:
-    
+
     double rho_unit = 4e-3;
     double Ne = 1;
     Rate_map recomb_map;
@@ -54,8 +54,6 @@ public:
 
     Sampler(double pop_size, double r, double m);
 
-    Sampler(double pop_size, Rate_map &rm, Rate_map &mm);
-
     void set_precision(double c, double q);
 
     void set_input_file_prefix(string f);
@@ -81,11 +79,11 @@ public:
     bool any_missing = false;
 
     void naive_read_vcf_haploid(string prefix, double start_pos, double end_pos);
-    
+
     void naive_read_vcf(string prefix, double start_pos, double end_pos);
-    
+
     void guide_read_vcf(string prefix, double start, double end);
-    
+
     void load_vcf(string prefix, double start, double end);
 
     void build_singleton_arg();
@@ -107,11 +105,11 @@ public:
     void write_sample();
 
     void load_resume_arg();
-    
+
     vector<string> read_last_line(string filename);
-    
+
     void read_resume_point(string filename);
-    
+
     void retract_log(int k);
 };
 

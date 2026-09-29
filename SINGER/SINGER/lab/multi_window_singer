@@ -7,7 +7,14 @@ import os
 import shlex
 import pandas as pd
 
-def parallelize_multi_window_singer(windows, vcfs, outputs, mutation_rate, ratio, num_iters, thinning_interval, Ne, polar, num_cores):
+def is_number(value):
+    try:
+        float(value)
+    except ValueError:
+        return False
+    return True
+
+def parallelize_multi_window_singer(windows, vcfs, outputs, rates, num_iters, thinning_interval, Ne, polar, num_cores):
     """Run singer in parallel for the genomic windows"""
 
     script_dir = os.path.dirname(os.path.realpath(__file__))
@@ -26,7 +33,7 @@ def parallelize_multi_window_singer(windows, vcfs, outputs, mutation_rate, ratio
         output_prefix = output_table.iloc[i, 0]
 
         # Base command
-        cmd += f" \'{singer_master_executable} -Ne {Ne} -m {mutation_rate} -ratio {ratio} -vcf {vcf_prefix} -output {output_prefix} -start {start} -end {end} -n {num_iters} -thin {thinning_interval} -polar {polar}\'"
+        cmd += f" \'{singer_master_executable} -Ne {Ne} {rates} -vcf {vcf_prefix} -output {output_prefix} -start {start} -end {end} -n {num_iters} -thin {thinning_interval} -polar {polar}\'"
 
 
     # Execute the commands in parallel
@@ -38,8 +45,8 @@ def parallelize_multi_window_singer(windows, vcfs, outputs, mutation_rate, ratio
 def main():
     parser = argparse.ArgumentParser(description="Parallelize singer runs with provided genomic windows")
     parser.add_argument('-Ne', type=float, required=True, help='Effective population size. Default: 1e4.')
-    parser.add_argument("-m", type=float, required=True, help="Mutation rate.")
-    parser.add_argument("-ratio", type=float, default=1, help="Recombination to mutation ratio. Default: 1.")
+    parser.add_argument("-m", type=str, required=True, help='Mutation rate per base per generation: a number, or a rate map file with lines "left right rate".')
+    parser.add_argument("-r", type=str, help="Recombination rate per base per generation: a number, or a rate map file. Default: the -m value when -m is a number.")
     parser.add_argument("-windows", type=str, required=True, help="The bed file of genomic windows.")
     parser.add_argument("-vcfs", type=str, required=True, help="The vcf files corresponding to each genomic window.")
     parser.add_argument("-outputs", type=str, required=True, help="Output file prefices for all genomic windows.")
@@ -54,11 +61,15 @@ def main():
         sys.exit(1)
 
     args = parser.parse_args()
-    
+    if args.r is None:
+        if not is_number(args.m):
+            parser.error("You must provide -r when -m is a rate map file")
+        args.r = args.m
+
     print("Parameters:")
     print(f"Effective population size: {args.Ne}")
     print(f"Mutation rate: {args.m}")
-    print(f"Recombination to mutation ratio: {args.ratio}")
+    print(f"Recombination rate: {args.r}")
     print(f"VCF files for the windows: {args.vcfs}")
     print(f"Output file prefices for the windows: {args.outputs}")
     print(f"Number of MCMC samples: {args.n}")
@@ -67,7 +78,7 @@ def main():
     print(f"Tskit conversion freq: {args.freq}")
     print(f"Number of cores: {args.num_cores}")
 
-    parallelize_multi_window_singer(args.windows, args.vcfs, args.outputs, args.m, args.ratio, args.n, args.thin, args.Ne, args.polar, args.num_cores)
+    parallelize_multi_window_singer(args.windows, args.vcfs, args.outputs, f"-m {args.m} -r {args.r}", args.n, args.thin, args.Ne, args.polar, args.num_cores)
 
 if __name__ == "__main__":
     main()

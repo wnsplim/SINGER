@@ -16,14 +16,6 @@ Sampler::Sampler(double pop_size, double r, double m) {
     recomb_rate = r*pop_size;
 }
 
-Sampler::Sampler(double pop_size, Rate_map &rm, Rate_map &mm) {
-    Ne = pop_size;
-    mut_rate = mm.mean_rate()*Ne;
-    recomb_rate = rm.mean_rate()*Ne;
-    recomb_map = rm;
-    mut_map = mm;
-}
-
 void Sampler::set_precision(double c, double q) {
     bsp_c = c;
     tsp_q = q;
@@ -504,19 +496,25 @@ void Sampler::load_vcf(string prefix, double start, double end) {
 }
 
 void Sampler::build_singleton_arg() {
-    double bin_size = max(1.0, rho_unit/recomb_rate);
-    bin_size = min(bin_size, 100.0);
     Node_ptr n = *ordered_sample_nodes.begin();
     arg = ARG(Ne, sequence_length);
     arg.time_offset = tip_offset;
     arg.any_missing = any_missing;
     arg.unassayed_sites = unassayed_site_list;
-    arg.discretize(bin_size);
-    arg.build_singleton_arg(n);
-    if (mut_rate > 0 and recomb_rate > 0) {
-        arg.compute_rhos_thetas(recomb_rate, mut_rate);
+    if (recomb_map.coordinates.empty() and mut_map.coordinates.empty()) {
+        arg.discretize(min(max(1.0, rho_unit/recomb_rate), 100.0));
     } else {
-        arg.compute_rhos_thetas(recomb_map, mut_map);
+        arg.discretize(recomb_map, mut_map, start, rho_unit/Ne, recomb_rate/Ne);
+    }
+    arg.build_singleton_arg(n);
+    arg.compute_rhos_thetas(recomb_rate, mut_rate, recomb_map, mut_map, start);
+    for (const Node_ptr &s : sample_nodes) {
+        for (auto &x : s->mutation_sites) {
+            if (x.second == 1 and x.first < sequence_length and arg.thetas[arg.get_index(x.first)] == 0) {
+                cerr << "Error: the VCF has a variant at position " << (long long) (start + x.first) << ", where the mutation rate is 0. " << endl;
+                exit(1);
+            }
+        }
     }
     arg.masked = masked;
     arg.compute_assayed();
@@ -712,11 +710,7 @@ void Sampler::load_resume_arg() {
     scan_missing(input_prefix, start, end, leaves, 2);
     arg.any_missing = any_missing;
     arg.unassayed_sites = unassayed_site_list;
-    if (mut_rate > 0 and recomb_rate > 0) {
-        arg.compute_rhos_thetas(recomb_rate, mut_rate);
-    } else {
-        arg.compute_rhos_thetas(recomb_map, mut_map);
-    }
+    arg.compute_rhos_thetas(recomb_rate, mut_rate, recomb_map, mut_map, start);
     arg.masked = masked;
     arg.compute_assayed();
 }

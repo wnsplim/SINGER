@@ -62,12 +62,14 @@ public:
     ~ARG();
     
     void discretize(double s);
+
+    void discretize(Rate_map &rm, Rate_map &mm, double start, double unit, double r);
     
     int get_index(double x);
     
     void compute_rhos_thetas(double r, double m);
     
-    void compute_rhos_thetas(Rate_map &rm, Rate_map &mm);
+    void compute_rhos_thetas(double r, double m, Rate_map &rm, Rate_map &mm, double start);
     
     void build_singleton_arg(const Node_ptr &n);
     

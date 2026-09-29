@@ -34,12 +34,11 @@ path_to_singer/singer_master -m 1.25e-8
 
 This command is to get the ARG samples for a specific region in the vcf file. We specify the details of the arguments here (or you can simply type ```path_to_singer/singer_master``` to display similar information):
 
-The required flags include (either `-m` or `-mut_map` has to be provided):
+The required flags include:
 
 |flag|required?|details|  
 |-------------------|-----|---|  
-|**-m**|conditionally required|per base pair per generation mutation rate|
-|**-mut_map**|conditionally required|name of the file describing the mutation rate landscape|
+|**-m**|required|per base pair per generation mutation rate: a number, or the name of a rate map file (see [Rate maps](#rate-maps))|
 |**-vcf**|required|prefix of the input .vcf file name|
 |**-output**|required|prefix of the output .trees file name| 
 |**-start**|required|start position of the region| 
@@ -50,8 +49,7 @@ The optional flags include:
 |flag|required?|details|  
 |-------------------|-----|---|  
 |**-Ne**|optional|the diploid effective population size, which means the haploid effective population size will be **2*Ne**|
-|**-ratio**|optional|the ratio between recombination and mutation rate, default at 1|
-|**-recomb_map**|optional|name of the file describing the recombination rate landscape|
+|**-r**|optional|per base pair per generation recombination rate: a number, or the name of a rate map file. If `-m` is a number, the default is the value of `-m`. If `-m` is a rate map file, `-r` is required|
 |**-n**|optional|the number of posterior samples, default at 100|
 |**-thin**|optional|the number of MCMC iterations between adjacent samples, default at 200|
 |**-polar**|optional|the probability of correct polarization, default at 0.5 for unpolarized data, please use 0.99 for polarized data|
@@ -75,6 +73,24 @@ path_to_singer/convert_to_tskit.py -input prefix_of_arg_files -output prefix_of_
 ```
 
 This tool will convert ARG sample with index from `start_index` to `end_index`, with interval size `step_size`. 
+
+### Rate maps
+
+`-m` and `-r` take a number or the name of a rate map file. A value that is a number is a constant rate. Any other value is the name of a rate map file. The two flags are independent, so you can give a recombination map with a constant mutation rate, or the opposite.
+
+A rate map file has one segment on each line, with three numbers: the left position, the right position, and the rate per base pair per generation in that segment. The positions are chromosome positions, the same as in the VCF. Each segment must start where the previous segment ends. A rate of 0 is allowed. The map must cover the region from `-start` to `-end`. Example:
+
+```
+0 1000000 1.2e-8
+1000000 2500000 0.8e-8
+2500000 5000000 1.5e-8
+```
+
+With a recombination map, the bin width follows the local recombination rate, so recombination hotspots get narrower bins. Bins end at the segment boundaries of both maps.
+
+SINGER stops with an error if the mutation rate is 0 everywhere between `-start` and `-end`, or if the VCF has a variant where the mutation rate is 0. If the recombination rate is 0 everywhere between `-start` and `-end`, SINGER prints a warning and infers an ARG without recombination.
+
+With a mutation rate map, the ARG rescaling (`-scaling_rep`) uses the mean mutation rate between `-start` and `-end`.
 
 ### Heterochronous samples (ancient DNA)
 
@@ -161,7 +177,7 @@ By doing the merging operation, you will get the ARG samples with the length of 
 ## Suggestions from developer
 
 1. As a Bayesian sampling method, SINGER works best when you sample some ARGs from posterior, **only using one single sample is NOT ideal**. To this point, we highly encourage specifying **-n, -thin** flags. You can find how we run SINGER on real datasets on:
-2. It is of importance to carefully choose the parameters, such as -Ne, -m, and -ratio. We recommend first choosing the mutation rate m, and then based on average pairwise diversity \($\pi=4\cdot N_e \cdot m\$), you can decide the Ne parameter. If you are not super sure about the recombination rate, you can use the default ratio of 1. 
+2. It is of importance to carefully choose the parameters, such as -Ne, -m, and -r. We recommend first choosing the mutation rate m, and then based on average pairwise diversity \($\pi=4\cdot N_e \cdot m\$), you can decide the Ne parameter. If you are not super sure about the recombination rate, you can leave out -r, and SINGER sets it equal to -m. 
 3. Unfortunately for now we only support phased, high-quality genomes, and polymorphic sites with missingness will be excluded. We are working on incorporating missingness and unphased data in the near future. ARGweaver has better support in these regards.
 4. By far **the most frequent bug reported** comes from using full name under the ```-vcf``` flag, note that it only accepts the prefix of the vcf file without ```.vcf```. For example, ```-vcf human_chr1.vcf``` is illegal because it will look for a file called ```human_chr1.vcf.vcf```.
 5. **The second most frequent bug reported** is caused by running SINGER on essentially a region with no or very low sequencing data, such as centromeric regions. SINGER cannot infer the ARG when there is no data present, and will likely bug out due to underflow issues. 

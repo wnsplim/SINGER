@@ -44,6 +44,41 @@ void ARG::discretize(double s) {
     bin_num = (int) coordinates.size() - 1;
 }
 
+void ARG::discretize(Rate_map &rm, Rate_map &mm, double start, double unit, double r) {
+    auto recomb_it = recombinations.upper_bound(0);
+    int j = rm.coordinates.empty() ? 0 : rm.find_index(start);
+    int k = mm.coordinates.empty() ? 0 : mm.find_index(start);
+    double curr_pos = 0;
+    while (curr_pos < sequence_length) {
+        coordinates.push_back(curr_pos);
+        double rate = r;
+        double next_pos = sequence_length;
+        if (!rm.coordinates.empty()) {
+            while (rm.coordinates[j + 1] - start <= curr_pos) {
+                j++;
+            }
+            rate = (rm.rate_distances[j + 1] - rm.rate_distances[j])/(rm.coordinates[j + 1] - rm.coordinates[j]);
+            next_pos = min(next_pos, rm.coordinates[j + 1] - start);
+        }
+        if (!mm.coordinates.empty()) {
+            while (mm.coordinates[k + 1] - start <= curr_pos) {
+                k++;
+            }
+            next_pos = min(next_pos, mm.coordinates[k + 1] - start);
+        }
+        double s = rate > 0 ? min(max(1.0, round(unit/rate)), 100.0) : 100.0;
+        next_pos = min(next_pos, curr_pos + s);
+        if (recomb_it->first < next_pos) {
+            curr_pos = recomb_it->first;
+            recomb_it++;
+        } else {
+            curr_pos = next_pos;
+        }
+    }
+    coordinates.push_back(sequence_length);
+    bin_num = (int) coordinates.size() - 1;
+}
+
 int ARG::get_index(double x) {
     auto it = upper_bound(coordinates.begin(), coordinates.end(), x);
     --it;
@@ -59,11 +94,12 @@ void ARG::compute_rhos_thetas(double r, double m) {
     }
 }
 
-void ARG::compute_rhos_thetas(Rate_map &rm, Rate_map &mm) {
+void ARG::compute_rhos_thetas(double r, double m, Rate_map &rm, Rate_map &mm, double start) {
     int n = (int) coordinates.size() - 1;
     for (int i = 0; i < n; i++) {
-        rhos.push_back(rm.segment_distance(coordinates[i], coordinates[i+1])*Ne);
-        thetas.push_back(mm.segment_distance(coordinates[i], coordinates[i+1])*Ne);
+        double x = start + coordinates[i], y = start + coordinates[i+1];
+        rhos.push_back(rm.coordinates.empty() ? r*(coordinates[i+1] - coordinates[i]) : rm.segment_distance(x, y)*Ne);
+        thetas.push_back(mm.coordinates.empty() ? m*(coordinates[i+1] - coordinates[i]) : mm.segment_distance(x, y)*Ne);
     }
 }
 

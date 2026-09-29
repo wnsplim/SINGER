@@ -8,6 +8,18 @@
 #include <iostream>
 #include "Sampler.hpp"
 
+static bool parse_rate(const string &value, double &rate) {
+    try {
+        size_t end = 0;
+        double x = stod(value, &end);
+        if (end == value.size()) {
+            rate = x;
+            return true;
+        }
+    } catch (const exception &) {}
+    return false;
+}
+
 int main(int argc, const char * argv[]) {
     bool resume = false;
     bool debug = false;
@@ -21,7 +33,7 @@ int main(int argc, const char * argv[]) {
     int spacing = 1;
     double start_pos = -1, end_pos = -1;
     string input_filename = "", output_prefix = "";
-    string recomb_map_filename = "", mut_map_filename = "";
+    string r_value = "", m_value = "";
     double penalty = 0.01;
     double polar = 0.5;
     int scaling_rep = -1;
@@ -104,24 +116,14 @@ int main(int argc, const char * argv[]) {
                 cerr << "Error: -r flag cannot be empty. " << endl;
                 exit(1);
             }
-            try {
-                r = stod(argv[++i]);
-            } catch (const invalid_argument&) {
-                cerr << "Error: -r flag expects a number. " << endl;
-                exit(1);
-            }
+            r_value = argv[++i];
         }
         else if (arg == "-m") {
             if (i + 1 >= argc || argv[i+1][0] == '-') {
                 cerr << "Error: -m flag cannot be empty. " << endl;
                 exit(1);
             }
-            try {
-                m = stod(argv[++i]);
-            } catch (const invalid_argument&) {
-                cerr << "Error: -r flag expects a number. " << endl;
-                exit(1);
-            }
+            m_value = argv[++i];
         }
         else if (arg == "-penalty") {
             if (i + 1 >= argc || argv[i+1][0] == '-') {
@@ -237,20 +239,6 @@ int main(int argc, const char * argv[]) {
             }
             output_prefix = argv[++i];
         }
-        else if (arg == "-recomb_map") {
-            if (i + 1 > argc || argv[i+1][0] == '-') {
-                cerr << "Error: -recomb_map flag cannot be empty. " << endl;
-                exit(1);
-            }
-            recomb_map_filename = argv[++i];
-        }
-        else if (arg == "-mut_map") {
-            if (i + 1 > argc || argv[i+1][0] == '-') {
-                cerr << "Error: -mut_map flag cannot be empty. " << endl;
-                exit(1);
-            }
-            mut_map_filename = argv[++i];
-        }
         else if (arg == "-n") {
             if (i + 1 > argc || argv[i+1][0] == '-') {
                 cerr << "Error: -n flag cannot be empty. " << endl;
@@ -310,14 +298,19 @@ int main(int argc, const char * argv[]) {
             exit(1);
         }
     }
-    if (r < 0) {
-        cerr << "-r flag missing or invalid value. " << endl;
+    if (m_value.size() == 0) {
+        cerr << "-m flag missing. " << endl;
         exit(1);
     }
-    if (m < 0) {
-        cerr << "-m flag missing or invalid value. " << endl;
-        exit(1);
+    bool m_is_rate = parse_rate(m_value, m);
+    if (r_value.size() == 0) {
+        if (!m_is_rate) {
+            cerr << "Error: -r is required when -m is a rate map file. " << endl;
+            exit(1);
+        }
+        r_value = m_value;
     }
+    bool r_is_rate = parse_rate(r_value, r);
     if (Ne < 0) {
         cerr << "-Ne flag missing or invalid value. " << endl;
         exit(1);
@@ -349,15 +342,21 @@ int main(int argc, const char * argv[]) {
     if (epsilon_hmm < 0) {
         epsilon_hmm = exact ? 0.1 : 0.001;
     }
-    Sampler sampler;
-    if (r > 0 and m > 0) {
-        sampler = Sampler(Ne, r, m);
-    } else {
-        Rate_map recomb_map = Rate_map();
-        recomb_map.load_map(recomb_map_filename);
-        Rate_map mut_map = Rate_map();
-        mut_map.load_map(mut_map_filename);
-        sampler = Sampler(Ne, recomb_map, mut_map);
+    Sampler sampler = Sampler(Ne, r, m);
+    if (!r_is_rate) {
+        sampler.recomb_map.load_map(r_value, start_pos, end_pos);
+        sampler.recomb_rate = sampler.recomb_map.mean_rate(start_pos, end_pos)*Ne;
+    }
+    if (!m_is_rate) {
+        sampler.mut_map.load_map(m_value, start_pos, end_pos);
+        sampler.mut_rate = sampler.mut_map.mean_rate(start_pos, end_pos)*Ne;
+    }
+    if (sampler.mut_rate == 0) {
+        cerr << "Error: the mutation rate is set to 0. " << endl;
+        exit(1);
+    }
+    if (sampler.recomb_rate == 0) {
+        cerr << "Warning: the recombination rate is set to 0; are you sure? " << endl;
     }
     sampler.penalty = penalty;
     sampler.polar = polar;

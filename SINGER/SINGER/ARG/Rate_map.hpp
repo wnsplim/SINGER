@@ -21,7 +21,7 @@ public:
     
     Rate_map();
     
-    void load_map(string mut_map_file);
+    void load_map(string mut_map_file, double start, double end);
     
     int find_index(double x);
     
@@ -29,7 +29,7 @@ public:
     
     double segment_distance(double x, double y);
     
-    double mean_rate();
+    double mean_rate(double x, double y);
     
 };
 

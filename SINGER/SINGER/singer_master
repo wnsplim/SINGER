@@ -237,31 +237,25 @@ def run_with_auto_debug(first_cmd, debug_cmd, seed, max_attempts, output_prefix)
         process = subprocess.run(cmd.split(), check=False)
         attempts += 1
 
-def run_rate_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips, max_attempts):
+def is_number(value):
+    try:
+        float(value)
+    except ValueError:
+        return False
+    return True
+
+def run_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips, max_attempts, resume):
     common = f"{singer_path()} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin}"
-    run_with_auto_debug(common + f" -ploidy {ploidy}" + tips, common + f" -debug -ploidy {ploidy}" + tips, seed, max_attempts, output_prefix)
-
-def resume_rate_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips, max_attempts):
-    common = f"{singer_path()} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin}"
-    run_with_auto_debug(common + f" -resume -ploidy {ploidy}" + tips, common + f" -debug -ploidy {ploidy}" + tips, seed, max_attempts, output_prefix)
-
-def run_map_singer(Ne, mut_map_filename, recomb_map_filename, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips, max_attempts):
-    common = f"{singer_path()} -Ne {Ne} -mut_map {mut_map_filename} -recomb_map {recomb_map_filename} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin}"
-    run_with_auto_debug(common + f" -ploidy {ploidy}" + tips, common + f" -debug -ploidy {ploidy}" + tips, seed, max_attempts, output_prefix)
-
-def resume_map_singer(Ne, mut_map_filename, recomb_map_filename, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips, max_attempts):
-    common = f"{singer_path()} -Ne {Ne} -mut_map {mut_map_filename} -recomb_map {recomb_map_filename} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin}"
-    run_with_auto_debug(common + f" -resume -ploidy {ploidy}" + tips, common + f" -debug -ploidy {ploidy}" + tips, seed, max_attempts, output_prefix)
+    first = common + (" -resume" if resume else "") + f" -ploidy {ploidy}" + tips
+    run_with_auto_debug(first, common + f" -debug -ploidy {ploidy}" + tips, seed, max_attempts, output_prefix)
 
       
 def main():
     parser = argparse.ArgumentParser(description='Sample and infer ARG from genetic variation data')
 
     parser.add_argument('-Ne', type=float, default=-1, help='Effective population size.')
-    parser.add_argument('-m', type=float, help='Mutation rate.')
-    parser.add_argument('-ratio', type=float, default=1, help='Recombination to mutation ratio. Default: 1.')
-    parser.add_argument('-recomb_map', type=str, help='Filename for the recombination rate map.')
-    parser.add_argument('-mut_map', type=str, help='Filename for the mutation rate map.')
+    parser.add_argument('-m', type=str, required=True, help='Mutation rate per base per generation: a number, or a rate map file with lines "left right rate".')
+    parser.add_argument('-r', type=str, help='Recombination rate per base per generation: a number, or a rate map file. Default: the -m value when -m is a number.')
     parser.add_argument('-vcf', type=str, help='VCF file prefix (without .vcf or .vcf.gz extension).')
     parser.add_argument('-output', type=str, required=True, help='Output file prefix.')
     parser.add_argument('-start', type=float, required=True, help='Start position.')
@@ -283,8 +277,10 @@ def main():
 
     args = parser.parse_args()
 
-    if not args.m and not args.mut_map:
-        parser.error("You must provide either -m or -mut_map")
+    if args.r is None:
+        if not is_number(args.m):
+            parser.error("You must provide -r when -m is a rate map file")
+        args.r = args.m
 
     if args.tip_ages and not args.g:
         parser.error("You must provide -g with -tip_ages")
@@ -293,29 +289,12 @@ def main():
         tips += f" -mask {args.mask}"
     ages = read_tip_ages(args.tip_ages, args.vcf, args.ploidy) if args.tip_ages else None
 
-    if args.m:
-        if args.Ne < 0:
-            args.Ne = compute_Ne(args.vcf, args.start, args.end, args.m, ages, args.g)
-        if (args.resume):
-            resume_rate_singer(args.Ne, args.m, args.m*args.ratio, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips, args.max_attempts)
-        else:
-            run_rate_singer(args.Ne, args.m, args.m*args.ratio, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips, args.max_attempts)
-    return
-
-    if args.mut_map and not args.m:
-        args.m = compute_average_rate(args.mut_map, args.start, args.end) 
-        if not args.recomb_map:
-            parser.error("You must provide -recomb_map when using the -mut_map flag")
-    
-        if args.Ne < 0:
-            args.m = compute_average_rate(args.mut_map, args.start, args.end)
-            args.Ne = compute_Ne(args.vcf, args.start, args.end, args.m, ages, args.g)
-
-        if (args.resume):
-            resume_map_singer(args.Ne, args.mut_map, args.recomb_map, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips, args.max_attempts)
-        else:
-            run_map_singer(args.Ne, args.mut_map, args.recomb_map, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips, args.max_attempts)
-    return
+    m = float(args.m) if is_number(args.m) else compute_average_rate(args.m, args.start, args.end)
+    if m == 0:
+        parser.error("The mutation rate is set to 0")
+    if args.Ne < 0:
+        args.Ne = compute_Ne(args.vcf, args.start, args.end, m, ages, args.g)
+    run_singer(args.Ne, args.m, args.r, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips, args.max_attempts, args.resume)
 
 
 if __name__ == "__main__":
