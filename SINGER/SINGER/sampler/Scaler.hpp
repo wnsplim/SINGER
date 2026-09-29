@@ -33,7 +33,7 @@ public:
 
     void reset();
 
-    void compute_deltas(ARG &a);
+    void compute_deltas(ARG &a, Rate_map &mm, double start, double m);
     
     void compute_old_grid();
     

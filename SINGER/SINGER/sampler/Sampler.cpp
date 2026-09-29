@@ -631,7 +631,7 @@ void Sampler::rescale() {
     }
     Scaler scaler = Scaler();
     scaler.num_windows = scaling_bin;
-    scaler.compute_deltas(arg);
+    scaler.compute_deltas(arg, mut_map, start, mut_rate/Ne);
     for (int i = 0; i < scaling_rep; i++) {
         scaler.reset();
         scaler.rescale(arg, mut_rate);

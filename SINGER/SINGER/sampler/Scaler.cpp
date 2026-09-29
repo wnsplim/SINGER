@@ -19,7 +19,10 @@ void Scaler::reset() {
     scaling_factors.clear();
 }
 
-void Scaler::compute_deltas(ARG &a) {
+void Scaler::compute_deltas(ARG &a, Rate_map &mm, double start, double m) {
+    auto span_length = [&](double x, double y) {
+        return mm.coordinates.empty() ? y - x : mm.segment_distance(start + x, start + y)/m;
+    };
     unordered_map<Node *, double> node_start = {};
     map<Node *, double, compare_node> node_span = {};
     for (const Branch &b : a.recombinations.begin()->second.inserted_branches) {
@@ -32,14 +35,14 @@ void Scaler::compute_deltas(ARG &a) {
         Node *dn = r.deleted_node;
         Node *in = r.inserted_node;
         assert(node_start.count(dn) > 0);
-        node_span[dn] += r.pos - node_start[dn];
+        node_span[dn] += span_length(node_start[dn], r.pos);
         node_start.erase(dn);
         node_start[in] = r_it->first;
         r_it++;
     }
     for (auto &x : node_start) {
         Node *n = x.first;
-        node_span[n] += a.sequence_length - node_start[n];
+        node_span[n] += span_length(node_start[n], a.sequence_length);
     }
     unordered_map<Node *, double> root_start = {};
     Branch prev_branch;
@@ -58,7 +61,7 @@ void Scaler::compute_deltas(ARG &a) {
             assert(dn != in);
             assert(next_branch.upper_node == a.root.get());
             assert(root_start.count(dn) > 0);
-            node_span[dn] += r.pos - root_start[dn];
+            node_span[dn] += span_length(root_start[dn], r.pos);
             root_start.erase(dn);
             root_start[in] = r.pos;
         } else {
@@ -68,14 +71,14 @@ void Scaler::compute_deltas(ARG &a) {
     }
     for (auto &x : root_start) {
         Node *n = x.first;
-        node_span[n] += a.sequence_length - x.second;
+        node_span[n] += span_length(x.second, a.sequence_length);
     }
     heterochronous = (*a.sample_nodes.rbegin())->time > 0;
     sorted_nodes.clear();
     node_deltas.clear();
     for (Node *n : a.sample_nodes) {
         sorted_nodes.push_back(n);
-        node_deltas.push_back(n->time > 0 ? a.sequence_length : 0.0);
+        node_deltas.push_back(n->time > 0 ? span_length(0, a.sequence_length) : 0.0);
     }
     for (auto &x : node_span) {
         sorted_nodes.push_back(x.first);

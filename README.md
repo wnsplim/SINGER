@@ -90,7 +90,7 @@ With a recombination map, the bin width follows the local recombination rate, so
 
 SINGER stops with an error if the mutation rate is 0 everywhere between `-start` and `-end`, or if the VCF has a variant where the mutation rate is 0. If the recombination rate is 0 everywhere between `-start` and `-end`, SINGER prints a warning and infers an ARG without recombination.
 
-With a mutation rate map, the ARG rescaling (`-scaling_rep`) uses the mean mutation rate between `-start` and `-end`.
+With a mutation rate map, the ARG rescaling (`-scaling_rep`) weights the length of each branch by the mutation rate along its span.
 
 ### Heterochronous samples (ancient DNA)
 
