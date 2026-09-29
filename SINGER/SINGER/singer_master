@@ -210,110 +210,43 @@ def tip_flags(tip_ages, g):
         return ""
     return f" -tip_ages {tip_ages} -g {g}"
 
-def run_rate_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips):
-    attempts = 0
-    max_attempts = 100
+def singer_path():
+    return os.path.join(os.path.dirname(os.path.realpath(__file__)), "singer")
+
+def run_with_auto_debug(first_cmd, debug_cmd, seed, max_attempts, output_prefix):
     random.seed(seed)
     random_seeds = [random.randint(0, 2**30 - 1) for _ in range(max_attempts)]
-
-    script_dir = os.path.dirname(os.path.realpath(__file__))
-    singer_executable = os.path.join(script_dir, "singer")
-
-    start_cmd = f"{singer_executable} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -ploidy {ploidy}" + tips
-    debug_cmd = f"{singer_executable} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -debug -ploidy {ploidy}" + tips
-
-    seeded_start_cmd = start_cmd + f" -seed {seed}"
-    print(seeded_start_cmd)
-    process = subprocess.run(seeded_start_cmd.split(), check=False)
-    while process.returncode != 0 and attempts < max_attempts:
-        print(f"Auto-debug iteration: {attempts}")
-        seeded_debug_cmd = debug_cmd + f" -seed {random_seeds[attempts]}"
-        print(seeded_debug_cmd)
-        process = subprocess.run(seeded_debug_cmd.split(), check=False)
-        attempts += 1
-
-    if attempts == max_attempts:
-        print("Auto-debug failed. Contact the author for help: yun_deng@berkeley.edu")
-        sys.exit(1)
-
-def resume_rate_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips):
+    cmd = first_cmd + f" -seed {seed}"
+    print(cmd)
+    process = subprocess.run(cmd.split(), check=False)
     attempts = 0
-    max_attempts = 100
-    random.seed(seed)
-    random_seeds = [random.randint(0, 2**30 - 1) for _ in range(max_attempts)]
-
-    script_dir = os.path.dirname(os.path.realpath(__file__))
-    singer_executable = os.path.join(script_dir, "singer")
-
-    resume_cmd = f"{singer_executable} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -resume -ploidy {ploidy}" + tips
-    debug_cmd = f"{singer_executable} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -debug -ploidy {ploidy}" + tips
-
-    seeded_resume_cmd = resume_cmd + f" -seed {seed}"
-    print(seeded_resume_cmd)
-    process = subprocess.run(seeded_resume_cmd.split(), check=False)
-    while process.returncode != 0 and attempts < max_attempts:
+    while process.returncode != 0:
+        with open(output_prefix + ".attempts", "a") as f:
+            f.write(f"{cmd}\treturn code {process.returncode}\n")
+        if attempts == max_attempts:
+            print(f"Auto-debug failed after {attempts} attempts (commands in {output_prefix}.attempts). Contact the author for help: yun_deng@berkeley.edu")
+            sys.exit(1)
         print(f"Auto-debug iteration: {attempts}")
-        seeded_debug_cmd = debug_cmd + f" -seed {random_seeds[attempts]}"
-        print(seeded_debug_cmd)
-        process = subprocess.run(seeded_debug_cmd.split(), check=False)
+        cmd = debug_cmd + f" -seed {random_seeds[attempts]}"
+        print(cmd)
+        process = subprocess.run(cmd.split(), check=False)
         attempts += 1
 
-    if attempts == max_attempts:
-        print("Auto-debug failed. Contact the author for help: yun_deng@berkeley.edu")
-        sys.exit(1)
+def run_rate_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips, max_attempts):
+    common = f"{singer_path()} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin}"
+    run_with_auto_debug(common + f" -ploidy {ploidy}" + tips, common + f" -debug -ploidy {ploidy}" + tips, seed, max_attempts, output_prefix)
 
-def run_map_singer(Ne, mut_map_filename, recomb_map_filename, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips):
-    attempts = 0
-    max_attempts = 100
-    random.seed(seed)
-    random_seeds = [random.randint(0, 2**30 - 1) for _ in range(max_attempts)]
+def resume_rate_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips, max_attempts):
+    common = f"{singer_path()} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin}"
+    run_with_auto_debug(common + f" -resume -ploidy {ploidy}" + tips, common + f" -debug -ploidy {ploidy}" + tips, seed, max_attempts, output_prefix)
 
-    script_dir = os.path.dirname(os.path.realpath(__file__))
-    singer_executable = os.path.join(script_dir, "singer")
+def run_map_singer(Ne, mut_map_filename, recomb_map_filename, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips, max_attempts):
+    common = f"{singer_path()} -Ne {Ne} -mut_map {mut_map_filename} -recomb_map {recomb_map_filename} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin}"
+    run_with_auto_debug(common + f" -ploidy {ploidy}" + tips, common + f" -debug -ploidy {ploidy}" + tips, seed, max_attempts, output_prefix)
 
-    start_cmd = f"{singer_executable} -Ne {Ne} -mut_map {mut_map_filename} -recomb_map {recomb_map_filename} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -ploidy {ploidy}" + tips
-    debug_cmd = f"{singer_executable} -Ne {Ne} -mut_map {mut_map_filename} -recomb_map {recomb_map_filename} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -debug -ploidy {ploidy}" + tips
-
-    seeded_start_cmd = start_cmd + f" -seed {seed}"
-    print(seeded_start_cmd)
-    process = subprocess.run(seeded_start_cmd.split(), check=False)
-    while process.returncode != 0 and attempts < max_attempts:
-        print(f"Auto-debug iteration: {attempts}")
-        seeded_debug_cmd = debug_cmd + f" -seed {random_seeds[attempts]}"
-        print(seeded_debug_cmd)
-        process = subprocess.run(seeded_debug_cmd.split(), check=False)
-        attempts += 1
-
-    if attempts == max_attempts:
-        print("Auto-debug failed. Contact the author for help: yun_deng@berkeley.edu")
-        sys.exit(1)
-
-
-def resume_map_singer(Ne, mut_map_filename, recomb_map_filename, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips):
-    attempts = 0
-    max_attempts = 100
-    random.seed(seed)
-    random_seeds = [random.randint(0, 2**30 - 1) for _ in range(max_attempts)]
-
-    script_dir = os.path.dirname(os.path.realpath(__file__))
-    singer_executable = os.path.join(script_dir, "singer")
-
-    resume_cmd = f"{singer_executable} -Ne {Ne} -mut_map {mut_map_filename} -recomb_map {recomb_map_filename} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -resume -ploidy {ploidy}" + tips
-    debug_cmd = f"{singer_executable} -Ne {Ne} -mut_map {mut_map_filename} -recomb_map {recomb_map_filename} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin} -debug -ploidy {ploidy}" + tips
-      
-    seeded_resume_cmd = resume_cmd + f" -seed {seed}"
-    print(seeded_resume_cmd)
-    process = subprocess.run(seeded_resume_cmd.split(), check=False)
-    while process.returncode != 0 and attempts < max_attempts:
-        print(f"Auto-debug iteration: {attempts}")
-        seeded_debug_cmd = debug_cmd + f" -seed {random_seeds[attempts]}"
-        print(seeded_debug_cmd)
-        process = subprocess.run(seeded_debug_cmd.split(), check=False)
-        attempts += 1
-
-    if attempts == max_attempts:
-        print("Auto-debug failed. Contact the author for help: yun_deng@berkeley.edu")
-        sys.exit(1)
+def resume_map_singer(Ne, mut_map_filename, recomb_map_filename, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips, max_attempts):
+    common = f"{singer_path()} -Ne {Ne} -mut_map {mut_map_filename} -recomb_map {recomb_map_filename} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin}"
+    run_with_auto_debug(common + f" -resume -ploidy {ploidy}" + tips, common + f" -debug -ploidy {ploidy}" + tips, seed, max_attempts, output_prefix)
 
       
 def main():
@@ -337,6 +270,7 @@ def main():
     parser.add_argument('-tip_ages', type=str, help='File with the sample ages in years before present, one per haplotype in VCF haplotype order or one per individual. Requires -g.')
     parser.add_argument('-g', type=float, help='Generation time in years, used with -tip_ages.')
     parser.add_argument('-mask', type=str, help='BED file of regions without data; only the remaining bases enter the mutation model.')
+    parser.add_argument('-max_attempts', type=int, default=100, help='Maximum number of automatic restarts (-debug) after a failed run; 0 disables them. Each failed command is appended to OUTPUT.attempts. Default: 100.')
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -358,9 +292,9 @@ def main():
         if args.Ne < 0:
             args.Ne = compute_Ne(args.vcf, args.start, args.end, args.m, ages, args.g)
         if (args.resume):
-            resume_rate_singer(args.Ne, args.m, args.m*args.ratio, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips)
+            resume_rate_singer(args.Ne, args.m, args.m*args.ratio, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips, args.max_attempts)
         else:
-            run_rate_singer(args.Ne, args.m, args.m*args.ratio, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips)
+            run_rate_singer(args.Ne, args.m, args.m*args.ratio, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips, args.max_attempts)
     return
 
     if args.mut_map and not args.m:
@@ -373,9 +307,9 @@ def main():
             args.Ne = compute_Ne(args.vcf, args.start, args.end, args.m, ages, args.g)
 
         if (args.resume):
-            resume_map_singer(args.Ne, args.mut_map, args.recomb_map, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips)
+            resume_map_singer(args.Ne, args.mut_map, args.recomb_map, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips, args.max_attempts)
         else:
-            run_map_singer(args.Ne, args.mut_map, args.recomb_map, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips)
+            run_map_singer(args.Ne, args.mut_map, args.recomb_map, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips, args.max_attempts)
     return
 
 
