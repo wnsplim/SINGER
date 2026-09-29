@@ -20,9 +20,9 @@ def parallelize_multi_window_singer(windows, vcfs, outputs, rates, num_iters, th
     script_dir = os.path.dirname(os.path.realpath(__file__))
     singer_master_executable = os.path.join(script_dir, "singer_master")
 
-    segment_table = pd.read_csv(windows, delim_whitespace=True, header=None)
-    vcf_table = pd.read_csv(vcfs, delim_whitespace=True, header=None)
-    output_table = pd.read_csv(outputs, delim_whitespace=True, header=None) 
+    segment_table = pd.read_csv(windows, sep=r"\s+", header=None)
+    vcf_table = pd.read_csv(vcfs, sep=r"\s+", header=None)
+    output_table = pd.read_csv(outputs, sep=r"\s+", header=None)
 
     # Prepare the singer commands
     cmd = ""
