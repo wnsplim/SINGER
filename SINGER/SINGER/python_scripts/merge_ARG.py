@@ -2,6 +2,7 @@ import argparse
 import numpy as np
 import tskit
 import os
+import gzip
 import tszip
 
 def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates):
@@ -136,10 +137,10 @@ def write_output_ts(ts, output):
     ts.dump(output)
 
 def read_vcf_sample_names(vcf_file):
-    for path in (vcf_file, vcf_file + ".vcf"):
+    for path in (vcf_file, vcf_file + ".vcf.gz", vcf_file + ".vcf"):
         if not os.path.exists(path):
             continue
-        with open(path) as f:
+        with (gzip.open(path, 'rt') if path.endswith(".gz") else open(path)) as f:
             for line in f:
                 if line.startswith("#CHROM"):
                     return line.strip().split("\t")[9:]
@@ -174,7 +175,7 @@ def main():
     parser.add_argument("--file_table", required=True, help="Sub file table")
     parser.add_argument("--output", required=True, help="Output file name")
     parser.add_argument("--vcf", required=False, default=None,
-                        help="VCF (or prefix without .vcf) used as SINGER input. Sample "
+                        help="VCF (or prefix without .vcf or .vcf.gz) used as SINGER input. Sample "
                              "names from the header are attached as individuals, and tips "
                              "are named <sample>_0 / <sample>_1.")
 

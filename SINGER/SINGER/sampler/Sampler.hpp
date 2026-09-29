@@ -17,6 +17,7 @@
 #include "Emission.hpp"
 #include "Scaler.hpp"
 #include "Rate_map.hpp"
+#include "Vcf_reader.hpp"
 
 class Sampler {
     

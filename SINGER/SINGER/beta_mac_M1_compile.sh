@@ -18,10 +18,10 @@ mkdir -p "$VERSION_DIR"
 INCLUDES="-I. -IARG -IHMM -Imoves -Isampler -Iutils"
 SOURCES=$(find . -path ./lab -prune -o -name '*.cpp' -print)
 
-clang++ -std=c++17 -O3 -g -DNDEBUG -flto $INCLUDES $SOURCES -o "$VERSION_DIR/singer"
+clang++ -std=c++17 -O3 -g -DNDEBUG -flto $INCLUDES $SOURCES -lz -o "$VERSION_DIR/singer"
 
 # Compile the debug version of the program
-clang++ -std=c++17 -g $INCLUDES $SOURCES -o "$VERSION_DIR/singer_debug"
+clang++ -std=c++17 -g $INCLUDES $SOURCES -lz -o "$VERSION_DIR/singer_debug"
 
 # Copy additional files
 cp singer_master "$VERSION_DIR/singer_master"

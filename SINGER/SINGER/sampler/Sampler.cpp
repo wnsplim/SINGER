@@ -45,10 +45,10 @@ Node_ptr Sampler::new_sample(int i) {
 }
 
 vector<string> Sampler::sample_names(string prefix) {
-    ifstream file(prefix + ".vcf");
+    Vcf_reader file(prefix);
     string line;
     vector<string> names;
-    while (getline(file, line)) {
+    while (file.next(line)) {
         if (line.substr(0, 6) == "#CHROM") {
             istringstream iss(line);
             string field;
@@ -154,11 +154,11 @@ int Sampler::parse_genotype(const string &field, int expected_ploidy, int *calls
 }
 
 void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vector<Node *> &leaves, int ploidy) {
-    ifstream file(prefix + ".vcf");
+    Vcf_reader file(prefix);
     string line;
     long long prev_pos = -1;
     int calls[2];
-    while (getline(file, line)) {
+    while (file.next(line)) {
         if (line[0] == '#') {
             continue;
         }
@@ -173,9 +173,8 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
             unassayed_site_list.push_back(pos - start_pos);
             continue;
         }
-        streampos old_pos = file.tellg();
         string next_line;
-        if (getline(file, next_line)) {
+        if (file.peek(next_line)) {
             istringstream next_iss(next_line);
             string next_chrom;
             long long next_pos;
@@ -185,7 +184,6 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
                 prev_pos = pos;
                 continue;
             }
-            file.seekg(old_pos);
         }
         int individual = 0;
         vector<Node *> missing_leaves;
@@ -228,8 +226,7 @@ void Sampler::read_mask(string filename) {
 }
 
 void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end_pos) {
-    string vcf_file = prefix + ".vcf";
-    ifstream file(vcf_file);
+    Vcf_reader file(prefix);
     string line;
     int num_individuals = 0;
     long long prev_pos = -1;
@@ -238,7 +235,7 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
     int removed_mutation = 0;
     vector<double> genotypes = {};
     int calls[2];
-    while (getline(file, line)) {
+    while (file.next(line)) {
         if (line.substr(0, 6) == "#CHROM") {
             istringstream iss(line);
             vector<string> fields;
@@ -267,9 +264,8 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
             removed_mutation += 1;
             continue;
         }
-        streampos old_pos = file.tellg();
         string next_line;
-        if (getline(file, next_line)) {
+        if (file.peek(next_line)) {
             istringstream next_iss(next_line);
             string next_chrom;
             long long next_pos;
@@ -279,7 +275,6 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
                 prev_pos = pos;
                 continue;
             }
-            file.seekg(old_pos);
         }
         int individual_index = 0;
         while (iss >> genotype) {
@@ -310,8 +305,7 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
 }
 
 void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
-    string vcf_file = prefix + ".vcf";
-    ifstream file(vcf_file);
+    Vcf_reader file(prefix);
     string line;
     int num_individuals = 0;
     long long prev_pos = -1;
@@ -320,7 +314,7 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
     int removed_mutation = 0;
     vector<double> genotypes = {};
     int calls[2];
-    while (getline(file, line)) {
+    while (file.next(line)) {
         if (line.substr(0, 6) == "#CHROM") {
             istringstream iss(line);
             vector<string> fields;
@@ -349,9 +343,8 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
             removed_mutation += 1;
             continue;
         }
-        streampos old_pos = file.tellg();
         string next_line;
-        if (getline(file, next_line)) {
+        if (file.peek(next_line)) {
             istringstream next_iss(next_line);
             string next_chrom;
             long long next_pos;
@@ -361,7 +354,6 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
                 prev_pos = pos;
                 continue;
             }
-            file.seekg(old_pos);
         }
         int individual_index = 0;
         while (iss >> genotype) {
@@ -390,7 +382,6 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
 
 void Sampler::guide_read_vcf(string prefix, double start, double end) {
     random_engine.seed(random_seed);
-    string vcf_file = prefix + ".vcf";
     string index_file = prefix + ".index";
     ifstream idx_stream(index_file);
     if (!idx_stream.is_open()) {
@@ -413,18 +404,19 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
         cerr << "Start position not found in index file: " + index_file << endl;
         exit(1);
     }
-    ifstream vcf_stream(vcf_file, ios::binary);
+    Vcf_reader vcf_stream(prefix);
     if (!vcf_stream.is_open()) {
-        cerr << "VCF file not found: " + vcf_file << endl;
+        cerr << "VCF file not found: " + vcf_stream.path << endl;
+        exit(1);
     }
-    vcf_stream.seekg(byte_offset, ios::beg);
+    vcf_stream.seek(byte_offset);
     long long prev_pos = -1;
     vector<Node_ptr> nodes = {};
     int valid_mutation = 0;
     int removed_mutation = 0;
     vector<double> genotypes = {};
     int calls[2];
-    while (getline(vcf_stream, line)) {
+    while (vcf_stream.next(line)) {
         istringstream iss(line);
         string chrom, id, ref, alt, qual, filter, info, format, genotype;
         long long pos;
@@ -432,9 +424,8 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
         if (pos == prev_pos) {continue;}        if (pos >= end) {break;}        if (ref.size() > 1 or alt.size() > 1 or alt == "*" or alt == ".") {
             removed_mutation += 1;
             continue;
-        }        streampos old_pos = vcf_stream.tellg();
-        string next_line;
-        if (getline(vcf_stream, next_line)) {
+        }        string next_line;
+        if (vcf_stream.peek(next_line)) {
             istringstream next_iss(next_line);
             string next_chrom;
             long long next_pos;
@@ -444,7 +435,6 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
                 prev_pos = pos;
                 continue;
             }
-            vcf_stream.seekg(old_pos);
         }
         int individual_index = 0;
         while (iss >> genotype) {

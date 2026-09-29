@@ -2,6 +2,7 @@
 
 import sys
 import os
+import gzip
 import argparse
 import numpy as np
 import tskit
@@ -62,10 +63,10 @@ def read_ARG(node_file, branch_file, mutation_file):
 
 
 def read_vcf_sample_names(vcf_file):
-    for path in (vcf_file, vcf_file + ".vcf"):
+    for path in (vcf_file, vcf_file + ".vcf.gz", vcf_file + ".vcf"):
         if not os.path.exists(path):
             continue
-        with open(path) as f:
+        with (gzip.open(path, 'rt') if path.endswith(".gz") else open(path)) as f:
             for line in f:
                 if line.startswith("#CHROM"):
                     return line.strip().split("\t")[9:]
@@ -122,7 +123,7 @@ def main():
     parser.add_argument('-end', type=int, required=True, help='Index after the last MCMC sample to convert (exclusive).')
     parser.add_argument('-step', type=int, default=1, help='Step size of subsampling. Default: 1.')
     parser.add_argument('-vcf', type=str, default=None,
-                        help='VCF (or prefix without .vcf) used as SINGER input. Sample names from the header are '
+                        help='VCF (or prefix without .vcf or .vcf.gz) used as SINGER input. Sample names from the header are '
                              'attached as individuals, and tips are named <sample>_0 / <sample>_1.')
 
     if len(sys.argv) == 1:

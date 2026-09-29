@@ -1,46 +1,41 @@
 import argparse
+import gzip
+import os
 import sys
 
 def index_vcf(input_prefix, segment_length):
-    input_file = f"{input_prefix}.vcf"
+    input_file = f"{input_prefix}.vcf.gz" if os.path.exists(f"{input_prefix}.vcf.gz") else f"{input_prefix}.vcf"
     index_file = f"{input_prefix}.index"
-    
+
     current_segment_start = -1
     byte_offset = 0
     last_variant_segment = -1
-    
-    # Clear existing index file
+
     with open(index_file, 'w') as f:
         f.write("")
-    
-    # Read VCF file line-by-line
-    with open(input_file, 'r') as f:
+
+    with (gzip.open if input_file.endswith(".gz") else open)(input_file, 'rb') as f:
         for line in f:
-            # Skip header lines
-            if line.startswith("#"):
-                byte_offset += len(line.encode('utf-8'))
+            if line.startswith(b"#"):
+                byte_offset += len(line)
                 continue
-            
-            # Extract position
-            pos = int(line.split("\t")[1])
-            
-            # Calculate the start coordinate of the segment this variant belongs to
+
+            pos = int(line.split(b"\t")[1])
+
             segment_start = (pos // segment_length) * segment_length
-            
-            # If this is the first variant in a new segment, record its byte offset
+
             if segment_start != current_segment_start:
-                # Record this segment start and byte offset
                 with open(index_file, 'a') as f_idx:
                     f_idx.write(f"{segment_start}\t{byte_offset}\n")
-                
+
                 last_variant_segment = segment_start
                 current_segment_start = segment_start
-            
-            byte_offset += len(line.encode('utf-8'))
+
+            byte_offset += len(line)
 
 def main():
     parser = argparse.ArgumentParser(description="Index a VCF file by block length.")
-    parser.add_argument("vcf_file_prefix", type=str, help="VCF file prefix without .vcf extension")
+    parser.add_argument("vcf_file_prefix", type=str, help="VCF file prefix without .vcf or .vcf.gz extension")
     parser.add_argument("segment_length", type=int, help="Length of segments to index")
     args = parser.parse_args()
 
@@ -54,4 +49,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

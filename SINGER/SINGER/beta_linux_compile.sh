@@ -32,11 +32,11 @@ for d in $SRC_DIRS; do mkdir -p "$BUILD_DIR/release/$d" "$BUILD_DIR/debug/$d"; d
 
 printf '%s\n' $SOURCES | xargs -P "$JOBS" -I CPPFILE \
     g++ -std=c++17 -O3 -g -DNDEBUG -flto=8 -fno-math-errno $INCLUDES -c CPPFILE -o "$BUILD_DIR/release/CPPFILE.o"
-g++ -std=c++17 -O3 -g -flto=8 -fno-math-errno $(find "$BUILD_DIR/release" -name '*.o') -o "$VERSION_DIR/singer"
+g++ -std=c++17 -O3 -g -flto=8 -fno-math-errno $(find "$BUILD_DIR/release" -name '*.o') -lz -o "$VERSION_DIR/singer"
 
 printf '%s\n' $SOURCES | xargs -P "$JOBS" -I CPPFILE \
     g++ -std=c++17 -g $INCLUDES -c CPPFILE -o "$BUILD_DIR/debug/CPPFILE.o"
-g++ -std=c++17 -g $(find "$BUILD_DIR/debug" -name '*.o') -o "$VERSION_DIR/singer_debug"
+g++ -std=c++17 -g $(find "$BUILD_DIR/debug" -name '*.o') -lz -o "$VERSION_DIR/singer_debug"
 
 # Copy additional files
 cp singer_master "$VERSION_DIR/singer_master"

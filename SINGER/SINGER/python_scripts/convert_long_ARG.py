@@ -2,6 +2,7 @@ import argparse
 import numpy as np
 import tskit
 import os
+import gzip
 
 def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates):
     if len(node_files) != len(branch_files):
@@ -89,10 +90,10 @@ def write_output_ts(ts, output_prefix, MCMC_iteration):
     ts.dump(output_ts_filename)
 
 def read_vcf_sample_names(vcf_file):
-    for path in (vcf_file, vcf_file + ".vcf"):
+    for path in (vcf_file, vcf_file + ".vcf.gz", vcf_file + ".vcf"):
         if not os.path.exists(path):
             continue
-        with open(path) as f:
+        with (gzip.open(path, 'rt') if path.endswith(".gz") else open(path)) as f:
             for line in f:
                 if line.startswith("#CHROM"):
                     return line.strip().split("\t")[9:]
