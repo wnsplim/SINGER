@@ -88,7 +88,8 @@ def load_file_lists(file_list_path):
 def sort_nodes_by_time(ts):
     tables = ts.dump_tables()
     times = tables.nodes.time
-    sort_order = np.argsort(times, kind='stable')  # from most recent to most ancient (smaller to larger time)
+    is_sample = (tables.nodes.flags & tskit.NODE_IS_SAMPLE) > 0
+    sort_order = np.lexsort((times, ~is_sample))
     
     # Remap all references
     node_map = np.full(ts.num_nodes, tskit.NULL, dtype=int)
@@ -146,18 +147,18 @@ def read_vcf_sample_names(vcf_file):
 
 def add_individuals_from_vcf(ts, vcf_file):
     sample_names = read_vcf_sample_names(vcf_file)
-    if len(sample_names) * 2 != ts.num_samples:
+    ploidy = ts.num_samples // len(sample_names)
+    if ploidy not in (1, 2) or ploidy * len(sample_names) != ts.num_samples:
         raise ValueError(
-            f"Expected {len(sample_names) * 2} sample nodes for {len(sample_names)} "
-            f"diploid VCF samples, got {ts.num_samples}."
+            f"{ts.num_samples} sample nodes do not match {len(sample_names)} VCF samples at ploidy 1 or 2."
         )
     tables = ts.dump_tables()
     node_individual = tables.nodes.individual.copy()
     node_metadata = [b""] * tables.nodes.num_rows
     for ind_id, name in enumerate(sample_names):
         tables.individuals.add_row(metadata=name.encode())
-        for hap in (0, 1):
-            nid = ind_id * 2 + hap
+        for hap in range(ploidy):
+            nid = ind_id * ploidy + hap
             node_individual[nid] = ind_id
             node_metadata[nid] = f"{name}_{hap}".encode()
     tables.nodes.individual = node_individual
