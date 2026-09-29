@@ -122,8 +122,9 @@ void Sampler::read_tip_ages(string filename, double g) {
             tip_times[i] = it->second;
         }
     }
+    tip_offset = *min_element(tip_times.begin(), tip_times.end())/(g*Ne);
     for (double &x : tip_times) {
-        x /= g*Ne;
+        x = x/(g*Ne) - tip_offset;
     }
 }
 
@@ -504,6 +505,7 @@ void Sampler::build_singleton_arg() {
     bin_size = min(bin_size, 100.0);
     Node_ptr n = *ordered_sample_nodes.begin();
     arg = ARG(Ne, sequence_length);
+    arg.time_offset = tip_offset;
     arg.any_missing = any_missing;
     arg.unassayed_sites = unassayed_site_list;
     arg.discretize(bin_size);

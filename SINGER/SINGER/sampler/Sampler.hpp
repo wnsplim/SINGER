@@ -37,6 +37,7 @@ public:
     bool exact = false;
     int ploidy = 2;
     vector<double> tip_times = {};
+    double tip_offset = 0;
     double bsp_c = 0.01;
     double tsp_q = 0.05;
     int random_seed = 0;

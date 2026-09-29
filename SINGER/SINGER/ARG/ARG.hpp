@@ -20,6 +20,7 @@ class ARG {
 public:
     
     double Ne = 1;
+    double time_offset = 0;
     Node_ptr root = new_node(numeric_limits<double>::infinity());
     Node *cut_node = nullptr;
     Node_ptr cut_node_owner = nullptr;

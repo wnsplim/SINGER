@@ -949,7 +949,7 @@ void ARG::write_nodes(string filename) {
         if (!n->is_sample) {
             n->set_index(index);
         }
-        file << std::setprecision(std::numeric_limits<double>::max_digits10) << n->time*Ne << "\n";
+        file << std::setprecision(std::numeric_limits<double>::max_digits10) << (n->time + time_offset)*Ne << "\n";
         index += 1;
     }
     file.close();
@@ -999,7 +999,7 @@ void ARG::write_recombs(string filename) {
     for (auto x : recombinations) {
         Recombination &r = x.second;
         if (x.first > 0 and x.first < sequence_length) {
-            file << r.pos << " " << r.source_branch.lower_node->index << " " << r.source_branch.upper_node->index << " " << Ne*r.start_time << "\n";
+            file << r.pos << " " << r.source_branch.lower_node->index << " " << r.source_branch.upper_node->index << " " << Ne*(r.start_time + time_offset) << "\n";
         }
     }
     file.close();
@@ -1027,11 +1027,15 @@ void ARG::read_nodes(string filename) {
         cerr << "input file not found" << endl;
         exit(1);
     }
+    vector<double> times;
     double x;
-    int i = 0;
     while (fin >> x) {
-        add_new_node(x/Ne, i < num_samples);
-        i += 1;
+        times.push_back(x);
+    }
+    double youngest = *min_element(times.begin(), times.begin() + num_samples);
+    time_offset = youngest/Ne;
+    for (int i = 0; i < (int) times.size(); i++) {
+        add_new_node((times[i] - youngest)/Ne, i < num_samples);
     }
 }
 
@@ -1119,7 +1123,7 @@ void ARG::read_recombs(string filename) {
             t = start_times.at(pos);
             b = source_branches.at(pos);
             if (pos > 0 and pos < sequence_length) {
-                x.second.start_time = t/Ne;
+                x.second.start_time = t/Ne - time_offset;
                 x.second.source_branch = b;
                 x.second.find_nodes();
                 x.second.find_target_branch();
