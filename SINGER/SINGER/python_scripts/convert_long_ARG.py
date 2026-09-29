@@ -14,35 +14,24 @@ def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates):
     node_table = tables.nodes
     branch_table = tables.edges
     
-    time_zero_nodes_added = False
     node_num = 0
     sample_num = 0
-    
+
     for node_file_index, (node_file, branch_file, mutation_file) in enumerate(zip(node_files, branch_files, mutation_files)):
         print(f"Processing segment {node_file_index}")
         node_time = np.atleast_1d(np.loadtxt(node_file))
-        node_num = node_table.num_rows - sample_num
-        min_time = 0
-        
-        for t in node_time:
-            if t == 0:
-                if node_file_index == 0:  # Only add time 0 nodes from the first file
-                    node_table.add_row(flags=tskit.NODE_IS_SAMPLE)
-                    sample_num += 1
-            else:
-                assert t >= min_time 
-                t = max(min_time + 1e-7, t)
-                node_table.add_row(time=t)
-                min_time = t
-
-        if node_file_index == 0:
-            time_zero_nodes_added = True
-        
         edge_span = np.loadtxt(branch_file, ndmin=2)
         edge_span = edge_span[edge_span[:, 2] >= 0, :]
-        
+        if node_file_index == 0:
+            sample_num = len(node_time) - len(set(edge_span[:, 2].astype(int)))
+            for t in node_time[:sample_num]:
+                node_table.add_row(flags=tskit.NODE_IS_SAMPLE, time=t)
+        node_num = node_table.num_rows - sample_num
+        for t in node_time[sample_num:]:
+            node_table.add_row(time=t)
+
         length = max(edge_span[:, 1])
-        tables.sequence_length = length + block_coordinates[node_file_index]
+        tables.sequence_length = max(tables.sequence_length, length + block_coordinates[node_file_index])
 
         parent_indices = np.array(edge_span[:, 2], dtype=np.int32)
         child_indices = np.array(edge_span[:, 3], dtype=np.int32)
