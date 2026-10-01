@@ -11,11 +11,7 @@ std::mt19937 random_engine;
 std::uniform_real_distribution<> uniform_distribution(0.0, 1.0);
 
 double uniform_random() {
-    double q = uniform_distribution(random_engine);
-    if (q < 1e-5 or q > 1 - 1e-5) {
-        q = uniform_distribution(random_engine);
-    }
-    return q;
+    return uniform_distribution(random_engine);
 }
 
 std::string get_time() {
