@@ -10,7 +10,7 @@ def index_vcf(vcf_prefix, block_length):
     """Index the VCF file using the index_vcf.py script."""
     script_dir = os.path.dirname(os.path.realpath(__file__))
     indexer = os.path.join(script_dir, "index_vcf.py")    
-    print(f"Indexing VCF file: {vcf_prefix}.vcf with block length: {block_length}")
+    print(f"Indexing VCF file: {vcf_prefix} with block length: {block_length}")
     subprocess.run(["python", indexer, vcf_prefix, str(block_length)])
 
 def is_number(value):
@@ -36,7 +36,7 @@ def run_singer_in_parallel(vcf_prefix, output_prefix, rates, block_length, num_i
         start = breakpoints[i]
         
         # Base command
-        cmd = f"{singer_master_executable} -Ne {Ne} {rates} -vcf {vcf_prefix} -output {output_prefix}_{i}_{i+1} -start {start} -end {start + block_length} -n {num_iters} -thin {thinning_interval} -polar {polar}"
+        cmd = f"{singer_master_executable} -Ne {Ne} {rates} -input {vcf_prefix} -output {output_prefix}_{i}_{i+1} -start {start} -end {start + block_length} -n {num_iters} -thin {thinning_interval} -polar {polar}"
         
         cmd_list.append(cmd)
 
@@ -57,7 +57,7 @@ def main():
     parser.add_argument("-m", type=str, required=True, help='Mutation rate per base per generation: a number, or a rate map file with lines "left right rate".')
     parser.add_argument("-r", type=str, help="Recombination rate per base per generation: a number, or a rate map file. Default: the -m value when -m is a number.")
     parser.add_argument("-L", type=int, default=int(1e6), help="Block length. Default: 1e6.")
-    parser.add_argument("-vcf", type=str, required=True, help="VCF file prefix (without .vcf or .vcf.gz extension).")
+    parser.add_argument("-input", type=str, required=True, help="Input file: .vcf or .vcf.gz.")
     parser.add_argument("-output", type=str, required=True, help="Output file prefix.")
     parser.add_argument("-n", type=int, required=True, help="Number of MCMC samples.")
     parser.add_argument("-thin", type=int, required=True, help="Thinning interval length.")
@@ -81,7 +81,7 @@ def main():
     print(f"Mutation rate: {args.m}")
     print(f"Recombination rate: {args.r}")
     print(f"Block length: {args.L}")
-    print(f"VCF file prefix: {args.vcf}")
+    print(f"Input file: {args.input}")
     print(f"Output file prefix: {args.output}")
     print(f"Number of MCMC samples: {args.n}")
     print(f"Thinning interval length: {args.thin}")
@@ -89,9 +89,9 @@ def main():
     print(f"Tskit conversion freq: {args.freq}")
     print(f"Number of cores: {args.num_cores}") 
 
-    index_vcf(args.vcf, args.L)
-    run_singer_in_parallel(args.vcf, args.output, rates, args.L, args.n, args.thin, args.Ne, args.polar, args.num_cores)
-    convert_long_ARG(args.vcf, args.output, args.n, args.freq)
+    index_vcf(args.input, args.L)
+    run_singer_in_parallel(args.input, args.output, rates, args.L, args.n, args.thin, args.Ne, args.polar, args.num_cores)
+    convert_long_ARG(args.input, args.output, args.n, args.freq)
 
 if __name__ == "__main__":
     main()

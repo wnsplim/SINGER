@@ -33,7 +33,7 @@ def parallelize_multi_window_singer(windows, vcfs, outputs, rates, num_iters, th
         output_prefix = output_table.iloc[i, 0]
 
         # Base command
-        cmd += f" \'{singer_master_executable} -Ne {Ne} {rates} -vcf {vcf_prefix} -output {output_prefix} -start {start} -end {end} -n {num_iters} -thin {thinning_interval} -polar {polar}\'"
+        cmd += f" \'{singer_master_executable} -Ne {Ne} {rates} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -n {num_iters} -thin {thinning_interval} -polar {polar}\'"
 
 
     # Execute the commands in parallel

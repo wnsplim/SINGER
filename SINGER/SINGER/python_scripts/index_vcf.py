@@ -2,10 +2,14 @@ import argparse
 import gzip
 import os
 import sys
+import vcf_io
 
-def index_vcf(input_prefix, segment_length):
-    input_file = f"{input_prefix}.vcf.gz" if os.path.exists(f"{input_prefix}.vcf.gz") else f"{input_prefix}.vcf"
-    index_file = f"{input_prefix}.index"
+def index_vcf(input_file, segment_length):
+    if not os.path.isfile(input_file):
+        vcf_io.fail(f"file {input_file} not found")
+    if input_file.endswith(".bcf"):
+        vcf_io.fail(f"{input_file} is BCF, which SINGER reads without an index")
+    index_file = f"{input_file}.index"
 
     current = (None, -1)
     byte_offset = 0
@@ -34,17 +38,17 @@ def index_vcf(input_prefix, segment_length):
 
 def main():
     parser = argparse.ArgumentParser(description="Index a VCF file by block length.")
-    parser.add_argument("vcf_file_prefix", type=str, help="VCF file prefix without .vcf or .vcf.gz extension")
+    parser.add_argument("vcf_file", type=str, help="VCF file (.vcf or .vcf.gz); the index is written to VCF_FILE.index")
     parser.add_argument("segment_length", type=int, help="Length of segments to index")
     args = parser.parse_args()
 
     print("Index vcf files")
     print("------------------")
-    print(f"VCF file prefix: {args.vcf_file_prefix}")
+    print(f"VCF file: {args.vcf_file}")
     print(f"Block length: {args.segment_length}")
     print("------------------")
 
-    index_vcf(args.vcf_file_prefix, args.segment_length)
+    index_vcf(args.vcf_file, args.segment_length)
 
 if __name__ == "__main__":
     main()

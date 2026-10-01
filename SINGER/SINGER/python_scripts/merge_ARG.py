@@ -1,8 +1,7 @@
 import argparse
 import numpy as np
 import tskit
-import os
-import gzip
+import vcf_io
 
 def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates):
     if len(node_files) != len(branch_files):
@@ -135,36 +134,6 @@ def write_output_ts(ts, output):
     print(f"Save to {output}")
     ts.dump(output)
 
-def read_vcf_sample_names(vcf_file):
-    for path in (vcf_file, vcf_file + ".vcf.gz", vcf_file + ".vcf"):
-        if not os.path.exists(path):
-            continue
-        with (gzip.open(path, 'rt') if path.endswith(".gz") else open(path)) as f:
-            for line in f:
-                if line.startswith("#CHROM"):
-                    return line.strip().split("\t")[9:]
-    raise FileNotFoundError(f"Could not find VCF file: {vcf_file}")
-
-def add_individuals_from_vcf(ts, vcf_file):
-    sample_names = read_vcf_sample_names(vcf_file)
-    ploidy = ts.num_samples // len(sample_names)
-    if ploidy not in (1, 2) or ploidy * len(sample_names) != ts.num_samples:
-        raise ValueError(
-            f"{ts.num_samples} sample nodes do not match {len(sample_names)} VCF samples at ploidy 1 or 2."
-        )
-    tables = ts.dump_tables()
-    node_individual = tables.nodes.individual.copy()
-    node_metadata = [b""] * tables.nodes.num_rows
-    for ind_id, name in enumerate(sample_names):
-        tables.individuals.add_row(metadata=name.encode())
-        for hap in range(ploidy):
-            nid = ind_id * ploidy + hap
-            node_individual[nid] = ind_id
-            node_metadata[nid] = f"{name}_{hap}".encode()
-    tables.nodes.individual = node_individual
-    tables.nodes.packset_metadata(node_metadata)
-    return tables.tree_sequence()
-
 def main():
     # Argument parsing
     parser = argparse.ArgumentParser(description="Generate tskit format for a long ARG.")
@@ -174,7 +143,7 @@ def main():
     parser.add_argument("--file_table", required=True, help="Sub file table")
     parser.add_argument("--output", required=True, help="Output file name")
     parser.add_argument("--vcf", required=False, default=None,
-                        help="VCF (or prefix without .vcf or .vcf.gz) used as SINGER input. Sample "
+                        help="Input file of the SINGER run (.vcf, .vcf.gz or .bcf). Sample "
                              "names from the header are attached as individuals, and tips "
                              "are named <sample>_0 / <sample>_1.")
 
@@ -184,7 +153,7 @@ def main():
     ts = read_long_ARG(node_files, branch_files, mutation_files, block_coordinates)
     sorted_ts = sort_nodes_by_time(ts)
     if args.vcf is not None:
-        sorted_ts = add_individuals_from_vcf(sorted_ts, args.vcf)
+        sorted_ts = vcf_io.add_individuals_from_vcf(sorted_ts, args.vcf)
     write_output_ts(sorted_ts, args.output)
 
 if __name__  == "__main__":

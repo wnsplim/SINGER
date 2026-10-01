@@ -167,11 +167,9 @@ void Sampler::check_ploidy(const string &field, int n, int expected_ploidy, cons
 }
 
 void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vector<Node *> &leaves, int ploidy) {
-    Vcf_reader file(prefix);
+    Vcf_reader file(prefix, selected_chrom());
     string line;
     long long prev_pos = -1;
-    string wanted = selected_chrom();
-    bool seen = false;
     int calls[2];
     while (file.next(line)) {
         if (line[0] == '#') {
@@ -181,11 +179,6 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
         string chrom, id, ref, alt, qual, filter, info, format, genotype;
         long long pos;
         iss >> chrom >> pos >> id >> ref >> alt >> qual >> filter >> info >> format;
-        if (chrom != wanted) {
-            if (seen) {break;}
-            continue;
-        }
-        seen = true;
         if (pos < start_pos) {continue;}
         if (pos > end_pos) {break;}
         if (pos == prev_pos) {continue;}
@@ -232,10 +225,6 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
                 l->add_missing(pos - start_pos);
             }
         }
-    }
-    if (!seen) {
-        cerr << "Error: no record of chromosome " << wanted << " in the VCF. " << endl;
-        exit(1);
     }
     sort(unassayed_site_list.begin(), unassayed_site_list.end());
 }
@@ -292,12 +281,10 @@ bool Sampler::in_mask(double x) {
 }
 
 void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end_pos) {
-    Vcf_reader file(prefix);
+    Vcf_reader file(prefix, selected_chrom());
     string line;
     int num_individuals = 0;
     long long prev_pos = -1;
-    string wanted = selected_chrom();
-    bool seen = false;
     vector<Node_ptr> nodes = {};
     int valid_mutation = 0;
     int removed_mutation = 0;
@@ -326,11 +313,6 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
         long long pos;
         iss >> chrom >> pos >> id >> ref >> alt >> qual >> filter >> info >> format;
 
-        if (chrom != wanted) {
-            if (seen) {break;}
-            continue;
-        }
-        seen = true;
         if (pos < start_pos) {continue;}
         if (pos > end_pos) {break;}
         if (pos == prev_pos) {continue;}
@@ -375,10 +357,6 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
     ordered_sample_nodes = vector<Node_ptr>(sample_nodes.begin(), sample_nodes.end());
     shuffle(ordered_sample_nodes.begin(), ordered_sample_nodes.end(), random_engine);
     sequence_length = end_pos - start_pos;
-    if (!seen) {
-        cerr << "Error: no record of chromosome " << wanted << " in the VCF. " << endl;
-        exit(1);
-    }
     cout << "valid mutations: " << valid_mutation << endl;
     cout << "removed mutations: " << removed_mutation << endl;
     vector<Node *> leaves(sample_nodes.size());
@@ -389,12 +367,10 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
 }
 
 void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
-    Vcf_reader file(prefix);
+    Vcf_reader file(prefix, selected_chrom());
     string line;
     int num_individuals = 0;
     long long prev_pos = -1;
-    string wanted = selected_chrom();
-    bool seen = false;
     vector<Node_ptr> nodes = {};
     int valid_mutation = 0;
     int removed_mutation = 0;
@@ -423,11 +399,6 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
         long long pos;
         iss >> chrom >> pos >> id >> ref >> alt >> qual >> filter >> info >> format;
 
-        if (chrom != wanted) {
-            if (seen) {break;}
-            continue;
-        }
-        seen = true;
         if (pos < start_pos) {continue;}
         if (pos > end_pos) {break;}
         if (pos == prev_pos) {continue;}
@@ -474,10 +445,6 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
     ordered_sample_nodes = vector<Node_ptr>(sample_nodes.begin(), sample_nodes.end());
     shuffle(ordered_sample_nodes.begin(), ordered_sample_nodes.end(), random_engine);
     sequence_length = end_pos - start_pos;
-    if (!seen) {
-        cerr << "Error: no record of chromosome " << wanted << " in the VCF. " << endl;
-        exit(1);
-    }
     cout << "valid mutations: " << valid_mutation << endl;
     cout << "removed mutations: " << removed_mutation << endl;
 }
@@ -514,15 +481,9 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
         cerr << "Start position not found in index file: " + index_file << endl;
         exit(1);
     }
-    Vcf_reader vcf_stream(prefix);
-    if (!vcf_stream.is_open()) {
-        cerr << "VCF file not found: " + vcf_stream.path << endl;
-        exit(1);
-    }
+    Vcf_reader vcf_stream(prefix, selected_chrom());
     vcf_stream.seek(byte_offset);
     long long prev_pos = -1;
-    string wanted = selected_chrom();
-    bool seen = false;
     vector<Node_ptr> nodes = {};
     int valid_mutation = 0;
     int removed_mutation = 0;
@@ -533,11 +494,6 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
         string chrom, id, ref, alt, qual, filter, info, format, genotype;
         long long pos;
         iss >> chrom >> pos >> id >> ref >> alt >> qual >> filter >> info >> format;
-        if (chrom != wanted) {
-            if (seen) {break;}
-            continue;
-        }
-        seen = true;
         if (pos == prev_pos) {continue;}
         if (pos >= end) {break;}
         if (in_mask(pos - start)) {
@@ -597,10 +553,6 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
     }
     ordered_sample_nodes = vector<Node_ptr>(sample_nodes.begin(), sample_nodes.end());
     sequence_length = end - start;
-    if (!seen) {
-        cerr << "Error: no record of chromosome " << wanted << " in the VCF. " << endl;
-        exit(1);
-    }
     cout << "valid mutations: " << valid_mutation << endl;
     cout << "removed mutations: " << removed_mutation << endl;
 }
@@ -608,7 +560,7 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
 void Sampler::load_vcf(string prefix, double start, double end) {
     string index_file = prefix + ".index";
     ifstream idx_stream(index_file);
-    if (idx_stream.is_open()) {
+    if (idx_stream.is_open() and !Vcf_reader::is_bcf(prefix)) {
         guide_read_vcf(prefix, start, end);
     } else {
         naive_read_vcf(prefix, start, end);

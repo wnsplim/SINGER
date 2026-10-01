@@ -5,7 +5,8 @@ import os
 import subprocess
 import argparse
 import random
-import gzip
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), d) for d in ("", "python_scripts")]
+import vcf_io
 # import uuid
 import numpy as np
 # import pysam
@@ -99,11 +100,6 @@ def calculate_diversity_with_filter(vcf_file, start, end):
     return nucleotide_diversity
 '''
 
-def open_vcf(vcf_prefix):
-    if os.path.exists(vcf_prefix + ".vcf.gz"):
-        return gzip.open(vcf_prefix + ".vcf.gz", 'rt')
-    return open(vcf_prefix + ".vcf")
-
 def read_mask_intervals(mask_file, chrom, start, end):
     intervals = []
     with open(mask_file) as f:
@@ -129,10 +125,9 @@ def calculate_diversity(vcf_prefix, start, end, mask_file=None, chrom=None):
     segment_length = end - start
     num_variants = 0
     masked = []
-    seen = False
 
     # Open the VCF file and read it line by line
-    with open_vcf(vcf_prefix) as vcf:
+    with vcf_io.open_vcf(vcf_prefix, chrom or vcf_io.first_chrom(vcf_prefix)) as vcf:
         for line in vcf:
             # Skip header lines
             if line.startswith("#"):
@@ -143,13 +138,6 @@ def calculate_diversity(vcf_prefix, start, end, mask_file=None, chrom=None):
             pos = int(fields[1])  # Get the position of the variant
             
             # Check if the variant is within the target region
-            if chrom is None:
-                chrom = fields[0]
-            if fields[0] != chrom:
-                if seen:
-                    break
-                continue
-            seen = True
             if mask_file and not masked:
                 masked = read_mask_intervals(mask_file, fields[0], start, end)
                 segment_length -= sum(hi - lo + 1 for lo, hi in masked)
@@ -191,15 +179,8 @@ def calculate_diversity(vcf_prefix, start, end, mask_file=None, chrom=None):
     nucleotide_diversity = total_diversity / segment_length
     return nucleotide_diversity
 
-def vcf_sample_names(vcf_prefix):
-    with open_vcf(vcf_prefix) as vcf:
-        for line in vcf:
-            if line.startswith("#CHROM"):
-                return line.strip().split('\t')[9:]
-    return []
-
 def read_tip_ages(tip_ages_file, vcf_prefix, ploidy):
-    names = vcf_sample_names(vcf_prefix)
+    names = vcf_io.sample_names(vcf_prefix)
     n = ploidy*len(names)
     rows = []
     ncol = None
@@ -289,7 +270,7 @@ def main():
     parser.add_argument('-Ne', type=float, default=-1, help='Effective population size.')
     parser.add_argument('-m', type=str, required=True, help='Mutation rate per base per generation: a number, or a rate map file with lines "left right rate".')
     parser.add_argument('-r', type=str, help='Recombination rate per base per generation: a number, or a rate map file. Default: the -m value when -m is a number.')
-    parser.add_argument('-vcf', type=str, help='VCF file prefix (without .vcf or .vcf.gz extension).')
+    parser.add_argument('-input', type=str, help='Input file: .vcf, .vcf.gz or .bcf.')
     parser.add_argument('-output', type=str, required=True, help='Output file prefix.')
     parser.add_argument('-start', type=float, required=True, help='Start position.')
     parser.add_argument('-end', type=float, required=True, help='End position.')
@@ -325,15 +306,15 @@ def main():
         tips += f" -mask {args.mask}"
     if args.chrom:
         tips += f" -chrom {args.chrom}"
-    ages = read_tip_ages(args.tip_ages, args.vcf, args.ploidy) if args.tip_ages else None
+    ages = read_tip_ages(args.tip_ages, args.input, args.ploidy) if args.tip_ages else None
 
     m = float(args.m) if is_number(args.m) else compute_average_rate(args.m, args.start, args.end)
     if m == 0:
         parser.error("The mutation rate is set to 0")
     if args.Ne < 0:
-        args.Ne = compute_Ne(args.vcf, args.start, args.end, m, ages, args.g, args.mask, args.chrom)
+        args.Ne = compute_Ne(args.input, args.start, args.end, m, ages, args.g, args.mask, args.chrom)
     scaling = (f" -scaling_rep {args.scaling_rep}" if args.scaling_rep is not None else "") + (f" -scaling_bin {args.scaling_bin}" if args.scaling_bin is not None else "")
-    run_singer(args.Ne, args.m, args.r, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips, args.max_attempts, args.resume, scaling)
+    run_singer(args.Ne, args.m, args.r, args.start, args.end, args.input, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips, args.max_attempts, args.resume, scaling)
 
 
 if __name__ == "__main__":

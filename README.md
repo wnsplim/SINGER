@@ -16,9 +16,11 @@ The easiser way is to directory go to the folder `releases/` and download one of
 tar -xvzf file_name
 ```
 
+To build from source, install zlib and htslib so that `pkg-config` finds htslib (add the directory that holds `htslib.pc` to `PKG_CONFIG_PATH` if needed), then run `bash beta_linux_compile.sh <version>` or `bash beta_mac_M1_compile.sh <version>` in `SINGER/SINGER`. The Python scripts read a `.bcf` input through `bcftools`, which must then be on `PATH`.
+
 ## Input and output
 
-SINGER takes **.vcf** file and outputs a **.trees** file in tskit format. The mutations are already mapped to the branches, but non-polymorphic, multi-allelic sites and structral variants are excluded from inference. The branch length should be interpreted with units of generations, for example, for homo sapiens, you would need multiply that by 28 to convert to units of years. There will also be a **.log** file for you to check the argument you ran, and the summary statistic in MCMC iterations. 
+SINGER takes a **.vcf**, **.vcf.gz** or **.bcf** file and outputs a **.trees** file in tskit format. The mutations are already mapped to the branches, but non-polymorphic, multi-allelic sites and structral variants are excluded from inference. The branch length should be interpreted with units of generations, for example, for homo sapiens, you would need multiply that by 28 to convert to units of years. There will also be a **.log** file for you to check the argument you ran, and the summary statistic in MCMC iterations. 
 
 ## Basic usage
 
@@ -28,7 +30,7 @@ To sample ARGs with SINGER, you can run command line like shown below.
 
 ```
 path_to_singer/singer_master -m 1.25e-8
--vcf prefix_of_vcf_file -output prefix_of_output_file
+-input input.vcf.gz -output prefix_of_output_file
 -start 0 -end 1e6
 ```
 
@@ -39,7 +41,7 @@ The required flags include:
 |flag|required?|details|  
 |-------------------|-----|---|  
 |**-m**|required|per base pair per generation mutation rate: a number, or the name of a rate map file (see [Rate maps](#rate-maps))|
-|**-vcf**|required|prefix of the input .vcf file name|
+|**-input**|required|input file: .vcf, .vcf.gz or .bcf|
 |**-output**|required|prefix of the output .trees file name| 
 |**-start**|required|start position of the region| 
 |**-end**|required|end position of the region| 
@@ -58,8 +60,8 @@ The optional flags include:
 |**-scaling_bin**|optional|the number of time bins used for ARG rescaling, default at 100|
 |**-tip_ages**|optional|file with the sampling ages in calendar years before present, see [Heterochronous samples](#heterochronous-samples-ancient-dna)|
 |**-g**|optional|generation time in years, required with `-tip_ages`|
-|**-mask**|optional|BED file of regions without data (masked or unassayed); rows of other chromosomes are ignored, and so are VCF records inside the regions|
-|**-chrom**|optional|chromosome to read from the VCF (default: the first one in the file); one run infers the ARG of one chromosome|
+|**-mask**|optional|BED file of the regions that have no data, for example masked or unassayed regions. SINGER treats these regions as missing data and does not use the VCF records in them.|
+|**-chrom**|optional|the chromosome to read from the input file (default: the first chromosome in the file)|
 
 The output files will be:
 
@@ -99,7 +101,7 @@ With a mutation rate map, the ARG rescaling (`-scaling_rep`) weights the length 
 For data sets containing samples from different time points (e.g., ancient DNA), provide the sampling ages and generation time:
 
 ```
-path_to_singer/singer_master -m mutation_rate -vcf prefix_of_vcf_file -output prefix_of_output_file -start 0 -end 1e6 -tip_ages ages.txt -g 29
+path_to_singer/singer_master -m mutation_rate -input input.vcf.gz -output prefix_of_output_file -start 0 -end 1e6 -tip_ages ages.txt -g 29
 ```
 
 The tip ages file can be given in two formats, with the column count detected automatically. Ages are in calendar years before present, one per sample in the VCF (applied to both haplotypes of a diploid sample).
@@ -151,9 +153,9 @@ Each row in the output file stands for all the pairwise coalescence times betwee
 Often people would like to run the ARG inference method for the entire chromosome (or even the entire genome). We recommend running ```singer_master``` for continous segments (such as 5Mb) and then use the following tool to merge them together. 
 
 ```
-path_to_singer/singer_master -m 1.25e-8 -vcf prefix_of_vcf_file -output prefix_of_output_file_0 -start 0 -end 5e6
-path_to_singer/singer_master -m 1.25e-8 -vcf prefix_of_vcf_file -output prefix_of_output_file_1 -start 5e6 -end 10e6
-path_to_singer/singer_master -m 1.25e-8 -vcf prefix_of_vcf_file -output prefix_of_output_file_2 -start 10e6 -end 15e6
+path_to_singer/singer_master -m 1.25e-8 -input input.vcf.gz -output prefix_of_output_file_0 -start 0 -end 5e6
+path_to_singer/singer_master -m 1.25e-8 -input input.vcf.gz -output prefix_of_output_file_1 -start 5e6 -end 10e6
+path_to_singer/singer_master -m 1.25e-8 -input input.vcf.gz -output prefix_of_output_file_2 -start 10e6 -end 15e6
 ......
 ```
 
@@ -181,5 +183,4 @@ By doing the merging operation, you will get the ARG samples with the length of 
 1. As a Bayesian sampling method, SINGER works best when you sample some ARGs from posterior, **only using one single sample is NOT ideal**. To this point, we highly encourage specifying **-n, -thin** flags. You can find how we run SINGER on real datasets on:
 2. It is of importance to carefully choose the parameters, such as -Ne, -m, and -r. We recommend first choosing the mutation rate m, and then based on average pairwise diversity \($\pi=4\cdot N_e \cdot m\$), you can decide the Ne parameter. If you are not super sure about the recombination rate, you can leave out -r, and SINGER sets it equal to -m. 
 3. Unfortunately for now we only support phased, high-quality genomes, and polymorphic sites with missingness will be excluded. We are working on incorporating missingness and unphased data in the near future. ARGweaver has better support in these regards.
-4. By far **the most frequent bug reported** comes from using full name under the ```-vcf``` flag, note that it only accepts the prefix of the vcf file without ```.vcf```. For example, ```-vcf human_chr1.vcf``` is illegal because it will look for a file called ```human_chr1.vcf.vcf```.
-5. **The second most frequent bug reported** is caused by running SINGER on essentially a region with no or very low sequencing data, such as centromeric regions. SINGER cannot infer the ARG when there is no data present, and will likely bug out due to underflow issues. 
+4. **A frequent bug reported** is caused by running SINGER on essentially a region with no or very low sequencing data, such as centromeric regions. SINGER cannot infer the ARG when there is no data present, and will likely bug out due to underflow issues. 

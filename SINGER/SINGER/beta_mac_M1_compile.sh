@@ -15,13 +15,14 @@ rm -rf "$VERSION_DIR"
 mkdir -p "$VERSION_DIR"
 
 # Compile the program with optimizations and debugging information
-INCLUDES="-I. -IARG -IHMM -Imoves -Isampler -Iutils"
+INCLUDES="-I. -IARG -IHMM -Imoves -Isampler -Iutils $(pkg-config --cflags htslib)"
+LIBS="$(pkg-config --libs htslib) -lz"
 SOURCES=$(find . -path ./lab -prune -o -name '*.cpp' -print)
 
-clang++ -std=c++17 -O3 -g -DNDEBUG -flto $INCLUDES $SOURCES -lz -o "$VERSION_DIR/singer"
+clang++ -std=c++17 -O3 -g -DNDEBUG -flto $INCLUDES $SOURCES $LIBS -o "$VERSION_DIR/singer"
 
 # Compile the debug version of the program
-clang++ -std=c++17 -g $INCLUDES $SOURCES -lz -o "$VERSION_DIR/singer_debug"
+clang++ -std=c++17 -g $INCLUDES $SOURCES $LIBS -o "$VERSION_DIR/singer_debug"
 
 # Copy additional files
 cp singer_master "$VERSION_DIR/singer_master"
@@ -29,6 +30,7 @@ cp python_scripts/convert_to_tskit.py "$VERSION_DIR/convert_to_tskit.py"
 cp python_scripts/index_vcf.py "$VERSION_DIR/index_vcf.py"
 cp python_scripts/merge_ARG.py "$VERSION_DIR/merge_ARG.py"
 cp python_scripts/convert_long_ARG.py "$VERSION_DIR/convert_long_ARG.py"
+cp python_scripts/vcf_io.py "$VERSION_DIR/vcf_io.py"
 cp ../../LICENSE "$VERSION_DIR/LICENSE"
 cp "$VERSION_DIR/singer" singer.tmp && mv -f singer.tmp singer
 cp "$VERSION_DIR/singer_debug" singer_debug.tmp && mv -f singer_debug.tmp singer_debug

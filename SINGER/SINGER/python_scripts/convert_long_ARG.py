@@ -1,8 +1,7 @@
 import argparse
 import numpy as np
 import tskit
-import os
-import gzip
+import vcf_io
 
 def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates):
     if len(node_files) != len(branch_files):
@@ -89,42 +88,12 @@ def write_output_ts(ts, output_prefix, MCMC_iteration):
     print(f"Save to {output_ts_filename}")
     ts.dump(output_ts_filename)
 
-def read_vcf_sample_names(vcf_file):
-    for path in (vcf_file, vcf_file + ".vcf.gz", vcf_file + ".vcf"):
-        if not os.path.exists(path):
-            continue
-        with (gzip.open(path, 'rt') if path.endswith(".gz") else open(path)) as f:
-            for line in f:
-                if line.startswith("#CHROM"):
-                    return line.strip().split("\t")[9:]
-    raise FileNotFoundError(f"Could not find VCF file: {vcf_file}")
-
-def add_individuals_from_vcf(ts, vcf_file):
-    sample_names = read_vcf_sample_names(vcf_file)
-    ploidy = ts.num_samples // len(sample_names)
-    if ploidy not in (1, 2) or ploidy * len(sample_names) != ts.num_samples:
-        raise ValueError(
-            f"{ts.num_samples} sample nodes do not match {len(sample_names)} VCF samples at ploidy 1 or 2."
-        )
-    tables = ts.dump_tables()
-    node_individual = tables.nodes.individual.copy()
-    node_metadata = [b""] * tables.nodes.num_rows
-    for ind_id, name in enumerate(sample_names):
-        tables.individuals.add_row(metadata=name.encode())
-        for hap in range(ploidy):
-            nid = ind_id * ploidy + hap
-            node_individual[nid] = ind_id
-            node_metadata[nid] = f"{name}_{hap}".encode()
-    tables.nodes.individual = node_individual
-    tables.nodes.packset_metadata(node_metadata)
-    return tables.tree_sequence()
-
 def main():
     # Argument parsing
     parser = argparse.ArgumentParser(description="Generate tskit format for a long ARG.")
     
     # Add arguments with prefixes
-    parser.add_argument("-vcf", required=True, help="VCF file prefix")
+    parser.add_argument("-vcf", required=True, help="Input file of the SINGER run (.vcf, .vcf.gz or .bcf)")
     parser.add_argument("-output", required=True, help="Output files prefix")
     parser.add_argument("-iteration", type=int, required=True, help="MCMC iteration for generating filenames")
         
@@ -133,7 +102,7 @@ def main():
     # Generate file lists
     node_files, branch_files, mutation_files, block_coordinates = generate_file_lists(args.vcf, args.output, args.iteration)
     ts = read_long_ARG(node_files, branch_files, mutation_files, block_coordinates)
-    ts = add_individuals_from_vcf(ts, args.vcf)
+    ts = vcf_io.add_individuals_from_vcf(ts, args.vcf)
     write_output_ts(ts, args.output, args.iteration)
 
 if __name__  == "__main__":

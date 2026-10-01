@@ -2,8 +2,8 @@
 
 import sys
 import os
-import gzip
 import argparse
+import vcf_io
 import numpy as np
 import tskit
 
@@ -62,36 +62,6 @@ def read_ARG(node_file, branch_file, mutation_file):
     return ts
 
 
-def read_vcf_sample_names(vcf_file):
-    for path in (vcf_file, vcf_file + ".vcf.gz", vcf_file + ".vcf"):
-        if not os.path.exists(path):
-            continue
-        with (gzip.open(path, 'rt') if path.endswith(".gz") else open(path)) as f:
-            for line in f:
-                if line.startswith("#CHROM"):
-                    return line.strip().split("\t")[9:]
-    raise FileNotFoundError(f"Could not find VCF file: {vcf_file}")
-
-def add_individuals_from_vcf(ts, vcf_file):
-    sample_names = read_vcf_sample_names(vcf_file)
-    ploidy = ts.num_samples // len(sample_names)
-    if ploidy not in (1, 2) or ploidy * len(sample_names) != ts.num_samples:
-        raise ValueError(
-            f"{ts.num_samples} sample nodes do not match {len(sample_names)} VCF samples at ploidy 1 or 2."
-        )
-    tables = ts.dump_tables()
-    node_individual = tables.nodes.individual.copy()
-    node_metadata = [b""] * tables.nodes.num_rows
-    for ind_id, name in enumerate(sample_names):
-        tables.individuals.add_row(metadata=name.encode())
-        for hap in range(ploidy):
-            nid = ind_id * ploidy + hap
-            node_individual[nid] = ind_id
-            node_metadata[nid] = f"{name}_{hap}".encode()
-    tables.nodes.individual = node_individual
-    tables.nodes.packset_metadata(node_metadata)
-    return tables.tree_sequence()
-
 def write_trees(input_prefix, output_prefix, start, end, step, vcf_file=None):
     for i in range(start, end, step):
         trees_file = f"{output_prefix}_{i}.trees"
@@ -102,7 +72,7 @@ def write_trees(input_prefix, output_prefix, start, end, step, vcf_file=None):
             sys.exit(f"No MCMC sample {i}: {node_file} not found. -start and -end are MCMC sample indices, -end exclusive.")
         ts = read_ARG(node_file, branch_file, mutation_file)
         if vcf_file is not None:
-            ts = add_individuals_from_vcf(ts, vcf_file)
+            ts = vcf_io.add_individuals_from_vcf(ts, vcf_file)
         ts.dump(trees_file)
 
 def write_fast_trees(input_prefix, output_prefix, start, end, step):
@@ -123,7 +93,7 @@ def main():
     parser.add_argument('-end', type=int, required=True, help='Index after the last MCMC sample to convert (exclusive).')
     parser.add_argument('-step', type=int, default=1, help='Step size of subsampling. Default: 1.')
     parser.add_argument('-vcf', type=str, default=None,
-                        help='VCF (or prefix without .vcf or .vcf.gz) used as SINGER input. Sample names from the header are '
+                        help='Input file of the SINGER run (.vcf, .vcf.gz or .bcf). Sample names from the header are '
                              'attached as individuals, and tips are named <sample>_0 / <sample>_1.')
 
     if len(sys.argv) == 1:

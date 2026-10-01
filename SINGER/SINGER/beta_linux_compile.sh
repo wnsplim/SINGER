@@ -26,17 +26,20 @@ cd "$SRC_DIR"
 SRC_DIRS="ARG HMM moves sampler utils"
 INCLUDES="-I."
 for d in $SRC_DIRS; do INCLUDES="$INCLUDES -I$d"; done
+INCLUDES="$INCLUDES $(pkg-config --cflags htslib)"
+HTS_LIBS=$(pkg-config --static --libs-only-l htslib | tr ' ' '\n' | grep -v -x -e -lm -e -lpthread -e -pthread | tr '\n' ' ')
+LIBS="$(pkg-config --libs-only-L htslib) -Wl,-Bstatic $HTS_LIBS -lz -Wl,-Bdynamic -lpthread -lm"
 SOURCES=$(find . -path ./lab -prune -o -name '*.cpp' -print)
 
 for d in $SRC_DIRS; do mkdir -p "$BUILD_DIR/release/$d" "$BUILD_DIR/debug/$d"; done
 
 printf '%s\n' $SOURCES | xargs -P "$JOBS" -I CPPFILE \
     g++ -std=c++17 -O3 -g -DNDEBUG -flto=8 -fno-math-errno $INCLUDES -c CPPFILE -o "$BUILD_DIR/release/CPPFILE.o"
-g++ -std=c++17 -O3 -g -flto=8 -fno-math-errno $(find "$BUILD_DIR/release" -name '*.o') -lz -o "$VERSION_DIR/singer"
+g++ -std=c++17 -O3 -g -flto=8 -fno-math-errno $(find "$BUILD_DIR/release" -name '*.o') $LIBS -o "$VERSION_DIR/singer"
 
 printf '%s\n' $SOURCES | xargs -P "$JOBS" -I CPPFILE \
     g++ -std=c++17 -g $INCLUDES -c CPPFILE -o "$BUILD_DIR/debug/CPPFILE.o"
-g++ -std=c++17 -g $(find "$BUILD_DIR/debug" -name '*.o') -lz -o "$VERSION_DIR/singer_debug"
+g++ -std=c++17 -g $(find "$BUILD_DIR/debug" -name '*.o') $LIBS -o "$VERSION_DIR/singer_debug"
 
 # Copy additional files
 cp singer_master "$VERSION_DIR/singer_master"
@@ -44,6 +47,7 @@ cp python_scripts/convert_to_tskit.py "$VERSION_DIR/convert_to_tskit.py"
 cp python_scripts/index_vcf.py "$VERSION_DIR/index_vcf.py"
 cp python_scripts/merge_ARG.py "$VERSION_DIR/merge_ARG.py"
 cp python_scripts/convert_long_ARG.py "$VERSION_DIR/convert_long_ARG.py"
+cp python_scripts/vcf_io.py "$VERSION_DIR/vcf_io.py"
 cp "$SRC_DIR/../../LICENSE" "$VERSION_DIR/LICENSE"
 cp "$VERSION_DIR/singer" singer.tmp && mv -f singer.tmp singer
 cp "$VERSION_DIR/singer_debug" singer_debug.tmp && mv -f singer_debug.tmp singer_debug
