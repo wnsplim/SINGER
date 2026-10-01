@@ -104,10 +104,31 @@ def open_vcf(vcf_prefix):
         return gzip.open(vcf_prefix + ".vcf.gz", 'rt')
     return open(vcf_prefix + ".vcf")
 
-def calculate_diversity(vcf_prefix, start, end):
+def read_mask_intervals(mask_file, chrom, start, end):
+    intervals = []
+    with open(mask_file) as f:
+        for line in f:
+            fields = line.split()
+            if len(fields) < 3 or fields[0] != chrom:
+                continue
+            lo, hi = max(int(fields[1]) + 1, int(start) + 1), min(int(fields[2]), int(end))
+            if lo <= hi:
+                intervals.append((lo, hi))
+    intervals.sort()
+    merged = []
+    for lo, hi in intervals:
+        if merged and lo <= merged[-1][1] + 1:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], hi))
+        else:
+            merged.append((lo, hi))
+    return merged
+
+
+def calculate_diversity(vcf_prefix, start, end, mask_file=None):
     total_diversity = 0.0
     segment_length = end - start
     num_variants = 0
+    masked = []
 
     # Open the VCF file and read it line by line
     with open_vcf(vcf_prefix) as vcf:
@@ -121,10 +142,15 @@ def calculate_diversity(vcf_prefix, start, end):
             pos = int(fields[1])  # Get the position of the variant
             
             # Check if the variant is within the target region
+            if mask_file and not masked:
+                masked = read_mask_intervals(mask_file, fields[0], start, end)
+                segment_length -= sum(hi - lo + 1 for lo, hi in masked)
             if pos < start:
                 continue
             if pos > end:
                 break
+            if any(lo <= pos <= hi for lo, hi in masked):
+                continue
             
             # Extract genotype information for each sample (after the 9th column)
             alleles = [fields[3]] + fields[4].split(",")  # REF and ALT alleles
@@ -143,13 +169,12 @@ def calculate_diversity(vcf_prefix, start, end):
                 for allele in gt_alleles:
                     allele_counts[int(allele)] += 1
 
-            # Calculate allele frequencies
-            if num_samples == 0:
-                continue  # Skip if there are no valid samples
-            allele_freqs = [ac / (2 * num_samples) for ac in allele_counts]
-            
-            # Calculate diversity for the current variant
-            variant_diversity = sum(f * (1 - f) for f in allele_freqs if f > 0 and f < 1)
+            k = sum(allele_counts)
+            if k < 2:
+                continue
+            allele_freqs = [ac / k for ac in allele_counts]
+
+            variant_diversity = sum(f * (1 - f) for f in allele_freqs if f > 0 and f < 1) * k / (k - 1)
             
             # Add to total diversity
             total_diversity += variant_diversity
@@ -196,8 +221,8 @@ def read_tip_ages(tip_ages_file, vcf_prefix, ploidy):
         ages.append(by_name[names[i//ploidy]])
     return ages
 
-def compute_Ne(vcf_prefix, start, end, m, ages=None, g=None):
-    diversity = calculate_diversity(vcf_prefix, start, end)
+def compute_Ne(vcf_prefix, start, end, m, ages=None, g=None, mask_file=None):
+    diversity = calculate_diversity(vcf_prefix, start, end, mask_file)
     mean_abs_diff = 0.0
     if ages:
         gens = [a/g for a in ages]
@@ -244,10 +269,10 @@ def is_number(value):
         return False
     return True
 
-def run_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips, max_attempts, resume):
+def run_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips, max_attempts, resume, scaling=""):
     common = f"{singer_path()} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin}"
-    first = common + (" -resume" if resume else "") + f" -ploidy {ploidy}" + tips
-    run_with_auto_debug(first, common + f" -debug -ploidy {ploidy}" + tips, seed, max_attempts, output_prefix)
+    first = common + (" -resume" if resume else "") + f" -ploidy {ploidy}" + tips + scaling
+    run_with_auto_debug(first, common + f" -debug -ploidy {ploidy}" + tips + scaling, seed, max_attempts, output_prefix)
 
       
 def main():
@@ -266,9 +291,11 @@ def main():
     parser.add_argument('-resume', action='store_true', help='Resume MCMC with this flag.')
     parser.add_argument('-ploidy', type=int, default=2, help="Ploidy of the vcf file (1 or 2). Default: 2.")
     parser.add_argument('-seed', type=int, default=42, help='Random seed for reproducibility. Default: 42.')
-    parser.add_argument('-tip_ages', type=str, help='File with the sample ages in years before present, one per haplotype in VCF haplotype order or one per individual. Requires -g.')
+    parser.add_argument('-tip_ages', type=str, help='File with the sample ages in years before present: one row per sample column of the VCF in VCF order, or two columns "name age"; the two haplotypes of a diploid sample share the age. Requires -g.')
     parser.add_argument('-g', type=float, help='Generation time in years, used with -tip_ages.')
     parser.add_argument('-mask', type=str, help='BED file of regions without data; only the remaining bases enter the mutation model.')
+    parser.add_argument('-scaling_rep', type=int, help='Number of ARG rescaling rounds after the initial build and after each sample; 0 disables rescaling. Default: 1.')
+    parser.add_argument('-scaling_bin', type=int, help='Number of time bins used for ARG rescaling. Default: 100.')
     parser.add_argument('-max_attempts', type=int, default=100, help='Maximum number of automatic restarts (-debug) after a failed run; 0 disables them. Each failed command is appended to OUTPUT.attempts. Default: 100.')
 
     if len(sys.argv) == 1:
@@ -293,8 +320,9 @@ def main():
     if m == 0:
         parser.error("The mutation rate is set to 0")
     if args.Ne < 0:
-        args.Ne = compute_Ne(args.vcf, args.start, args.end, m, ages, args.g)
-    run_singer(args.Ne, args.m, args.r, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips, args.max_attempts, args.resume)
+        args.Ne = compute_Ne(args.vcf, args.start, args.end, m, ages, args.g, args.mask)
+    scaling = (f" -scaling_rep {args.scaling_rep}" if args.scaling_rep is not None else "") + (f" -scaling_bin {args.scaling_bin}" if args.scaling_bin is not None else "")
+    run_singer(args.Ne, args.m, args.r, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips, args.max_attempts, args.resume, scaling)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,6 @@ import numpy as np
 import tskit
 import os
 import gzip
-import tszip
 
 def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates):
     if len(node_files) != len(branch_files):
@@ -90,7 +89,7 @@ def sort_nodes_by_time(ts):
     tables = ts.dump_tables()
     times = tables.nodes.time
     is_sample = (tables.nodes.flags & tskit.NODE_IS_SAMPLE) > 0
-    sort_order = np.lexsort((times, ~is_sample))
+    sort_order = np.lexsort((np.where(is_sample, np.arange(ts.num_nodes, dtype=float), times), ~is_sample))
     
     # Remap all references
     node_map = np.full(ts.num_nodes, tskit.NULL, dtype=int)
