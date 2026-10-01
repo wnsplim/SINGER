@@ -48,7 +48,8 @@ The optional flags include:
 
 |flag|required?|details|  
 |-------------------|-----|---|  
-|**-Ne**|optional|the diploid effective population size, which means the haploid effective population size will be **2*Ne**|
+|**-Ne**|optional|effective population size in diploid individuals: the number of haploid genomes is **2*Ne** at any ploidy, so a haploid population of N genomes takes -Ne N/2|
+|**-ploidy**|optional|1 or 2, the ploidy of every sample in the VCF (default 2).|
 |**-r**|optional|per base pair per generation recombination rate: a number, or the name of a rate map file. If `-m` is a number, the default is the value of `-m`. If `-m` is a rate map file, `-r` is required|
 |**-n**|optional|the number of posterior samples, default at 100|
 |**-thin**|optional|the number of MCMC iterations between adjacent samples, default at 200|

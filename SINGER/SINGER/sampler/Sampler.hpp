@@ -62,6 +62,8 @@ public:
 
     int parse_genotype(const string &field, int expected_ploidy, int *calls);
 
+    void check_ploidy(const string &field, int n, int expected_ploidy, const int *calls, long long pos, int column, const string &prefix);
+
     Node_ptr new_sample(int i);
 
     vector<string> sample_names(string prefix);

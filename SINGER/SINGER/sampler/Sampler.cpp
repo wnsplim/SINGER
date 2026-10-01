@@ -153,7 +153,17 @@ int Sampler::parse_genotype(const string &field, int expected_ploidy, int *calls
         n++;
         i = j + 1;
     }
-    return n;
+    return i < stop ? -1 : n;
+}
+
+void Sampler::check_ploidy(const string &field, int n, int expected_ploidy, const int *calls, long long pos, int column, const string &prefix) {
+    if (n >= 0 and (n == expected_ploidy or calls[0] < 0)) {
+        return;
+    }
+    vector<string> names = sample_names(prefix);
+    cerr << "Error: genotype " << field.substr(0, field.find(':')) << " of sample " << (column < (int) names.size() ? names[column] : to_string(column))
+         << " at position " << pos << " has " << (n < 0 ? "more" : "fewer") << " alleles than -ploidy " << expected_ploidy << ". " << endl;
+    exit(1);
 }
 
 void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vector<Node *> &leaves, int ploidy) {
@@ -198,6 +208,7 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
         bool known[2] = {is_unambiguous(ref), is_unambiguous(alt)};
         while (iss >> genotype) {
             int n = parse_genotype(genotype, ploidy, calls);
+            check_ploidy(genotype, n, ploidy, calls, pos, individual, prefix);
             for (int k = 0; k < ploidy; k++) {
                 int c = k < n ? calls[k] : -1;
                 if (c < 0 or !known[c]) {
@@ -322,6 +333,7 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
         int individual_index = 0;
         while (iss >> genotype) {
             int n = parse_genotype(genotype, 1, calls);
+            check_ploidy(genotype, n, 1, calls, pos, individual_index, prefix);
             genotypes[individual_index] = (n > 0 and calls[0] == 1) ? 1 : 0;
             individual_index += 1;
         }
@@ -340,9 +352,9 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
     sequence_length = end_pos - start_pos;
     cout << "valid mutations: " << valid_mutation << endl;
     cout << "removed mutations: " << removed_mutation << endl;
-    vector<Node *> leaves;
+    vector<Node *> leaves(sample_nodes.size());
     for (const Node_ptr &n : sample_nodes) {
-        leaves.push_back(n.get());
+        leaves[n->index] = n.get();
     }
     scan_missing(prefix, start_pos, end_pos, leaves, 1);
 }
@@ -407,6 +419,7 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
         int individual_index = 0;
         while (iss >> genotype) {
             int n = parse_genotype(genotype, 2, calls);
+            check_ploidy(genotype, n, 2, calls, pos, individual_index, prefix);
             for (int k = 0; k < 2; k++) {
                 genotypes[2*individual_index + k] = (k < n and calls[k] == 1) ? 1 : 0;
             }
@@ -499,6 +512,7 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
                 genotypes.resize(2*individual_index + 2);
             }
             int n = parse_genotype(genotype, 2, calls);
+            check_ploidy(genotype, n, 2, calls, pos, individual_index, prefix);
             for (int k = 0; k < 2; k++) {
                 genotypes[2*individual_index + k] = (k < n and calls[k] == 1) ? 1 : 0;
             }
@@ -666,7 +680,11 @@ void Sampler::debug_resume_internal_sample(int num_iters, int spacing) {
     if (words.size() == 0 or words[2] == "initial_thread" or words[0] == "Time") {
         cout << "new seed: " << random_seed << endl;
         sample_index = 0;
-        load_vcf(input_prefix, start, end);
+        if (ploidy == 1) {
+            naive_read_vcf_haploid(input_prefix, start, end);
+        } else {
+            load_vcf(input_prefix, start, end);
+        }
         iterative_start();
         internal_sample(num_iters, spacing);
     } else {
@@ -759,7 +777,7 @@ void Sampler::load_resume_arg() {
     for (Node *n : arg.sample_nodes) {
         leaves[n->index] = n;
     }
-    scan_missing(input_prefix, start, end, leaves, 2);
+    scan_missing(input_prefix, start, end, leaves, ploidy);
     arg.any_missing = any_missing;
     arg.unassayed_sites = unassayed_site_list;
     arg.compute_rhos_thetas(recomb_rate, mut_rate, recomb_map, mut_map, start);
