@@ -76,6 +76,8 @@ public:
 
     void read_mask(string filename);
 
+    bool in_mask(double x);
+
     bool any_missing = false;
 
     void naive_read_vcf_haploid(string prefix, double start_pos, double end_pos);

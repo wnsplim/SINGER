@@ -172,8 +172,13 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
         if (pos < start_pos) {continue;}
         if (pos > end_pos) {break;}
         if (pos == prev_pos) {continue;}
+        if (in_mask(pos - start_pos)) {
+            prev_pos = pos;
+            continue;
+        }
         if (ref.size() > 1 or alt.size() > 1) {
             unassayed_site_list.push_back(pos - start_pos);
+            prev_pos = pos;
             continue;
         }
         string next_line;
@@ -213,6 +218,17 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
     sort(unassayed_site_list.begin(), unassayed_site_list.end());
 }
 
+static string first_chrom(const string &prefix) {
+    Vcf_reader file(prefix);
+    string line;
+    while (file.next(line)) {
+        if (line[0] != '#') {
+            return line.substr(0, line.find('\t'));
+        }
+    }
+    return "";
+}
+
 void Sampler::read_mask(string filename) {
     ifstream fin(filename);
     if (!fin.good()) {
@@ -220,14 +236,30 @@ void Sampler::read_mask(string filename) {
         exit(1);
     }
     string line, chrom;
+    string vcf_chrom = first_chrom(input_prefix);
     double lo, hi;
     while (getline(fin, line)) {
         istringstream iss(line);
-        if (!(iss >> chrom >> lo >> hi)) {
+        if (!(iss >> chrom >> lo >> hi) or chrom != vcf_chrom) {
             continue;
         }
         masked.push_back({lo + 1 - start, hi + 1 - start});
     }
+    sort(masked.begin(), masked.end());
+    vector<pair<double, double>> merged;
+    for (auto &x : masked) {
+        if (!merged.empty() and x.first <= merged.back().second) {
+            merged.back().second = max(merged.back().second, x.second);
+        } else {
+            merged.push_back(x);
+        }
+    }
+    masked = merged;
+}
+
+bool Sampler::in_mask(double x) {
+    auto it = upper_bound(masked.begin(), masked.end(), make_pair(x, numeric_limits<double>::infinity()));
+    return it != masked.begin() and prev(it)->second > x;
 }
 
 void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end_pos) {
@@ -265,8 +297,14 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
 
         if (pos < start_pos) {continue;}
         if (pos > end_pos) {break;}
-        if (pos == prev_pos) {continue;}        if (!is_unambiguous(ref) or !is_unambiguous(alt)) {
+        if (pos == prev_pos) {continue;}
+        if (in_mask(pos - start_pos)) {
+            prev_pos = pos;
+            continue;
+        }
+        if (!is_unambiguous(ref) or !is_unambiguous(alt)) {
             removed_mutation += 1;
+            prev_pos = pos;
             continue;
         }
         string next_line;
@@ -344,8 +382,14 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
 
         if (pos < start_pos) {continue;}
         if (pos > end_pos) {break;}
-        if (pos == prev_pos) {continue;}        if (!is_unambiguous(ref) or !is_unambiguous(alt)) {
+        if (pos == prev_pos) {continue;}
+        if (in_mask(pos - start_pos)) {
+            prev_pos = pos;
+            continue;
+        }
+        if (!is_unambiguous(ref) or !is_unambiguous(alt)) {
             removed_mutation += 1;
+            prev_pos = pos;
             continue;
         }
         string next_line;
@@ -426,10 +470,18 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
         string chrom, id, ref, alt, qual, filter, info, format, genotype;
         long long pos;
         iss >> chrom >> pos >> id >> ref >> alt >> qual >> filter >> info >> format;
-        if (pos == prev_pos) {continue;}        if (pos >= end) {break;}        if (!is_unambiguous(ref) or !is_unambiguous(alt)) {
-            removed_mutation += 1;
+        if (pos == prev_pos) {continue;}
+        if (pos >= end) {break;}
+        if (in_mask(pos - start)) {
+            prev_pos = pos;
             continue;
-        }        string next_line;
+        }
+        if (!is_unambiguous(ref) or !is_unambiguous(alt)) {
+            removed_mutation += 1;
+            prev_pos = pos;
+            continue;
+        }
+        string next_line;
         if (vcf_stream.peek(next_line)) {
             istringstream next_iss(next_line);
             string next_chrom;
