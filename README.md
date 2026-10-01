@@ -44,7 +44,7 @@ The required flags include:
 |**-input**|required|input file: .vcf, .vcf.gz or .bcf|
 |**-output**|required|prefix of the output .trees file name| 
 |**-start**|required|start position of the region| 
-|**-end**|required|end position of the region| 
+|**-end**|required|end position of the region. SINGER reads the records with -start ≤ POS < -end.| 
 
 The optional flags include:
 

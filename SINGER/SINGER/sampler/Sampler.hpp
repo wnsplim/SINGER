@@ -78,6 +78,8 @@ public:
 
     void read_mask(string filename);
 
+    void order_samples();
+
     string chrom_name = "";
 
     string selected_chrom();

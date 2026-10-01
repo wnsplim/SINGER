@@ -1048,7 +1048,7 @@ void ARG::write_mutations(string filename) {
     for (auto &x : mutation_branches) {
         double m = x.first;
         for (auto &y : x.second) {
-            if (m < sequence_length and m > 0) {
+            if (m < sequence_length and m >= 0) {
                 file << m << " " << y.lower_node->index << " " << y.upper_node->index << " " << y.lower_node->get_state(m) << "\n";
             }
         }

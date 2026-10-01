@@ -180,7 +180,7 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
         long long pos;
         iss >> chrom >> pos >> id >> ref >> alt >> qual >> filter >> info >> format;
         if (pos < start_pos) {continue;}
-        if (pos > end_pos) {break;}
+        if (pos >= end_pos) {break;}
         if (pos == prev_pos) {continue;}
         if (in_mask(pos - start_pos)) {
             prev_pos = pos;
@@ -314,7 +314,7 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
         iss >> chrom >> pos >> id >> ref >> alt >> qual >> filter >> info >> format;
 
         if (pos < start_pos) {continue;}
-        if (pos > end_pos) {break;}
+        if (pos >= end_pos) {break;}
         if (pos == prev_pos) {continue;}
         if (in_mask(pos - start_pos)) {
             prev_pos = pos;
@@ -354,8 +354,7 @@ void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end
             }
         }
     }
-    ordered_sample_nodes = vector<Node_ptr>(sample_nodes.begin(), sample_nodes.end());
-    shuffle(ordered_sample_nodes.begin(), ordered_sample_nodes.end(), random_engine);
+    order_samples();
     sequence_length = end_pos - start_pos;
     cout << "valid mutations: " << valid_mutation << endl;
     cout << "removed mutations: " << removed_mutation << endl;
@@ -400,7 +399,7 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
         iss >> chrom >> pos >> id >> ref >> alt >> qual >> filter >> info >> format;
 
         if (pos < start_pos) {continue;}
-        if (pos > end_pos) {break;}
+        if (pos >= end_pos) {break;}
         if (pos == prev_pos) {continue;}
         if (in_mask(pos - start_pos)) {
             prev_pos = pos;
@@ -442,15 +441,19 @@ void Sampler::naive_read_vcf(string prefix, double start_pos, double end_pos) {
             }
         }
     }
-    ordered_sample_nodes = vector<Node_ptr>(sample_nodes.begin(), sample_nodes.end());
-    shuffle(ordered_sample_nodes.begin(), ordered_sample_nodes.end(), random_engine);
+    order_samples();
     sequence_length = end_pos - start_pos;
     cout << "valid mutations: " << valid_mutation << endl;
     cout << "removed mutations: " << removed_mutation << endl;
 }
 
-void Sampler::guide_read_vcf(string prefix, double start, double end) {
+void Sampler::order_samples() {
+    ordered_sample_nodes = vector<Node_ptr>(sample_nodes.begin(), sample_nodes.end());
     random_engine.seed(random_seed);
+    shuffle(ordered_sample_nodes.begin(), ordered_sample_nodes.end(), random_engine);
+}
+
+void Sampler::guide_read_vcf(string prefix, double start, double end) {
     string index_file = prefix + ".index";
     ifstream idx_stream(index_file);
     if (!idx_stream.is_open()) {
@@ -551,7 +554,7 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
     if (valid_mutation < 3) {
         cerr << "there are too few variants in this region, algorithm not run" << endl;
     }
-    ordered_sample_nodes = vector<Node_ptr>(sample_nodes.begin(), sample_nodes.end());
+    order_samples();
     sequence_length = end - start;
     cout << "valid mutations: " << valid_mutation << endl;
     cout << "removed mutations: " << removed_mutation << endl;

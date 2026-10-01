@@ -143,7 +143,7 @@ def calculate_diversity(vcf_prefix, start, end, mask_file=None, chrom=None):
                 segment_length -= sum(hi - lo + 1 for lo, hi in masked)
             if pos < start:
                 continue
-            if pos > end:
+            if pos >= end:
                 break
             if any(lo <= pos <= hi for lo, hi in masked):
                 continue
@@ -273,7 +273,7 @@ def main():
     parser.add_argument('-input', type=str, help='Input file: .vcf, .vcf.gz or .bcf.')
     parser.add_argument('-output', type=str, required=True, help='Output file prefix.')
     parser.add_argument('-start', type=float, required=True, help='Start position.')
-    parser.add_argument('-end', type=float, required=True, help='End position.')
+    parser.add_argument('-end', type=float, required=True, help='End position. SINGER reads the records with start <= POS < end.')
     parser.add_argument('-n', type=int, default=100, help='Number of MCMC samples. Default: 100.')
     parser.add_argument('-thin', type=int, default=200, help='Number of MCMC iterations between adjacent samples. Default: 200.')
     parser.add_argument('-polar', type=float, default=0.5, help='Site flip probability. Default: 0.5.')

@@ -32,7 +32,7 @@ def records(f, path, chrom):
 def open_vcf(path, chrom=None):
     if not os.path.isfile(path):
         fail(f"file {path} not found")
-    bcftools = subprocess.Popen(["bcftools", "view", "--no-version", path], stdout=subprocess.PIPE, text=True) if path.endswith(".bcf") else None
+    bcftools = subprocess.Popen(["bcftools", "view", "--no-version", path], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True) if path.endswith(".bcf") else None
     f = bcftools.stdout if bcftools else (gzip.open(path, "rt") if path.endswith(".gz") else open(path))
     try:
         yield records(f, path, chrom)

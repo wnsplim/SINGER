@@ -33,6 +33,7 @@ public:
             fail("file " + path + " not found");
         }
         if (is_bcf(path)) {
+            hts_set_log_level(HTS_LOG_OFF);
             bcf = hts_open(path.c_str(), "r");
             header = bcf == nullptr ? nullptr : bcf_hdr_read(bcf);
             if (header != nullptr) {
