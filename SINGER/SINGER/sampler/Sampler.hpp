@@ -78,6 +78,10 @@ public:
 
     void read_mask(string filename);
 
+    string chrom_name = "";
+
+    string selected_chrom();
+
     bool in_mask(double x);
 
     bool any_missing = false;

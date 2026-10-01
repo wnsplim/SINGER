@@ -124,11 +124,12 @@ def read_mask_intervals(mask_file, chrom, start, end):
     return merged
 
 
-def calculate_diversity(vcf_prefix, start, end, mask_file=None):
+def calculate_diversity(vcf_prefix, start, end, mask_file=None, chrom=None):
     total_diversity = 0.0
     segment_length = end - start
     num_variants = 0
     masked = []
+    seen = False
 
     # Open the VCF file and read it line by line
     with open_vcf(vcf_prefix) as vcf:
@@ -142,6 +143,13 @@ def calculate_diversity(vcf_prefix, start, end, mask_file=None):
             pos = int(fields[1])  # Get the position of the variant
             
             # Check if the variant is within the target region
+            if chrom is None:
+                chrom = fields[0]
+            if fields[0] != chrom:
+                if seen:
+                    break
+                continue
+            seen = True
             if mask_file and not masked:
                 masked = read_mask_intervals(mask_file, fields[0], start, end)
                 segment_length -= sum(hi - lo + 1 for lo, hi in masked)
@@ -221,8 +229,8 @@ def read_tip_ages(tip_ages_file, vcf_prefix, ploidy):
         ages.append(by_name[names[i//ploidy]])
     return ages
 
-def compute_Ne(vcf_prefix, start, end, m, ages=None, g=None, mask_file=None):
-    diversity = calculate_diversity(vcf_prefix, start, end, mask_file)
+def compute_Ne(vcf_prefix, start, end, m, ages=None, g=None, mask_file=None, chrom=None):
+    diversity = calculate_diversity(vcf_prefix, start, end, mask_file, chrom)
     mean_abs_diff = 0.0
     if ages:
         gens = [a/g for a in ages]
@@ -294,6 +302,7 @@ def main():
     parser.add_argument('-tip_ages', type=str, help='File with the sample ages in years before present: one row per sample column of the VCF in VCF order, or two columns "name age"; the two haplotypes of a diploid sample share the age. Requires -g.')
     parser.add_argument('-g', type=float, help='Generation time in years, used with -tip_ages.')
     parser.add_argument('-mask', type=str, help='BED file of regions without data; only the remaining bases enter the mutation model.')
+    parser.add_argument('-chrom', type=str, help='Chromosome to read from the VCF. Default: the first one in the file.')
     parser.add_argument('-scaling_rep', type=int, help='Number of ARG rescaling rounds after the initial build and after each sample; 0 disables rescaling. Default: 1.')
     parser.add_argument('-scaling_bin', type=int, help='Number of time bins used for ARG rescaling. Default: 100.')
     parser.add_argument('-max_attempts', type=int, default=100, help='Maximum number of automatic restarts (-debug) after a failed run; 0 disables them. Each failed command is appended to OUTPUT.attempts. Default: 100.')
@@ -314,13 +323,15 @@ def main():
     tips = tip_flags(args.tip_ages, args.g)
     if args.mask:
         tips += f" -mask {args.mask}"
+    if args.chrom:
+        tips += f" -chrom {args.chrom}"
     ages = read_tip_ages(args.tip_ages, args.vcf, args.ploidy) if args.tip_ages else None
 
     m = float(args.m) if is_number(args.m) else compute_average_rate(args.m, args.start, args.end)
     if m == 0:
         parser.error("The mutation rate is set to 0")
     if args.Ne < 0:
-        args.Ne = compute_Ne(args.vcf, args.start, args.end, m, ages, args.g, args.mask)
+        args.Ne = compute_Ne(args.vcf, args.start, args.end, m, ages, args.g, args.mask, args.chrom)
     scaling = (f" -scaling_rep {args.scaling_rep}" if args.scaling_rep is not None else "") + (f" -scaling_bin {args.scaling_bin}" if args.scaling_bin is not None else "")
     run_singer(args.Ne, args.m, args.r, args.start, args.end, args.vcf, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips, args.max_attempts, args.resume, scaling)
 

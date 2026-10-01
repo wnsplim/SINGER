@@ -59,6 +59,7 @@ The optional flags include:
 |**-tip_ages**|optional|file with the sampling ages in calendar years before present, see [Heterochronous samples](#heterochronous-samples-ancient-dna)|
 |**-g**|optional|generation time in years, required with `-tip_ages`|
 |**-mask**|optional|BED file of regions without data (masked or unassayed); rows of other chromosomes are ignored, and so are VCF records inside the regions|
+|**-chrom**|optional|chromosome to read from the VCF (default: the first one in the file); one run infers the ARG of one chromosome|
 
 The output files will be:
 

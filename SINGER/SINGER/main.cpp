@@ -27,6 +27,7 @@ int main(int argc, const char * argv[]) {
     string mode = "exact";
     string tip_ages_file = "";
     string mask_file = "";
+    string chrom_name = "";
     double g = -1;
     double r = -1, m = -1, Ne = -1;
     int num_iters = 0;
@@ -71,6 +72,13 @@ int main(int argc, const char * argv[]) {
                 exit(1);
             }
             mask_file = argv[++i];
+        }
+        else if (arg == "-chrom") {
+            if (i + 1 >= argc || argv[i+1][0] == '-') {
+                cerr << "Error: -chrom flag cannot be empty. " << endl;
+                exit(1);
+            }
+            chrom_name = argv[++i];
         }
         else if (arg == "-g") {
             if (i + 1 >= argc || argv[i+1][0] == '-') {
@@ -378,6 +386,7 @@ int main(int argc, const char * argv[]) {
     sampler.random_seed = seed;
     sampler.start = start_pos;
     sampler.end = end_pos;
+    sampler.chrom_name = chrom_name;
     if (mask_file.size() > 0) {
         sampler.read_mask(mask_file);
     }

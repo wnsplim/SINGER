@@ -72,6 +72,9 @@ private:
             line += buffer;
             if (!line.empty() and line.back() == '\n') {
                 line.pop_back();
+                if (line.empty()) {
+                    continue;
+                }
                 return true;
             }
         }
