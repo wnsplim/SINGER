@@ -75,6 +75,9 @@ void Threader_smc::internal_rethread(ARG &a, tuple<double, Branch, double> cut_p
 
 void Threader_smc::exact_internal_rethread(ARG &a, tuple<double, Branch, double> cut_point) {
     cut_time = get<2>(cut_point);
+#ifndef NDEBUG
+    full_length = a.get_tree_at(get<0>(cut_point)).length();
+#endif
     a.remove(cut_point);
     get_boundary(a);
     set_check_points(a);
@@ -327,8 +330,17 @@ void Threader_smc::sample_joining_points(ARG &a) {
     }
 }
 
+static double pruned_height(ARG &a) {
+    for (auto &x : a.cut_tree.parents) {
+        if (x.second == a.root.get()) {
+            return x.first->time;
+        }
+    }
+    return 0;
+}
+
 double Threader_smc::acceptance_ratio(ARG &a) {
-    double cut_height = a.cut_tree.parents.rbegin()->first->time;
+    double cut_height = pruned_height(a);
     double old_height = cut_height;
     double new_height = cut_height;
     auto old_join_it = a.joining_branches.upper_bound(a.cut_pos);
@@ -349,7 +361,7 @@ double Threader_smc::acceptance_ratio(ARG &a) {
 }
 
 double Threader_smc::cut_ratio(ARG &a) {
-    double cut_height = a.cut_tree.parents.rbegin()->first->time;
+    double cut_height = pruned_height(a);
     double pruned_length = a.cut_tree.length();
     auto old_join_it = a.joining_branches.upper_bound(a.cut_pos);
     old_join_it--;
@@ -369,6 +381,7 @@ double Threader_smc::cut_ratio(ARG &a) {
     if (new_join_it->second.upper_node == a.root.get()) {
         new_length += new_join_time - cut_height;
     }
+    assert(fabs(old_length - full_length) <= 1e-9*full_length);
     return old_length/new_length;
 }
 

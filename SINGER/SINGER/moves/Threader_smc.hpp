@@ -33,6 +33,7 @@ public:
     void exact_internal_rethread(ARG &a, tuple<double, Branch, double> cut_point);
 
     double cut_time = 0;
+    double full_length = 0;
     double start = 0;
     double end = 0;
     int start_index = 0;
