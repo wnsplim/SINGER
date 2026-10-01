@@ -136,6 +136,10 @@ int main(int argc, const char * argv[]) {
                 cerr << "Error: -penalty flag expects a number. " << endl;
                 exit(1);
             }
+            if (penalty <= 0) {
+                cerr << "Error: -penalty must be positive. " << endl;
+                exit(1);
+            }
         }
         else if (arg == "-polar") {
             if (i + 1 >= argc || argv[i+1][0] == '-') {
