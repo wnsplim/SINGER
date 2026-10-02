@@ -135,6 +135,7 @@ public:
     double cc_lowest_change = numeric_limits<double>::infinity();
 
     Interval *tb_interval = nullptr;
+    Node *tb_keep = nullptr;
     double tb_lb = 0, tb_ub = 0, tb_sister_mass = -1, tb_rho = -1;
     const Interval *const *tb_states = nullptr;
     size_t tb_nstates = 0;

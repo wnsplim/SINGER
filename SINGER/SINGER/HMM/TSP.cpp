@@ -706,16 +706,22 @@ void TSP::compute_trace_back_probs(double rho, Interval *interval, vector<Interv
     if (rho == prev_rho) {
         return;
     }
+    Node *keep = pinned(interval) ? interval->node : nullptr;
     if (tb_generation == cc_generation and tb_interval == interval and tb_lb == interval->lb
         and tb_ub == interval->ub and tb_sister_mass == sister_mass
         and tb_states == (const Interval *const *) intervals.data() and tb_nstates == intervals.size()
-        and trace_back_probs.size() == intervals.size() and rho == tb_rho) {
+        and rho == tb_rho and tb_keep == keep) {
         prev_rho = rho;
         return;
     }
+    trace_back_probs.resize(intervals.size());
     for (int i = 0; i < trace_back_probs.size(); i++) {
         trace_back_probs[i] = jump_prob(rho, intervals[i]->time, interval->lb, interval->ub);
+        if (keep != nullptr and intervals[i]->node == keep and intervals[i]->lb == intervals[i]->ub) {
+            trace_back_probs[i] = 0;
+        }
     }
+    tb_keep = keep;
     tb_generation = cc_generation;
     tb_interval = interval;
     tb_lb = interval->lb;
@@ -835,7 +841,6 @@ int TSP::trace_back_helper(Interval *interval, int x) {
     double rho;
     vector<Interval *> &intervals = get_state_space(x);
     lower_bound = intervals.front()->lb;
-    if (trace_back_probs.size() != intervals.size()) trace_back_probs.assign(intervals.size(), 0.0);
     if (x > y) {
         sister_mass = sister_masses[x-1];
         prev_rho = -1;
@@ -946,7 +951,6 @@ double TSP::jump_mass(Interval *iv, vector<Interval *> &intervals, vector<double
 
 double TSP::ffbs_stay_logq(int x, Interval *iv) {
     vector<Interval *> &pv = get_state_space(x);
-    if (trace_back_probs.size() != pv.size()) trace_back_probs.assign(pv.size(), 0.0);
     sister_mass = sister_masses[x - 1];
     prev_rho = -1;
     compute_trace_back_probs(rhos[x - 1], iv, pv);
@@ -958,7 +962,6 @@ double TSP::ffbs_stay_logq(int x, Interval *iv) {
 
 double TSP::ffbs_jump_logq(int x, Interval *iv) {
     vector<Interval *> &pv = get_state_space(x);
-    if (trace_back_probs.size() != pv.size()) trace_back_probs.assign(pv.size(), 0.0);
     sister_mass = sister_masses[x - 1];
     prev_rho = -1;
     compute_trace_back_probs(rhos[x - 1], iv, pv);
@@ -1093,17 +1096,16 @@ double TSP::eval_joining_nodes(map<double, Branch> &old_jb, map<double, Branch> 
         } else {
             sel_log_q += ffbs_jump_logq(x, from);
             x -= 1;
+            vector<Interval *> &pv = get_state_space(x);
+            sister_mass = sister_masses[x];
+            prev_rho = -1;
+            compute_trace_back_probs(rhos[x], from, pv);
             Branch nb = old_branch_at(x);
             double nt = old_time_at(x);
             find_node = old_node_at(x);
             pin_active = false;
             int ni = find_old_interval(x, nb, nt);
             if (ni < 0) return fail();
-            vector<Interval *> &pv = get_state_space(x);
-            if (trace_back_probs.size() != pv.size()) trace_back_probs.assign(pv.size(), 0.0);
-            sister_mass = sister_masses[x];
-            prev_rho = -1;
-            compute_trace_back_probs(rhos[x], from, pv);
             double ws = jump_mass(from, pv, forward_probs[x]);
             double num = trace_back_probs[ni] * forward_probs[x][ni];
             if (ws > 0 and num > 0) {
@@ -1135,7 +1137,11 @@ Node *TSP::sample_joining_node(Interval *interval) {
         {
             double sv = cc->surv(t);
             double sd = cc->surv(interval->lb) - cc->surv(interval->ub);
-            if (sd > 0 and sv > 0) time_log_q += log(sv) - log(sd) + log(cc->rate(t));
+            if (sd > 0 and sv > 0) {
+                time_log_q += log(sv) - log(sd) + log(cc->rate(t));
+            } else {
+                time_log_q = -numeric_limits<double>::infinity();
+            }
         }
         node_owner.push_back(new_node(t));
         n = node_owner.back().get();

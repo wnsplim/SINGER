@@ -29,6 +29,39 @@ void Threader_smc::reset() {
     end_index = 0;
 }
 
+static bool held_between(ARG &a, Node *n, double x, double y) {
+    auto it = a.recombinations.find(x);
+    if (it == a.recombinations.end() or it->second.inserted_node != n) {
+        return false;
+    }
+    for (++it; it != a.recombinations.end() and it->first < y; ++it) {
+        if (it->second.deleted_node == n) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool has_gap_node(const map<double, Branch> &branches, ARG &a) {
+    map<Node *, double> left_at;
+    Node *current = nullptr;
+    for (auto &x : branches) {
+        Node *n = x.second.upper_node;
+        if (n == current) {
+            continue;
+        }
+        if (current != nullptr) {
+            left_at[current] = x.first;
+        }
+        auto it = left_at.find(n);
+        if (it != left_at.end() and !held_between(a, n, it->second, x.first)) {
+            return true;
+        }
+        current = n;
+    }
+    return false;
+}
+
 void Threader_smc::thread(ARG &a, Node_ptr n) {
     cout << "Iteration: " << a.sample_nodes.size() << endl;
     cut_time = n->time;
@@ -62,7 +95,7 @@ void Threader_smc::internal_rethread(ARG &a, tuple<double, Branch, double> cut_p
     sample_joining_branches(a);
     run_TSP(a);
     sample_joining_points(a);
-    double ar = acceptance_ratio(a);
+    double ar = has_gap_node(added_branches, a) ? 0 : acceptance_ratio(a);
     double q = random();
     if (q < ar) {
         a.add(new_joining_branches, added_branches);
@@ -87,7 +120,7 @@ void Threader_smc::exact_internal_rethread(ARG &a, tuple<double, Branch, double>
         sample_joining_branches(a);
         run_TSP(a);
         sample_joining_points(a);
-        ar = bridges_kept(a) ? exact_acceptance_ratio(a) : 0;
+        ar = bridges_kept(a) and !has_gap_node(added_branches, a) ? exact_acceptance_ratio(a) : 0;
     }
     double q = random();
     if (q < ar) {
@@ -416,7 +449,7 @@ double Threader_smc::exact_acceptance_ratio(ARG &a) {
     old_arg.add(a.joining_branches, a.removed_branches);
     double pi_old = old_arg.corrected_smc_prior(a.removed_branches, lo, hi, pos_lo, tree_lo) + (no_data ? 0.0 : old_arg.mutation_log_likelihood(a.removed_branches, start, end, pos_lo, tree_lo));
     double log_a = (pi_new - pi_old) + (q_old - q_new) + (h_old - h_new) + log(jac);
-    return exp(log_a);
+    return isfinite(q_new) and isfinite(h_new) ? exp(log_a) : 0;
 }
 
 double Threader_smc::random() {
