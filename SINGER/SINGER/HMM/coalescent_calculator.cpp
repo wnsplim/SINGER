@@ -146,6 +146,54 @@ double coalescent_calculator::prob(double x, double y) {
     return max(gy - gx, 0.0);
 }
 
+double coalescent_calculator::rel_prob(double x, double y) {
+    refresh();
+    int m = (int) t.size();
+    int j = (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
+    double p = 0, dl = 0, a = x;
+    for (; a < y and j < m; j++) {
+        double k = kk[j] + extra;
+        double b = (j + 1 < m) ? min(t[j+1], y) : y;
+        if (k > 0) {
+            p += exp(-dl)*(-expm1(-k*(b - a)))/k;
+            dl += k*(b - a);
+        }
+        a = b;
+    }
+    return p;
+}
+
+double coalescent_calculator::prob_inv(double x, double y, double u) {
+    double target = u*rel_prob(x, y);
+    int m = (int) t.size();
+    int j = (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
+    double dl = 0, a = x;
+    for (; j < m; j++) {
+        double k = kk[j] + extra;
+        double b = (j + 1 < m) ? min(t[j+1], y) : y;
+        if (k > 0) {
+            double ea = exp(-dl);
+            double seg = ea*(-expm1(-k*(b - a)))/k;
+            if (target <= seg or b >= y) {
+                return min(y, a - log1p(-min(1.0, target*k/ea))/k);
+            }
+            target -= seg;
+            dl += k*(b - a);
+        }
+        a = b;
+    }
+    return y;
+}
+
+double coalescent_calculator::log_density(double x, double y, double s) {
+    double p = rel_prob(x, y);
+    int jx = (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
+    int js = (int) (upper_bound(t.begin(), t.end(), s) - t.begin()) - 1;
+    double lx = Lam[jx] + (kk[jx] + extra)*(x - t[jx]);
+    double ls = Lam[js] + (kk[js] + extra)*(s - t[js]);
+    return p > 0 ? lx - ls - log(p) : -numeric_limits<double>::infinity();
+}
+
 double coalescent_calculator::find_median(double x, double y) {
     return compute_time_weights(x, y).first;
 }

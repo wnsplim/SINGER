@@ -531,10 +531,12 @@ void approx_BSP::compute_recomb_weights(double rho) {
 }
 
 void approx_BSP::compute_null_emit_prob(double theta, Node *query_node) {
-    if (theta == prev_theta and query_node == prev_node and eh->bin_width == prev_width) {
+    if (theta == prev_theta and query_node == prev_node and eh->bin_width == prev_width and eh->crho == prev_crho and eh->norm_scale == prev_scale) {
         return;
     }
     prev_width = eh->bin_width;
+    prev_crho = eh->crho;
+    prev_scale = eh->norm_scale;
     for (int i = 0; i < dim; i++) {
         null_emit_probs[i] = eh->null_emit(curr_intervals[i]->branch, time_points[i], theta, query_node);
     }

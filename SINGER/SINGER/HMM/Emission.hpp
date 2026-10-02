@@ -38,19 +38,17 @@ public:
             km1 = a + d + a*d;
         } else {
             double b = crho*lu;
-            double s = a + b;
-            km1 = d + a*b*(1 + d)*(1 - s*(1 - s*(1 - s)));
+            km1 = d + a*b*(1 + d)/(1 + a + b);
         }
-        double x = norm_scale*km1;
-        return exp(-bin_width*x*(1 - x*(0.5 - x*((1.0/3.0) - x*0.25))));
+        return exp(-bin_width*log1p(norm_scale*km1));
     }
 };
 
-inline double branch_product(Tree &tree, double c, double rho) {
+inline double branch_product(Tree &tree, double c, double rho, Node *cut) {
     double p = 1.0;
     for (auto &x : tree.parents) {
         double l = x.second->time - x.first->time;
-        if (!isinf(l)) {
+        if (!isinf(l) and x.second != cut) {
             p *= 1 + c*rho*l;
         }
     }
@@ -78,16 +76,16 @@ inline bool varying_rate(ARG &a, int lo, int hi) {
     return false;
 }
 
-inline double update_branch_product(double p, Recombination &r, double crho) {
+inline double update_branch_product(double p, Recombination &r, double crho, Node *cut) {
     for (const Branch &b : r.deleted_branches) {
         double l = b.upper_node->time - b.lower_node->time;
-        if (!isinf(l)) {
+        if (!isinf(l) and b.upper_node != cut) {
             p /= 1 + crho*l;
         }
     }
     for (const Branch &b : r.inserted_branches) {
         double l = b.upper_node->time - b.lower_node->time;
-        if (!isinf(l)) {
+        if (!isinf(l) and b.upper_node != cut) {
             p *= 1 + crho*l;
         }
     }

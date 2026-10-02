@@ -40,6 +40,12 @@ public:
 
     double prob(double x, double y);
 
+    double rel_prob(double x, double y);
+
+    double prob_inv(double x, double y, double u);
+
+    double log_density(double x, double y, double s);
+
     double find_median(double x, double y);
 
     double surv(double x);

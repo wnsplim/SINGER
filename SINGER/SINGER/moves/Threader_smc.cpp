@@ -208,7 +208,7 @@ void Threader_smc::run_BSP(ARG &a) {
         tree = a.start_tree;
     }
     double curr_rho = a.thetas[start_index]/(a.coordinates[start_index + 1] - a.coordinates[start_index]);
-    double p_tree = branch_product(a.start_tree, pe->penalty, curr_rho);
+    double p_tree = branch_product(a.start_tree, pe->penalty, curr_rho, a.cut_node);
     pe->any_missing = a.any_missing;
     for (int i = start_index; i < end_index; i++) {
         if (a.coordinates[i] == query_it->first) {
@@ -221,8 +221,9 @@ void Threader_smc::run_BSP(ARG &a) {
             bsp.transfer(r);
             if (varying) {
                 tree.forward_update(r);
+                curr_rho = -1;
             } else {
-                p_tree = update_branch_product(p_tree, r, pe->penalty*curr_rho);
+                p_tree = update_branch_product(p_tree, r, pe->penalty*curr_rho, a.cut_node);
             }
         } else if (a.coordinates[i] != start) {
             bsp.forward(a.rhos[i - 1]);
@@ -230,7 +231,7 @@ void Threader_smc::run_BSP(ARG &a) {
         double w = a.coordinates[i + 1] - a.coordinates[i];
         double rho = a.thetas[i]/w;
         if (varying and rho != curr_rho) {
-            p_tree = branch_product(tree, pe->penalty, rho);
+            p_tree = branch_product(tree, pe->penalty, rho, a.cut_node);
             curr_rho = rho;
         }
         pe->set_tree_product(pe->penalty, no_data ? 0.0 : rho, p_tree, called_width(query_node, a, i));
@@ -264,7 +265,6 @@ void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb) {
     tsp.cc1 = make_shared<coalescent_calculator>(cut_time);
     tsp.cc1->extra = 1;
     tsp.cc1->start(a.start_tree);
-    tsp.rewind = (*a.sample_nodes.rbegin())->time > cut_time;
     Branch start_branch = jb.begin()->second;
     tsp.start(start_branch, cut_time);
     auto recomb_it = a.recombinations.upper_bound(start);
@@ -289,7 +289,7 @@ void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb) {
     };
     set_sister_mass(start_branch);
     double curr_rho = a.thetas[start_index]/(a.coordinates[start_index + 1] - a.coordinates[start_index]);
-    double p_tree = branch_product(a.start_tree, be->penalty, curr_rho);
+    double p_tree = branch_product(a.start_tree, be->penalty, curr_rho, a.cut_node);
     be->any_missing = a.any_missing;
     for (int i = start_index; i < end_index; i++) {
         if (a.coordinates[i] == query_it->first) {
@@ -306,7 +306,9 @@ void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb) {
             tsp.transfer(r, prev_branch, next_branch);
             tree.forward_update(r);
             if (!varying) {
-                p_tree = update_branch_product(p_tree, r, be->penalty*curr_rho);
+                p_tree = update_branch_product(p_tree, r, be->penalty*curr_rho, a.cut_node);
+            } else {
+                curr_rho = -1;
             }
             prev_branch = next_branch;
             set_sister_mass(next_branch);
@@ -320,7 +322,7 @@ void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb) {
         double w = a.coordinates[i+1] - a.coordinates[i];
         double rho = a.thetas[i]/w;
         if (varying and rho != curr_rho) {
-            p_tree = branch_product(tree, be->penalty, rho);
+            p_tree = branch_product(tree, be->penalty, rho, a.cut_node);
             curr_rho = rho;
         }
         be->set_tree_product(be->penalty, no_data ? 0.0 : rho, p_tree, called_width(query_node, a, i));

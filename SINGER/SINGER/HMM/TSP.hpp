@@ -89,7 +89,7 @@ public:
 
     bool pinned(Interval *iv);
 
-    double stay_mass(Interval *iv, vector<Interval *> &intervals, vector<double> &probs, double rho);
+    double stay_mass(Interval *iv, vector<Interval *> &intervals, vector<double> &probs);
 
     double jump_mass(Interval *iv, vector<Interval *> &intervals, vector<double> &probs);
 
@@ -104,9 +104,6 @@ public:
     vector<Interval *> curr_intervals = {};
     vector<pair<int, vector<Interval *>>>  state_spaces = {{INT_MAX, {}}};
 
-    vector<double> rhos = {};
-    vector<double> sister_masses = {};
-    bool rewind = false;
     vector<pair<int, pair<double, double>>> swaps = {};
     size_t applied = 0;
 
@@ -122,25 +119,30 @@ public:
     vector<double> masses = {};
     vector<double> lower_diagonals = {};
     vector<double> upper_diagonals = {};
+    vector<double> stays = {};
+    vector<double> selfs = {};
+
+    struct Kernel {
+        vector<double> lower, factors, stays, selfs, masses;
+    };
+    vector<Kernel> kernels = {};
+    vector<int> kernel_at = {};
 
     double prev_rho = -1;
     double prev_theta = -1;
-    double prev_width = -1;
+    double prev_width = -1, prev_crho = -1, prev_scale = -1;
     Node *prev_node = nullptr;
 
     vector<double> cd_lb = {}, cd_ub = {}, cd_time = {};
-    vector<double> cd_diagonals = {}, cd_lower = {}, cd_upper = {}, cd_factors = {};
+    vector<double> cd_diagonals = {}, cd_lower = {}, cd_upper = {}, cd_factors = {}, cd_stays = {}, cd_selfs = {};
     double cd_rho = -1, cd_sister_mass = -1, cd_top = 0;
     bool cd_valid = false;
     double cc_lowest_change = numeric_limits<double>::infinity();
 
     Interval *tb_interval = nullptr;
     Node *tb_keep = nullptr;
-    double tb_lb = 0, tb_ub = 0, tb_sister_mass = -1, tb_rho = -1;
-    const Interval *const *tb_states = nullptr;
-    size_t tb_nstates = 0;
-    long tb_generation = -1;
-    long cc_generation = 0;
+    int tb_kernel = -1;
+    double tb_stay = 0;
     
     int dim = 0;
     vector<double> temp = {};
@@ -156,7 +158,6 @@ public:
 
     double non_recomb_prob(double rho, double s);
 
-    double jump_prob(double rho, double s, double t1, double t2);
 
     double own_mass(double t, double lb, double ub);
 
@@ -182,7 +183,7 @@ public:
 
     void compute_factors();
 
-    void compute_trace_back_probs(double rho, Interval *interval, vector<Interval *> &intervals);
+    void compute_trace_back_probs(int x, Interval *interval, vector<Interval *> &intervals);
     
     void sanity_check(Recombination &r);
     
