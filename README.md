@@ -41,7 +41,7 @@ The required flags include:
 |flag|required?|details|  
 |-------------------|-----|---|  
 |**-m**|required|per base pair per generation mutation rate: a number, or the name of a rate map file (see [Rate maps](#rate-maps))|
-|**-input**|required|input file: .vcf, .vcf.gz or .bcf|
+|**-input**|required|input file: .vcf, .vcf.gz or .bcf. An unphased heterozygous genotype counts as missing for its sample.|
 |**-output**|required|prefix of the output .trees file name| 
 |**-start**|required|start position of the region| 
 |**-end**|required|end position of the region. SINGER reads the records with -start ≤ POS < -end.| 

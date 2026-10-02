@@ -87,6 +87,8 @@ public:
     bool in_mask(double x);
 
     bool any_missing = false;
+    int unphased_masked = 0;
+    int multiallelic_skipped = 0;
 
     void naive_read_vcf_haploid(string prefix, double start_pos, double end_pos);
 

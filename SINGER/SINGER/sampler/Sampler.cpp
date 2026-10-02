@@ -138,10 +138,14 @@ int Sampler::parse_genotype(const string &field, int expected_ploidy, int *calls
     }
     int n = 0;
     size_t i = 0;
+    char separator = '|';
     while (i < stop and n < expected_ploidy) {
         size_t j = i;
         while (j < stop and field[j] != '|' and field[j] != '/') {
             j++;
+        }
+        if (n == 0 and j < stop) {
+            separator = field[j];
         }
         if (j == i + 1 and field[i] == '0') {
             calls[n] = 0;
@@ -152,6 +156,10 @@ int Sampler::parse_genotype(const string &field, int expected_ploidy, int *calls
         }
         n++;
         i = j + 1;
+    }
+    if (n == 2 and separator == '/' and calls[0] != calls[1]) {
+        calls[0] = calls[1] = -1;
+        unphased_masked++;
     }
     return i < stop ? -1 : n;
 }
@@ -171,6 +179,8 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
     string line;
     long long prev_pos = -1;
     int calls[2];
+    unphased_masked = 0;
+    multiallelic_skipped = 0;
     while (file.next(line)) {
         if (line[0] == '#') {
             continue;
@@ -188,6 +198,7 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
         }
         if (ref.size() > 1 or alt.size() > 1) {
             unassayed_site_list.push_back(pos - start_pos);
+            multiallelic_skipped += alt.find(',') != string::npos;
             prev_pos = pos;
             continue;
         }
@@ -227,6 +238,12 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
         }
     }
     sort(unassayed_site_list.begin(), unassayed_site_list.end());
+    if (unphased_masked > 0) {
+        cerr << "Warning: unphased heterozygous genotypes treated as missing: " << unphased_masked << ". " << endl;
+    }
+    if (multiallelic_skipped > 0) {
+        cerr << "Warning: multiallelic records skipped: " << multiallelic_skipped << ". " << endl;
+    }
 }
 
 static string first_chrom(const string &prefix) {
