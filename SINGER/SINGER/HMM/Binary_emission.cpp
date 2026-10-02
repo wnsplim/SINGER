@@ -41,7 +41,7 @@ double Binary_emission::mut_emit(Branch &branch, double time, double theta, doub
         bool ml = lower_any and branch.lower_node->is_missing(m);
         bool m0 = query_any and node->is_missing(m);
         if (ml or m0) {
-            double p0 = u0*penalty, p1 = u1*penalty, p2 = u2*penalty, po = uo*penalty;
+            double p0 = u0*penalty, p1 = at_root ? 1.0 : u1*penalty, p2 = u2*penalty, po = at_root ? 1.0 : uo*penalty;
             double num = 0, den = 0;
             for (int a = ml ? 0 : sl; a <= (ml ? 1 : sl); a++) {
                 den += (a ? w1 : w0)*((a == su) ? 1.0 : po);
@@ -54,10 +54,10 @@ double Binary_emission::mut_emit(Branch &branch, double time, double theta, doub
             old_prob *= den;
             continue;
         }
-        int base = abs(sl - su);
-        int k0 = sl + su + s0;
+        int base = at_root ? 0 : abs(sl - su);
+        int k0 = sl + s0 + (at_root ? 0 : su);
         double t0 = (sl ? u0 : 1.0)*(su ? u1 : 1.0)*(s0 ? u2 : 1.0)*pen[k0 - base];
-        double t1 = (sl ? 1.0 : u0)*(su ? 1.0 : u1)*(s0 ? 1.0 : u2)*pen[3 - k0 - base];
+        double t1 = (sl ? 1.0 : u0)*(su ? 1.0 : u1)*(s0 ? 1.0 : u2)*pen[(at_root ? 2 : 3) - k0 - base];
         if (at_root) {
             emit_prob *= w0*t0 + w1*t1;
             old_prob *= sl ? w1 : w0;

@@ -524,21 +524,22 @@ void ARG::joining_state_table(const Branch &joining_branch, const Branch &added_
     double u0 = ll*unit_theta;
     double u1 = isinf(lu) ? 1.0 : lu*unit_theta;
     double u2 = l0*unit_theta;
-    double w0 = isinf(lu) ? ancestral_prob : 1.0;
-    double w1 = isinf(lu) ? 1 - ancestral_prob : 1.0;
+    bool at_root = isinf(lu);
+    double w0 = at_root ? ancestral_prob : 1.0;
+    double w1 = at_root ? 1 - ancestral_prob : 1.0;
     double pen[4] = {1.0, penalty, penalty*penalty, penalty*penalty*penalty};
     for (int c = 0; c < 8; c++) {
         int sl = c & 1, su = (c >> 1) & 1, s0 = (c >> 2) & 1;
-        int base = abs(sl - su);
-        int k0 = sl + su + s0;
+        int base = at_root ? 0 : abs(sl - su);
+        int k0 = sl + s0 + (at_root ? 0 : su);
         double t0 = w0*(sl ? u0 : 1.0)*(su ? u1 : 1.0)*(s0 ? u2 : 1.0)*pen[k0 - base];
-        double t1 = w1*(sl ? 1.0 : u0)*(su ? 1.0 : u1)*(s0 ? 1.0 : u2)*pen[3 - k0 - base];
+        double t1 = w1*(sl ? 1.0 : u0)*(su ? 1.0 : u1)*(s0 ? 1.0 : u2)*pen[(at_root ? 2 : 3) - k0 - base];
         p[c] = t1/(t0 + t1);
     }
     if (!any_missing) {
         return;
     }
-    double p0 = u0*penalty, p1 = u1*penalty, p2 = u2*penalty;
+    double p0 = u0*penalty, p1 = at_root ? 1.0 : u1*penalty, p2 = u2*penalty;
     for (int mask = 1; mask < 4; mask++) {
         bool ml = mask & 1, m0 = mask & 2;
         for (int c = 0; c < 8; c++) {
@@ -703,7 +704,7 @@ double ARG::site_weight(const Flat_tree &tree, int bin, double pos, Node *summed
         if (u == root_node) {
             for (int s = 0; s < 2; s++) {
                 double sm = (l == summed) ? s : l->get_state(pos);
-                w[s] *= (sm == 0) ? ancestral_prob : (1 - ancestral_prob)*penalty;
+                w[s] *= (sm == 0) ? ancestral_prob : 1 - ancestral_prob;
             }
             continue;
         }
