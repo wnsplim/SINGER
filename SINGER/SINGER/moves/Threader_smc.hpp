@@ -27,6 +27,8 @@ public:
     void reset();
 
     void thread(ARG &a, Node_ptr n);
+
+    void rethread_sample(ARG &a, Node *n);
     
     void internal_rethread(ARG &a, tuple<double, Branch, double> cut_point);
 

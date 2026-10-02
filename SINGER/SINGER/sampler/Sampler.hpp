@@ -102,6 +102,8 @@ public:
 
     void iterative_start();
 
+    void sweep_samples();
+
     void internal_sample(int num_iters, int spacing);
 
     void resume_internal_sample(int num_iters, int spacing);

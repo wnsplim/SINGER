@@ -86,6 +86,21 @@ void Threader_smc::thread(ARG &a, Node_ptr n) {
     cout << a.recombinations.size() << endl;
 }
 
+void Threader_smc::rethread_sample(ARG &a, Node *n) {
+    cut_time = n->time + 1e-10;
+    a.cut_pos = 0;
+    a.cut_tree = a.get_tree_at(0);
+    a.remove({0.0, Branch(n, a.cut_tree.parents[n]), cut_time});
+    get_boundary(a);
+    run_BSP(a);
+    sample_joining_branches(a);
+    run_TSP(a);
+    sample_joining_points(a);
+    a.add(new_joining_branches, added_branches);
+    a.approx_sample_recombinations();
+    a.clear_remove_info();
+}
+
 void Threader_smc::internal_rethread(ARG &a, tuple<double, Branch, double> cut_point) {
     cut_time = get<2>(cut_point);
     a.remove(cut_point);

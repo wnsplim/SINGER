@@ -639,6 +639,10 @@ void Sampler::iterative_start() {
         it++;
         random_seed = random_engine();
         write_iterative_start();
+        int placed = (int) arg.sample_nodes.size();
+        if ((placed & (placed - 1)) == 0 or it == ordered_sample_nodes.end()) {
+            sweep_samples();
+        }
     }
     cout << "orignal ARG length: " << arg.get_arg_length() << endl;
     rescale();
@@ -650,6 +654,23 @@ void Sampler::iterative_start() {
     arg.write(node_file, branch_file, recomb_file, mut_file);
     string coord_file = output_prefix + "_coordinates.txt";
     arg.write_coordinates(coord_file);
+}
+
+void Sampler::sweep_samples() {
+    Threader_smc threader = Threader_smc(bsp_c, tsp_q);
+    vector<Node *> nodes(arg.sample_nodes.begin(), arg.sample_nodes.end());
+    for (Node *n : nodes) {
+        random_engine.seed(random_seed);
+        threader.reset();
+        threader.pe->penalty = penalty;
+        threader.be->penalty = penalty;
+        threader.pe->ancestral_prob = polar;
+        threader.be->ancestral_prob = polar;
+        threader.rethread_sample(arg, n);
+        random_seed = random_engine();
+    }
+    arg.release_dead_nodes();
+    write_iterative_start();
 }
 
 void Sampler::internal_sample(int num_iters, int spacing) {
