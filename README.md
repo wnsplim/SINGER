@@ -16,7 +16,7 @@ The easiser way is to directory go to the folder `releases/` and download one of
 tar -xvzf file_name
 ```
 
-To build from source, install zlib and htslib so that `pkg-config` finds htslib (add the directory that holds `htslib.pc` to `PKG_CONFIG_PATH` if needed), then run `bash beta_linux_compile.sh <version>` or `bash beta_mac_M1_compile.sh <version>` in `SINGER/SINGER`. The Linux build also links tcmalloc from [gperftools](https://github.com/gperftools/gperftools) (`./configure --enable-minimal`), found the same way through `libtcmalloc_minimal.pc`. The Python scripts read a `.bcf` input through `bcftools`, which must then be on `PATH`.
+The Python scripts read a `.bcf` input through `bcftools`, which must then be on `PATH`.
 
 ## Input and output
 
