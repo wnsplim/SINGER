@@ -242,7 +242,7 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
         cerr << "Warning: unphased heterozygous genotypes treated as missing: " << unphased_masked << ". " << endl;
     }
     if (multiallelic_skipped > 0) {
-        cerr << "Warning: multiallelic records skipped: " << multiallelic_skipped << ". " << endl;
+        cerr << "Warning: multiallelic sites skipped: " << multiallelic_skipped << ". " << endl;
     }
 }
 
@@ -697,6 +697,8 @@ void Sampler::internal_sample(int num_iters, int spacing) {
 void Sampler::resume_internal_sample(int num_iters, int spacing) {
     string log_file = output_prefix + ".log";
     read_resume_point(log_file);
+    vector<string> words = read_last_line(log_file);
+    random_seed = stoi(words[words.size() - 2]);
     sample_index += 1;
     arg.check_incompatibility();
     cout << "Number of trees: " << arg.recombinations.size() << endl;

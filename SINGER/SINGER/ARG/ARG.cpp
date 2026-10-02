@@ -192,6 +192,9 @@ Tree ARG::get_tree_at(double x) {
 }
 
 void ARG::anchors_changed(double lo, double hi) {
+    if (lo <= 0 and hi >= INT_MAX) {
+        anchor_step = max(8, (int) sqrt((double) recombinations.size()));
+    }
     anchors.erase(anchors.lower_bound(lo), anchors.upper_bound(hi));
     anchor_dirty.push_back({lo, hi});
 }
