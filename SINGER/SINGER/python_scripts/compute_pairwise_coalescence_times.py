@@ -6,7 +6,7 @@ import argparse
 def compute_pairwise_coalescence_time(ts, leaf_index, query_index, s):
     windows = np.arange(0, ts.sequence_length, s)
     windows = np.append(windows, ts.sequence_length)
-    times =  ts.diversity(sample_sets = [leaf_index, query_index], windows=windows, mode='branch')/2
+    times = ts.diversity(sample_sets=[leaf_index, query_index], windows=windows, mode='branch')/2 + (ts.node(leaf_index).time + ts.node(query_index).time)/2
     return times
 
 def compute_all_pairwise_coalescence_times(ts, leaf_index, s):

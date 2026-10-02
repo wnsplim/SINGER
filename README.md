@@ -130,7 +130,7 @@ With **one column**, give ages positionally in VCF sample order. The same three 
 SINGER is an MCMC-based sampling algorithm. To examine the convergence of it we normally examine the traces of summary statistics, and we have found that 2 summary statistics are quite good at indicating the convergence of the SINGER MCMC: fit to the diversity landscape and number of non-uniquely-mapped sites, as used in the manuscript. We have provided a python script to calculate the traces for these 2 quantities:
 
 ```
-python compute_traces.py
+python compute_trace.py
 -prefix prefix_of_tree_sequence_file -m mutation_rate
 -start_index index_start_sample -end_index index_terminal_sample
 -output_filename output_trace_filename
@@ -144,7 +144,7 @@ In the manuscript we used the coalescence ratio to find introgression signals, w
 ```
 python compute_pairwise_coalescence_times.py
 --trees_file tree_sequence_filename --leaf_index index_of_leaf_node
---interval_size size_of_genome_window --output_filename output_file_name
+--interval_size size_of_genome_window --output_file output_file_name
 ```
 Each row in the output file stands for all the pairwise coalescence times between the input leaf node index and all others. The rows are in the order of the genome windows. 
 

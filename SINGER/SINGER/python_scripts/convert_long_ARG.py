@@ -70,7 +70,8 @@ def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates):
 def generate_file_lists(vcf_prefix, output_prefix, MCMC_iteration):
     # Read block_coordinates from the index file
     with open(f"{vcf_prefix}.index", 'r') as f:
-        block_coordinates = [int(line.split()[0]) for line in f.readlines()]
+        rows = [line.split() for line in f if line.strip()]
+    block_coordinates = [int(float(w[-2])) for w in rows if w[0] == rows[0][0]]
 
     # Generate node_files and branch_files
     node_files = []

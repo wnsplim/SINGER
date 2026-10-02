@@ -17,8 +17,7 @@ def is_number(value):
 def parallelize_multi_window_singer(windows, vcfs, outputs, rates, num_iters, thinning_interval, Ne, polar, num_cores):
     """Run singer in parallel for the genomic windows"""
 
-    script_dir = os.path.dirname(os.path.realpath(__file__))
-    singer_master_executable = os.path.join(script_dir, "singer_master")
+    singer_master_executable = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "singer_master")
 
     segment_table = pd.read_csv(windows, sep=r"\s+", header=None)
     vcf_table = pd.read_csv(vcfs, sep=r"\s+", header=None)
@@ -38,7 +37,7 @@ def parallelize_multi_window_singer(windows, vcfs, outputs, rates, num_iters, th
 
     # Execute the commands in parallel
     print(f"parallel -u -j {num_cores} :::" + cmd)
-    subprocess.run(f"parallel -u -j {num_cores} :::" + cmd, shell=True)
+    subprocess.run(f"parallel -u -j {num_cores} :::" + cmd, shell=True, check=True)
 
 
 

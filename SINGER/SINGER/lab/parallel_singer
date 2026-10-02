@@ -6,12 +6,13 @@ import subprocess
 import os
 import shlex
 
+SINGER_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+
 def index_vcf(vcf_prefix, block_length):
     """Index the VCF file using the index_vcf.py script."""
-    script_dir = os.path.dirname(os.path.realpath(__file__))
-    indexer = os.path.join(script_dir, "index_vcf.py")    
+    indexer = os.path.join(SINGER_DIR, "python_scripts", "index_vcf.py")
     print(f"Indexing VCF file: {vcf_prefix} with block length: {block_length}")
-    subprocess.run(["python", indexer, vcf_prefix, str(block_length)])
+    subprocess.run([sys.executable, indexer, vcf_prefix, str(block_length)], check=True)
 
 def is_number(value):
     try:
@@ -25,10 +26,10 @@ def run_singer_in_parallel(vcf_prefix, output_prefix, rates, block_length, num_i
     
     # Read the breakpoints from the index file
     with open(f"{vcf_prefix}.index", 'r') as f:
-        breakpoints = [int(line.split()[0]) for line in f.readlines()]
-    
-    script_dir = os.path.dirname(os.path.realpath(__file__))
-    singer_master_executable = os.path.join(script_dir, "singer_master")
+        rows = [line.split() for line in f if line.strip()]
+    breakpoints = [int(float(w[-2])) for w in rows if w[0] == rows[0][0]]
+
+    singer_master_executable = os.path.join(SINGER_DIR, "singer_master")
     
     # Prepare the singer commands
     cmd_list = []
@@ -42,14 +43,13 @@ def run_singer_in_parallel(vcf_prefix, output_prefix, rates, block_length, num_i
 
     # Execute the commands in parallel
     print(["parallel", "-u", "-j", f"{num_cores}", ":::"] + cmd_list)
-    subprocess.run(["parallel", "-u", "-j", f"{num_cores}", ":::"] + cmd_list)
+    subprocess.run(["parallel", "-u", "-j", f"{num_cores}", ":::"] + cmd_list, check=True)
     #subprocess.run(["rm", f"{vcf_prefix}.index"])
 
 def convert_long_ARG(vcf_prefix, output_prefix, num_iters, freq):
-    script_dir = os.path.dirname(os.path.realpath(__file__))
-    converter = os.path.join(script_dir, "convert_long_ARG.py")
+    converter = os.path.join(SINGER_DIR, "python_scripts", "convert_long_ARG.py")
     for i in range(0, num_iters, freq):
-        subprocess.run(["python", converter, "-vcf", vcf_prefix, "-output", output_prefix, "-iteration", str(i)])
+        subprocess.run([sys.executable, converter, "-vcf", vcf_prefix, "-output", output_prefix, "-iteration", str(i)], check=True)
 
 def main():
     parser = argparse.ArgumentParser(description="Parallelize singer runs by cutting the chromosome")
@@ -62,7 +62,7 @@ def main():
     parser.add_argument("-n", type=int, required=True, help="Number of MCMC samples.")
     parser.add_argument("-thin", type=int, required=True, help="Thinning interval length.")
     parser.add_argument("-polar", type=float, default=0.5, required=False, help="Site flip probability. Default: 0.5.")
-    parser.add_argument("-freq", type=float, default=1, required=False, help="Convert to tskit every {freq} samples. Default: 1.")
+    parser.add_argument("-freq", type=int, default=1, required=False, help="Convert to tskit every {freq} samples. Default: 1.")
     parser.add_argument("-num_cores", type=int, default=20, required=False, help="Number of cores. Default: 20.")    
         
     if len(sys.argv) == 1:
