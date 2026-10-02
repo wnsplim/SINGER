@@ -71,6 +71,7 @@ private:
     vector<double> B = {};
     double tail_G = 0;
     double tail_Q = 0;
+    double g_cut = 0;
     int rebuild_from = 0;
 
     void set_events(vector<pair<double, int>> &events);

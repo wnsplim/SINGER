@@ -566,14 +566,28 @@ void TSP::compute_diagonals(double rho) {
     for (int j = 0; j < dim; j++) {
         A[j] = max(curr_intervals[j]->lb, cut_time);
         Bv[j] = curr_intervals[j]->ub;
-        BA[j] = cc1->recomb_mass(A[j] + 1, A[j]);
-        BB[j] = cc1->recomb_mass(Bv[j] + 1, Bv[j]);
-        GA[j] = cc->prob(cut_time, A[j]);
-        GB[j] = cc->prob(cut_time, Bv[j]);
-        HA[j] = cc1->prob(cut_time, A[j]);
-        HB[j] = cc1->prob(cut_time, Bv[j]);
-        SA[j] = cc->surv(A[j]);
-        SB[j] = cc->surv(Bv[j]);
+        if (j > 0 and A[j] == Bv[j-1]) {
+            BA[j] = BB[j-1];
+            GA[j] = GB[j-1];
+            HA[j] = HB[j-1];
+            SA[j] = SB[j-1];
+        } else {
+            BA[j] = cc1->recomb_mass(A[j] + 1, A[j]);
+            GA[j] = cc->prob(cut_time, A[j]);
+            HA[j] = cc1->prob(cut_time, A[j]);
+            SA[j] = cc->surv(A[j]);
+        }
+        if (Bv[j] == A[j]) {
+            BB[j] = BA[j];
+            GB[j] = GA[j];
+            HB[j] = HA[j];
+            SB[j] = SA[j];
+        } else {
+            BB[j] = cc1->recomb_mass(Bv[j] + 1, Bv[j]);
+            GB[j] = cc->prob(cut_time, Bv[j]);
+            HB[j] = cc1->prob(cut_time, Bv[j]);
+            SB[j] = cc->surv(Bv[j]);
+        }
     }
     double top = Bv[dim-1];
     double a0 = A[0];

@@ -116,6 +116,8 @@ void coalescent_calculator::refresh() {
     tail_Q = ((t[m-1] - cut_time)/kz + 1/(kz*kz))*ez;
     first_moment = G[m-1] + tail_G;
     rebuild_from = m;
+    double q_cut;
+    at(cut_time, g_cut, q_cut);
 }
 
 void coalescent_calculator::at(double x, double &g, double &q) {
@@ -141,7 +143,11 @@ void coalescent_calculator::at(double x, double &g, double &q) {
 double coalescent_calculator::prob(double x, double y) {
     refresh();
     double gx, qx, gy, qy;
-    at(x, gx, qx);
+    if (x == cut_time) {
+        gx = g_cut;
+    } else {
+        at(x, gx, qx);
+    }
     at(y, gy, qy);
     return max(gy - gx, 0.0);
 }
@@ -164,9 +170,15 @@ double coalescent_calculator::rel_prob(double x, double y) {
 }
 
 double coalescent_calculator::prob_inv(double x, double y, double u) {
-    double target = u*rel_prob(x, y);
+    refresh();
     int m = (int) t.size();
     int j = (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
+    double k0 = kk[j] + extra;
+    if (k0 > 0 and (j + 1 >= m or y <= t[j+1])) {
+        double target = u*((-expm1(-k0*(y - x)))/k0);
+        return min(y, x - log1p(-min(1.0, target*k0))/k0);
+    }
+    double target = u*rel_prob(x, y);
     double dl = 0, a = x;
     for (; j < m; j++) {
         double k = kk[j] + extra;

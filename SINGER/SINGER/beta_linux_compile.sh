@@ -28,7 +28,7 @@ INCLUDES="-I."
 for d in $SRC_DIRS; do INCLUDES="$INCLUDES -I$d"; done
 INCLUDES="$INCLUDES $(pkg-config --cflags htslib)"
 HTS_LIBS=$(pkg-config --static --libs-only-l htslib | tr ' ' '\n' | grep -v -x -e -lm -e -lpthread -e -pthread | tr '\n' ' ')
-LIBS="$(pkg-config --libs-only-L htslib) -Wl,-Bstatic $HTS_LIBS -lz -Wl,-Bdynamic -lpthread -lm"
+LIBS="$(pkg-config --libs-only-L htslib libtcmalloc_minimal) -Wl,-Bstatic $HTS_LIBS -lz -ltcmalloc_minimal -Wl,-Bdynamic -lpthread -lm"
 SOURCES=$(find . -path ./lab -prune -o -name '*.cpp' -print)
 
 for d in $SRC_DIRS; do mkdir -p "$BUILD_DIR/release/$d" "$BUILD_DIR/debug/$d"; done

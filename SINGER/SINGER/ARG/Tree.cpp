@@ -63,18 +63,11 @@ double Flat_tree::length() const {
 void Tree::delete_branch(const Branch &b) {
     assert(b.upper_node != nullptr and b.lower_node != nullptr);
     parents.erase(b.lower_node);
-    unordered_set<Node *> &children_nodes = children[b.upper_node];
-    if (children_nodes.size() == 1) {
-        children.erase(b.upper_node);
-    } else {
-        children_nodes.erase(b.lower_node);  
-    }
 }
 
 void Tree::insert_branch(const Branch &b) {
     assert(b.upper_node != nullptr and b.lower_node != nullptr);
     parents[b.lower_node] = b.upper_node;
-    children[b.upper_node].insert(b.lower_node);
 }
 
 void Tree::forward_update(Recombination &r) {
@@ -128,15 +121,12 @@ void Tree::add(Branch added_branch, Branch joining_branch, Node *n) {
 
 Node *Tree::find_sibling(Node *n) {
     Node *p = parents[n];
-    unordered_set<Node *> &candidates = children[p];
-    Node *c;
-    auto c_it = candidates.begin();
-    if (*c_it != n) {
-        c = *c_it;
-    } else {
-        c = *(next(c_it));
+    for (auto &x : parents) {
+        if (x.second == p and x.first != n) {
+            return x.first;
+        }
     }
-    return c;
+    return nullptr;
 }
 
 Branch Tree::find_joining_branch(Branch removed_branch) {

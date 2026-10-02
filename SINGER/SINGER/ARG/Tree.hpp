@@ -21,7 +21,6 @@ class Tree {
 public:
     
     map<Node *, Node *, compare_node> parents = {};
-    unordered_map<Node *, unordered_set<Node *>> children = {};
     
     Tree();
     

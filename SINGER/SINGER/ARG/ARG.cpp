@@ -200,7 +200,16 @@ void ARG::anchors_changed(double lo, double hi) {
 }
 
 void ARG::rebuild_anchors() {
+    sort(anchor_dirty.begin(), anchor_dirty.end());
+    vector<pair<double, double>> merged = {};
     for (auto &d : anchor_dirty) {
+        if (!merged.empty() and d.first <= merged.back().second) {
+            merged.back().second = max(merged.back().second, d.second);
+        } else {
+            merged.push_back(d);
+        }
+    }
+    for (auto &d : merged) {
         Tree tree;
         auto it = recombinations.begin();
         auto a = anchors.lower_bound(d.first);
