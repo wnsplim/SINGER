@@ -23,6 +23,7 @@ mkdir -p "$VERSION_DIR" "$BUILD_DIR/release" "$BUILD_DIR/debug"
 
 cd "$SRC_DIR"
 
+export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:+$PKG_CONFIG_PATH:}/space/s1/david9456/0.Refs/tools_install/lib/pkgconfig"
 SRC_DIRS="ARG HMM moves sampler utils"
 INCLUDES="-I."
 for d in $SRC_DIRS; do INCLUDES="$INCLUDES -I$d"; done

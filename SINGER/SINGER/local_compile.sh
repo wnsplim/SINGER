@@ -1,6 +1,7 @@
 #!/bin/bash
 
 cd "$(dirname "$0")"
+export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:+$PKG_CONFIG_PATH:}/space/s1/david9456/0.Refs/tools_install/lib/pkgconfig"
 INCLUDES="-I. -IARG -IHMM -Imoves -Isampler -Iutils $(pkg-config --cflags htslib)"
 TCMALLOC=""
 if pkg-config --exists libtcmalloc_minimal; then TCMALLOC="$(pkg-config --static --libs libtcmalloc_minimal)"; fi
