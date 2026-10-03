@@ -146,6 +146,8 @@ public:
 
     double site_weight(const Flat_tree &tree, int bin, double pos, Node *summed);
 
+    double unassayed_correction(const Flat_tree &tree, int bin, double crho);
+
     Branch lineage_branch_before(map<double, Branch> &lineage, double x);
 
     set<double> get_check_points();

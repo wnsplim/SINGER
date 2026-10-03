@@ -37,6 +37,7 @@ int main(int argc, const char * argv[]) {
     string r_value = "", m_value = "";
     double penalty = 0.01;
     double polar = 0.5;
+    double missing_thres = 0.5;
     int scaling_rep = -1;
     int scaling_bin = 100;
     double epsilon_hmm = -1;
@@ -162,6 +163,22 @@ int main(int argc, const char * argv[]) {
             }
             if (polar <= 0 or polar >= 1) {
                 cerr << "Error: -polar flag expects a number between 0 and 1. " << endl;
+                exit(1);
+            }
+        }
+        else if (arg == "-missing_thres") {
+            if (i + 1 >= argc || argv[i+1][0] == '-') {
+                cerr << "Error: -missing_thres flag cannot be empty. " << endl;
+                exit(1);
+            }
+            try {
+                missing_thres = stod(argv[++i]);
+            } catch (const invalid_argument&) {
+                cerr << "Error: -missing_thres flag expects a number. " << endl;
+                exit(1);
+            }
+            if (missing_thres < 0 or missing_thres > 1) {
+                cerr << "Error: -missing_thres flag expects a number between 0 and 1. " << endl;
                 exit(1);
             }
         }
@@ -372,6 +389,7 @@ int main(int argc, const char * argv[]) {
     }
     sampler.penalty = penalty;
     sampler.polar = polar;
+    sampler.missing_thres = missing_thres;
     sampler.scaling_rep = scaling_rep;
     Threader_smc::no_data = no_data;
     sampler.scaling_bin = scaling_bin;

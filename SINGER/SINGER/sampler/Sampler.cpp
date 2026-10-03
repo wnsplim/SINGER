@@ -42,6 +42,19 @@ static int iupac_mask(const string &allele) {
     return mask == string::npos ? 0 : (int) mask;
 }
 
+static void merge_intervals(vector<pair<double, double>> &v) {
+    sort(v.begin(), v.end());
+    vector<pair<double, double>> merged;
+    for (auto &x : v) {
+        if (!merged.empty() and x.first <= merged.back().second) {
+            merged.back().second = max(merged.back().second, x.second);
+        } else {
+            merged.push_back(x);
+        }
+    }
+    v = merged;
+}
+
 static bool is_unambiguous(const string &allele) {
     int mask = iupac_mask(allele);
     return mask == 1 or mask == 2 or mask == 4 or mask == 8;
@@ -181,8 +194,18 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
     int calls[2];
     unphased_masked = 0;
     multiallelic_skipped = 0;
+    vector<string> names;
     while (file.next(line)) {
         if (line[0] == '#') {
+            if (line.rfind("#CHROM", 0) == 0) {
+                istringstream hs(line);
+                string w;
+                for (int k = 0; hs >> w; k++) {
+                    if (k >= 9) {
+                        names.push_back(w);
+                    }
+                }
+            }
             continue;
         }
         istringstream iss(line);
@@ -238,6 +261,26 @@ void Sampler::scan_missing(string prefix, double start_pos, double end_pos, vect
         }
     }
     sort(unassayed_site_list.begin(), unassayed_site_list.end());
+    for (auto &m : sample_masks) {
+        auto it = find(names.begin(), names.end(), m.first);
+        if (it == names.end()) {
+            Vcf_reader::fail("the mask file names sample " + m.first + ", which is not in " + prefix);
+        }
+        any_missing = true;
+        int i = (int) (it - names.begin());
+        for (int k = 0; k < ploidy; k++) {
+            Node *l = leaves[ploidy*i + k];
+            l->masked_intervals = m.second;
+            vector<double> kept;
+            for (double x : l->missing_sites) {
+                auto g = upper_bound(l->masked_intervals.begin(), l->masked_intervals.end(), make_pair(x, numeric_limits<double>::infinity()));
+                if (g == l->masked_intervals.begin() or prev(g)->second <= x) {
+                    kept.push_back(x);
+                }
+            }
+            l->missing_sites = kept;
+        }
+    }
     if (unphased_masked > 0) {
         cerr << "Warning: unphased heterozygous genotypes treated as missing: " << unphased_masked << ". " << endl;
     }
@@ -270,7 +313,7 @@ void Sampler::read_mask(string filename) {
         cerr << "mask file not found: " << filename << endl;
         exit(1);
     }
-    string line, chrom;
+    string line, chrom, name;
     string vcf_chrom = selected_chrom();
     double lo, hi;
     while (getline(fin, line)) {
@@ -278,18 +321,94 @@ void Sampler::read_mask(string filename) {
         if (!(iss >> chrom >> lo >> hi) or chrom != vcf_chrom) {
             continue;
         }
-        masked.push_back({lo + 1 - start, hi + 1 - start});
-    }
-    sort(masked.begin(), masked.end());
-    vector<pair<double, double>> merged;
-    for (auto &x : masked) {
-        if (!merged.empty() and x.first <= merged.back().second) {
-            merged.back().second = max(merged.back().second, x.second);
+        if (iss >> name) {
+            sample_masks[name].push_back({lo + 1 - start, hi + 1 - start});
         } else {
-            merged.push_back(x);
+            masked.push_back({lo + 1 - start, hi + 1 - start});
         }
     }
-    masked = merged;
+    merge_intervals(masked);
+    for (auto &m : sample_masks) {
+        merge_intervals(m.second);
+    }
+}
+
+void Sampler::drop_missing_sites(string prefix, double start_pos, double end_pos, int ploidy) {
+    Vcf_reader file(prefix, selected_chrom());
+    string line;
+    vector<const vector<pair<double, double>> *> mask_of;
+    vector<pair<double, double>> dropped;
+    long long prev_pos = -1;
+    int calls[2], records = 0;
+    while (file.next(line)) {
+        if (line[0] == '#') {
+            if (line.rfind("#CHROM", 0) == 0) {
+                istringstream hs(line);
+                string w;
+                for (int k = 0; hs >> w; k++) {
+                    if (k >= 9) {
+                        auto m = sample_masks.find(w);
+                        mask_of.push_back(m == sample_masks.end() ? nullptr : &m->second);
+                    }
+                }
+            }
+            continue;
+        }
+        istringstream iss(line);
+        string chrom, id, ref, alt, qual, filter, info, format, genotype;
+        long long pos;
+        iss >> chrom >> pos >> id >> ref >> alt >> qual >> filter >> info >> format;
+        if (pos < start_pos) {continue;}
+        if (pos >= end_pos) {break;}
+        double x = pos - start_pos;
+        if (pos == prev_pos or in_mask(x) or ref.size() > 1 or alt.size() > 1) {
+            prev_pos = pos;
+            continue;
+        }
+        prev_pos = pos;
+        bool known[2] = {is_unambiguous(ref), is_unambiguous(alt)};
+        int individual = 0, missing = 0;
+        while (iss >> genotype) {
+            int n = parse_genotype(genotype, ploidy, calls);
+            const vector<pair<double, double>> *v = mask_of[individual];
+            bool in_sample_mask = false;
+            if (v != nullptr) {
+                auto it = upper_bound(v->begin(), v->end(), make_pair(x, numeric_limits<double>::infinity()));
+                in_sample_mask = it != v->begin() and prev(it)->second > x;
+            }
+            for (int k = 0; k < ploidy; k++) {
+                int c = k < n ? calls[k] : -1;
+                missing += in_sample_mask or c < 0 or !known[c];
+            }
+            individual += 1;
+        }
+        if (missing > missing_thres*ploidy*individual) {
+            dropped.push_back({x, x + 1});
+            records += 1;
+        }
+    }
+    double haplotypes = ploidy*(double) mask_of.size(), bases = 0;
+    vector<pair<double, int>> events;
+    for (auto v : mask_of) {
+        if (v != nullptr) {
+            for (auto &m : *v) {
+                events.push_back({m.first, ploidy});
+                events.push_back({m.second, -ploidy});
+            }
+        }
+    }
+    sort(events.begin(), events.end());
+    int count = 0;
+    for (int i = 0; i < (int) events.size(); i++) {
+        count += events[i].second;
+        if (count > missing_thres*haplotypes and i + 1 < (int) events.size() and events[i + 1].first > events[i].first) {
+            dropped.push_back({events[i].first, events[i + 1].first});
+            bases += events[i + 1].first - events[i].first;
+        }
+    }
+    masked.insert(masked.end(), dropped.begin(), dropped.end());
+    merge_intervals(masked);
+    cout << "dropped for missing data above " << missing_thres << ": " << records << " records, " << bases << " masked bases" << endl;
 }
 
 bool Sampler::in_mask(double x) {
@@ -298,6 +417,7 @@ bool Sampler::in_mask(double x) {
 }
 
 void Sampler::naive_read_vcf_haploid(string prefix, double start_pos, double end_pos) {
+    drop_missing_sites(prefix, start_pos, end_pos, 1);
     Vcf_reader file(prefix, selected_chrom());
     string line;
     int num_individuals = 0;
@@ -578,6 +698,7 @@ void Sampler::guide_read_vcf(string prefix, double start, double end) {
 }
 
 void Sampler::load_vcf(string prefix, double start, double end) {
+    drop_missing_sites(prefix, start, end, 2);
     string index_file = prefix + ".index";
     ifstream idx_stream(index_file);
     if (idx_stream.is_open() and !Vcf_reader::is_bcf(prefix)) {
@@ -831,6 +952,7 @@ void Sampler::load_resume_arg() {
     for (Node *n : arg.sample_nodes) {
         leaves[n->index] = n;
     }
+    drop_missing_sites(input_prefix, start, end, ploidy);
     scan_missing(input_prefix, start, end, leaves, ploidy);
     arg.any_missing = any_missing;
     arg.unassayed_sites = unassayed_site_list;

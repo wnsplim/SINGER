@@ -44,6 +44,7 @@ public:
     int random_seed = 0;
     double penalty = 0.01;
     double polar = 0.99;
+    double missing_thres = 0.5;
     int scaling_rep = 5;
     int scaling_bin = 100;
     int sample_index = 0;
@@ -75,8 +76,11 @@ public:
     vector<double> unassayed_site_list = {};
 
     vector<pair<double, double>> masked = {};
+    map<string, vector<pair<double, double>>> sample_masks = {};
 
     void read_mask(string filename);
+
+    void drop_missing_sites(string prefix, double start_pos, double end_pos, int ploidy);
 
     void order_samples();
 

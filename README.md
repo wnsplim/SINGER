@@ -60,7 +60,8 @@ The optional flags include:
 |**-scaling_bin**|optional|the number of time bins used for ARG rescaling, default at 100|
 |**-tip_ages**|optional|file with the sampling ages in calendar years before present, see [Heterochronous samples](#heterochronous-samples-ancient-dna)|
 |**-g**|optional|generation time in years, required with `-tip_ages`|
-|**-mask**|optional|BED file of the regions that have no data, for example masked or unassayed regions. SINGER treats these regions as missing data and does not use the VCF records in them.|
+|**-mask**|optional|BED file of the regions that have no data, for example masked or unassayed regions. SINGER treats these regions as missing data and does not use the VCF records in them. A fourth column with a VCF sample name restricts the region to that sample.|
+|**-missing_thres**|optional|a record or base where more than this fraction of the haplotypes has no data (a missing or ambiguous allele, or a masked region of that sample) is dropped for every sample, default at 0.5.|
 |**-chrom**|optional|the chromosome to read from the input file (default: the first chromosome in the file)|
 
 The output files will be:

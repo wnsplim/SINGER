@@ -258,6 +258,8 @@ void ARG::window_copy_into(ARG &c, double lo_pos) {
     c.any_missing = any_missing;
     c.unassayed_sites = unassayed_sites;
     c.assayed = assayed;
+    c.sample_nodes = sample_nodes;
+    c.masked = masked;
     c.sequence_length = sequence_length;
     c.bin_size = bin_size;
     if (c.coordinates.size() != coordinates.size()) {
@@ -718,7 +720,7 @@ double ARG::site_weight(const Flat_tree &tree, int bin, double pos, Node *summed
             continue;
         }
         double length = penalty*theta*tree.lengths[k];
-        if (any_missing and l->missing_sites.size() > 0 and l->is_missing(pos)) {
+        if (any_missing and l->has_missing() and l->is_missing(pos)) {
             w[0] *= 1 + length;
             w[1] *= 1 + length;
             continue;
@@ -784,6 +786,9 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
             since_full = 0;
         }
         ll -= assayed[i]*log1p((p - 1)/penalty);
+        if (any_missing) {
+            ll += unassayed_correction(tree, i, crho);
+        }
         double q = coordinates[i] + 0.5*w;
         while (lin_it != lineage.end() and lin_it->first < q) {
             ++lin_it;
@@ -795,6 +800,93 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
         }
     }
     return ll;
+}
+
+double ARG::unassayed_correction(const Flat_tree &tree, int bin, double crho) {
+    double x0 = coordinates[bin], x1 = coordinates[bin + 1];
+    vector<tuple<double, int, Node *>> events;
+    for (Node *s : sample_nodes) {
+        vector<pair<double, double>> segs;
+        for (auto it = lower_bound(s->missing_sites.begin(), s->missing_sites.end(), x0); it != s->missing_sites.end() and *it < x1; ++it) {
+            segs.push_back({*it, *it + 1});
+        }
+        vector<pair<double, double>> &v = s->masked_intervals;
+        auto it = upper_bound(v.begin(), v.end(), make_pair(x0, numeric_limits<double>::infinity()));
+        if (it != v.begin()) {
+            --it;
+        }
+        for (; it != v.end() and it->first < x1; ++it) {
+            if (it->second > x0) {
+                segs.push_back({max(it->first, x0), min(it->second, x1)});
+            }
+        }
+        sort(segs.begin(), segs.end());
+        double lo = 0, hi = -1;
+        for (auto &g : segs) {
+            if (g.first > hi) {
+                if (hi > lo) {
+                    events.push_back({lo, -1, s});
+                    events.push_back({hi, 1, s});
+                }
+                lo = g.first;
+                hi = g.second;
+            } else {
+                hi = max(hi, g.second);
+            }
+        }
+        if (hi > lo) {
+            events.push_back({lo, -1, s});
+            events.push_back({hi, 1, s});
+        }
+    }
+    if (events.empty()) {
+        return 0;
+    }
+    sort(events.begin(), events.end());
+    Node *root_node = root.get();
+    unordered_map<Node *, int> observed;
+    unordered_map<Node *, pair<Node *, double>> up;
+    for (int b = 0; b < (int) tree.parents.size(); b++) {
+        Node *c = tree.parents[b].first, *u = tree.parents[b].second;
+        int below = sample_nodes.count(c) > 0 ? 1 : observed[c];
+        observed[c] = below;
+        observed[u] += below;
+        up[c] = {u, u == root_node ? 0.0 : log1p(crho*tree.lengths[b])};
+    }
+    int gaps = 0;
+    double log_pu = 0, total = 0, prev = x0;
+    auto run = [&](double s, double t) {
+        if (gaps == 0) {
+            return;
+        }
+        double count = t - s - (double) distance(mutation_sites.lower_bound(s), mutation_sites.lower_bound(t));
+        count -= (double) (lower_bound(unassayed_sites.begin(), unassayed_sites.end(), t) - lower_bound(unassayed_sites.begin(), unassayed_sites.end(), s));
+        for (auto &m : masked) {
+            count -= max(0.0, min(m.second, t) - max(m.first, s));
+        }
+        if (count > 0) {
+            total += count*log1p(expm1(log_pu)/penalty);
+        }
+    };
+    for (auto &e : events) {
+        double x = get<0>(e);
+        if (x > prev) {
+            run(prev, x);
+            prev = x;
+        }
+        int d = get<1>(e);
+        gaps -= d;
+        for (Node *n = get<2>(e); up.count(n) > 0; n = up[n].first) {
+            observed[n] += d;
+            if (observed[n] == (d < 0 ? 0 : 1)) {
+                log_pu += d < 0 ? up[n].second : -up[n].second;
+            }
+        }
+    }
+    if (x1 > prev) {
+        run(prev, x1);
+    }
+    return total;
 }
 
 double ARG::corrected_smc_prior(map<double, Branch> &lineage, int lo, int hi, double p, const Tree &tree_p) {

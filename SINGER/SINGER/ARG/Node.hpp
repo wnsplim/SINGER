@@ -50,10 +50,13 @@ public:
     void move_iterator(double m);
 
     vector<double> missing_sites = {};
+    vector<pair<double, double>> masked_intervals = {};
 
     void add_missing(double pos);
 
     bool is_missing(double pos);
+
+    bool has_missing() const { return !missing_sites.empty() or !masked_intervals.empty(); }
 };
 
 shared_ptr<Node> new_node(double t);

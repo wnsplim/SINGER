@@ -40,7 +40,11 @@ void Node::add_missing(double pos) {
 }
 
 bool Node::is_missing(double pos) {
-    return binary_search(missing_sites.begin(), missing_sites.end(), pos);
+    if (binary_search(missing_sites.begin(), missing_sites.end(), pos)) {
+        return true;
+    }
+    auto it = upper_bound(masked_intervals.begin(), masked_intervals.end(), make_pair(pos, numeric_limits<double>::infinity()));
+    return it != masked_intervals.begin() and prev(it)->second > pos;
 }
 
 double Node::get_state(double pos) {

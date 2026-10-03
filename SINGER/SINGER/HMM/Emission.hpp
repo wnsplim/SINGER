@@ -57,13 +57,22 @@ inline double branch_product(Tree &tree, double c, double rho, Node *cut) {
 
 inline double called_width(Node *query_node, ARG &a, int i) {
     double w = a.assayed[i];
-    if (!a.any_missing or query_node == nullptr or query_node->missing_sites.size() == 0) {
+    if (!a.any_missing or query_node == nullptr or !query_node->has_missing()) {
         return w;
     }
     vector<double> &ms = query_node->missing_sites;
     auto lo = lower_bound(ms.begin(), ms.end(), a.coordinates[i]);
     auto hi = lower_bound(lo, ms.end(), a.coordinates[i + 1]);
-    return w - (double) (hi - lo);
+    w -= (double) (hi - lo);
+    vector<pair<double, double>> &v = query_node->masked_intervals;
+    auto it = upper_bound(v.begin(), v.end(), make_pair(a.coordinates[i], numeric_limits<double>::infinity()));
+    if (it != v.begin()) {
+        --it;
+    }
+    for (; it != v.end() and it->first < a.coordinates[i + 1]; ++it) {
+        w -= max(0.0, min(it->second, a.coordinates[i + 1]) - max(it->first, a.coordinates[i]));
+    }
+    return max(0.0, w);
 }
 
 inline bool varying_rate(ARG &a, int lo, int hi) {

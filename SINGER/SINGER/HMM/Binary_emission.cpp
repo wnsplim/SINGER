@@ -32,8 +32,8 @@ double Binary_emission::mut_emit(Branch &branch, double time, double theta, doub
     bool at_root = branch.upper_node->index == -1;
     double w0 = at_root ? ancestral_prob : 1.0;
     double w1 = at_root ? 1 - ancestral_prob : 1.0;
-    bool lower_any = any_missing and branch.lower_node->missing_sites.size() > 0;
-    bool query_any = any_missing and node->missing_sites.size() > 0;
+    bool lower_any = any_missing and branch.lower_node->has_missing();
+    bool query_any = any_missing and node->has_missing();
     for (double m : mut_set) {
         int sl = (int) branch.lower_node->get_state(m);
         int su = (int) branch.upper_node->get_state(m);
