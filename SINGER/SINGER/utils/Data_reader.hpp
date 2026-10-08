@@ -10,7 +10,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include "Vcf_reader.hpp"
 
 class Data_reader {
 
