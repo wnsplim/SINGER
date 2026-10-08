@@ -99,6 +99,8 @@ public:
 
     void add(map<double, Branch> &new_joining_branches, map<double, Branch> &added_branches);
 
+    bool end_records_vanish(map<double, Branch> &new_joining_branches, map<double, Branch> &added_branches);
+
     void smc_sample_recombinations(map<double, Branch> &lineage);
 
     void approx_sample_recombinations();

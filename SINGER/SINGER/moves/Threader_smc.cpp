@@ -130,12 +130,12 @@ void Threader_smc::exact_internal_rethread(ARG &a, tuple<double, Branch, double>
     get_boundary(a);
     set_check_points(a);
     double ar = 0;
-    if (!has_bridges(a)) {
+    if (!joins_deleted_node(a, a.removed_branches)) {
         run_BSP(a);
         sample_joining_branches(a);
         run_TSP(a);
         sample_joining_points(a);
-        ar = bridges_kept(a) and !has_gap_node(added_branches, a) ? exact_acceptance_ratio(a) : 0;
+        ar = keeps_deleted_node(a) and !has_gap_node(added_branches, a) and !joins_deleted_node(a, added_branches) and !a.end_records_vanish(new_joining_branches, added_branches) ? exact_acceptance_ratio(a) : 0;
     }
     double q = random();
     if (q < ar) {
@@ -159,13 +159,13 @@ static bool joined_at(map<double, Branch> &m, double x, double y, Node *n) {
     return true;
 }
 
-bool Threader_smc::has_bridges(ARG &a) {
+bool Threader_smc::joins_deleted_node(ARG &a, map<double, Branch> &lineage) {
     map<Node *, double> deleted_at;
     for (auto it = a.recombinations.upper_bound(a.start); it != a.recombinations.end() and it->first <= a.end; ++it) {
         Recombination &r = it->second;
         auto d = deleted_at.find(r.inserted_node);
         if (d != deleted_at.end()) {
-            if (joined_at(a.removed_branches, d->second, it->first, r.inserted_node)) {
+            if (joined_at(lineage, d->second, it->first, r.inserted_node)) {
                 return true;
             }
             deleted_at.erase(d);
@@ -175,7 +175,7 @@ bool Threader_smc::has_bridges(ARG &a) {
     return false;
 }
 
-bool Threader_smc::bridges_kept(ARG &a) {
+bool Threader_smc::keeps_deleted_node(ARG &a) {
     map<Node *, double> deleted_at;
     for (auto it = a.recombinations.upper_bound(a.start); it != a.recombinations.end() and it->first <= a.end; ++it) {
         Recombination &r = it->second;

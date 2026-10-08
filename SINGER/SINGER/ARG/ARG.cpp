@@ -386,6 +386,35 @@ void ARG::add(map<double, Branch> &new_joining_branches, map<double, Branch> &ad
     start_tree.add(added_branches.begin()->second, new_joining_branches.begin()->second, cut_node);
 }
 
+bool ARG::end_records_vanish(map<double, Branch> &new_joining_branches, map<double, Branch> &added_branches) {
+    auto join_it = new_joining_branches.begin();
+    auto add_it = added_branches.begin();
+    double first = added_branches.begin()->first, last = added_branches.rbegin()->first;
+    Branch prev_joining_branch, next_joining_branch, prev_added_branch, next_added_branch;
+    while (add_it != added_branches.end() and add_it->first < sequence_length) {
+        double pos = add_it->first;
+        if (join_it != new_joining_branches.end() and join_it->first == pos) {
+            next_joining_branch = join_it->second;
+            join_it++;
+        }
+        next_added_branch = add_it->second;
+        add_it++;
+        if ((pos == first and pos > 0) or pos == last) {
+            auto rit = recombinations.find(pos);
+            if (rit != recombinations.end()) {
+                Recombination r = rit->second;
+                r.add(prev_added_branch, next_added_branch, prev_joining_branch, next_joining_branch, cut_node);
+                if (r.deleted_branches.empty() and r.inserted_branches.empty()) {
+                    return true;
+                }
+            }
+        }
+        prev_joining_branch = next_joining_branch;
+        prev_added_branch = next_added_branch;
+    }
+    return false;
+}
+
 Branch ARG::lineage_branch_before(map<double, Branch> &lineage, double x) {
     auto it = lineage.lower_bound(x);
     if (it == lineage.begin()) {

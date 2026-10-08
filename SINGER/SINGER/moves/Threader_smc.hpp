@@ -70,9 +70,9 @@ public:
     
     double acceptance_ratio(ARG &a);
 
-    bool has_bridges(ARG &a);
+    bool joins_deleted_node(ARG &a, map<double, Branch> &lineage);
 
-    bool bridges_kept(ARG &a);
+    bool keeps_deleted_node(ARG &a);
 
     double cut_ratio(ARG &a);
 
