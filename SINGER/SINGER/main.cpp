@@ -389,7 +389,7 @@ int main(int argc, const char * argv[]) {
     }
     sampler.penalty = penalty;
     sampler.polar = polar;
-    sampler.missing_thres = missing_thres;
+    sampler.data.missing_thres = missing_thres;
     sampler.scaling_rep = scaling_rep;
     Threader_smc::no_data = no_data;
     sampler.scaling_bin = scaling_bin;
@@ -404,9 +404,9 @@ int main(int argc, const char * argv[]) {
     sampler.random_seed = seed;
     sampler.start = start_pos;
     sampler.end = end_pos;
-    sampler.chrom_name = chrom_name;
+    sampler.data.chrom_name = chrom_name;
     if (mask_file.size() > 0) {
-        sampler.read_mask(mask_file);
+        sampler.data.read_mask(mask_file, start_pos);
     }
     if (resume) {
         sampler.sequence_length = end_pos - start_pos;
@@ -417,11 +417,7 @@ int main(int argc, const char * argv[]) {
         sampler.debug_resume_internal_sample(num_iters, spacing);
         return 0;
     }
-    if (ploidy == 1) {
-        sampler.naive_read_vcf_haploid(input_filename, start_pos, end_pos);
-    } else {
-        sampler.load_vcf(input_filename, start_pos, end_pos);
-    }
+    sampler.load_data(start_pos, end_pos);
     sampler.iterative_start();
     sampler.internal_sample(num_iters, spacing);
     return 0;

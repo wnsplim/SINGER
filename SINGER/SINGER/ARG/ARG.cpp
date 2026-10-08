@@ -6,6 +6,7 @@
 //
 
 #include "ARG.hpp"
+#include "Data_reader.hpp"
 
 ARG::ARG() {}
 
@@ -480,13 +481,7 @@ int ARG::count_flipping() {
 }
 
 void ARG::read_coordinates(string filename) {
-    ifstream fin(filename);
-    if (!fin.good()) {
-        cerr << "input file not found" << endl;
-        exit(1);
-    }
-    double x;
-    while (fin >> x) {
+    for (double x : Data_reader::read_numbers(filename, "input file not found")) {
         coordinates.push_back(x);
     }
     bin_num = (int) coordinates.size() - 1;
@@ -1192,16 +1187,7 @@ void ARG::write_mutations(string filename) {
 void ARG::read_nodes(string filename) {
     root->set_index(-1);
     node_set.clear();
-    ifstream fin(filename);
-    if (!fin.good()) {
-        cerr << "input file not found" << endl;
-        exit(1);
-    }
-    vector<double> times;
-    double x;
-    while (fin >> x) {
-        times.push_back(x);
-    }
+    vector<double> times = Data_reader::read_numbers(filename, "input file not found");
     double youngest = *min_element(times.begin(), times.begin() + num_samples);
     time_offset = youngest/Ne;
     for (int i = 0; i < (int) times.size(); i++) {
@@ -1210,11 +1196,7 @@ void ARG::read_nodes(string filename) {
 }
 
 void ARG::read_branches(string filename) {
-    ifstream fin(filename);
-    if (!fin.good()) {
-        cerr << "input file not found" << endl;
-        exit(1);
-    }
+    vector<double> v = Data_reader::read_numbers(filename, "input file not found");
     vector<Node *> nodes = node_list;
     double x;
     double y;
@@ -1227,7 +1209,11 @@ void ARG::read_branches(string filename) {
     Branch b;
     map<double, set<Branch>> deleted_branches = {{0, {}}};
     map<double, set<Branch>> inserted_branches = {};
-    while (fin >> x >> y >> p >> c) {
+    for (int i = 0; i + 3 < (int) v.size(); i += 4) {
+        x = v[i];
+        y = v[i + 1];
+        p = v[i + 2];
+        c = v[i + 3];
         left = x;
         right = y;
         if (p < 0) {
@@ -1260,11 +1246,7 @@ void ARG::read_branches(string filename) {
 }
 
 void ARG::read_recombs(string filename) {
-    ifstream fin(filename);
-    if (!fin.good()) {
-        cerr << "input file not found" << endl;
-        exit(1);
-    }
+    vector<double> v = Data_reader::read_numbers(filename, "input file not found");
     create_node_set();
     vector<Node *> nodes = node_list;
     map<double, Branch> source_branches = {};
@@ -1276,7 +1258,11 @@ void ARG::read_recombs(string filename) {
     Node *ln;
     Node *un;
     Branch b;
-    while (fin >> pos >> n1 >> n2 >> t) {
+    for (int i = 0; i + 3 < (int) v.size(); i += 4) {
+        pos = v[i];
+        n1 = (int) v[i + 1];
+        n2 = (int) v[i + 2];
+        t = v[i + 3];
         ln = nodes[n1];
         if (n2 == -1) {
             un = root.get();
@@ -1309,11 +1295,7 @@ void ARG::read_recombs(string filename) {
 }
 
 void ARG::read_muts(string filename) {
-    ifstream fin(filename);
-    if (!fin.good()) {
-        cerr << "input file not found" << endl;
-        exit(1);
-    }
+    vector<double> v = Data_reader::read_numbers(filename, "input file not found");
     create_node_set();
     vector<Node *> nodes = node_list;
     double pos;
@@ -1323,7 +1305,11 @@ void ARG::read_muts(string filename) {
     Node *ln;
     Node *un;
     Branch b;
-    while (fin >> pos >> n1 >> n2 >> s) {
+    for (int i = 0; i + 3 < (int) v.size(); i += 4) {
+        pos = v[i];
+        n1 = (int) v[i + 1];
+        n2 = (int) v[i + 2];
+        s = v[i + 3];
         if (pos <= sequence_length) {
             mutation_sites.insert(pos);
             ln = nodes[n1];

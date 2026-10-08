@@ -17,7 +17,7 @@
 #include "Emission.hpp"
 #include "Scaler.hpp"
 #include "Rate_map.hpp"
-#include "Vcf_reader.hpp"
+#include "Data_reader.hpp"
 
 class Sampler {
 
@@ -29,7 +29,6 @@ public:
     Rate_map mut_map;
     double mut_rate = 0;
     double recomb_rate = 0;
-    string input_prefix = "";
     string output_prefix = "";
     double start = 0;
     double end = 0;
@@ -44,12 +43,12 @@ public:
     int random_seed = 0;
     double penalty = 0.01;
     double polar = 0.99;
-    double missing_thres = 0.5;
     int scaling_rep = 5;
     int scaling_bin = 100;
     int sample_index = 0;
     set<Node_ptr, compare_node> sample_nodes = {};
     vector<Node_ptr> ordered_sample_nodes = {};
+    Data_reader data;
 
     Sampler();
 
@@ -61,46 +60,15 @@ public:
 
     void set_output_file_prefix(string f);
 
-    int parse_genotype(const string &field, int expected_ploidy, int *calls);
-
-    void check_ploidy(const string &field, int n, int expected_ploidy, const int *calls, long long pos, int column, const string &prefix);
-
     Node_ptr new_sample(int i);
-
-    vector<string> sample_names(string prefix);
 
     void read_tip_ages(string filename, double g);
 
-    void scan_missing(string prefix, double start_pos, double end_pos, vector<Node *> &leaves, int ploidy);
-
-    vector<double> unassayed_site_list = {};
-
-    vector<pair<double, double>> masked = {};
-    map<string, vector<pair<double, double>>> sample_masks = {};
-
-    void read_mask(string filename);
-
-    void drop_missing_sites(string prefix, double start_pos, double end_pos, int ploidy);
-
     void order_samples();
 
-    string chrom_name = "";
+    void load_data(double start_pos, double end_pos);
 
-    string selected_chrom();
-
-    bool in_mask(double x);
-
-    bool any_missing = false;
-    int unphased_masked = 0;
-    int multiallelic_skipped = 0;
-
-    void naive_read_vcf_haploid(string prefix, double start_pos, double end_pos);
-
-    void naive_read_vcf(string prefix, double start_pos, double end_pos);
-
-    void guide_read_vcf(string prefix, double start, double end);
-
-    void load_vcf(string prefix, double start, double end);
+    void set_missing(vector<Node *> &leaves);
 
     void build_singleton_arg();
 
@@ -123,8 +91,6 @@ public:
     void write_sample();
 
     void load_resume_arg();
-
-    vector<string> read_last_line(string filename);
 
     void read_resume_point(string filename);
 

@@ -6,21 +6,22 @@
 //
 
 #include "Rate_map.hpp"
+#include "Data_reader.hpp"
 
 Rate_map::Rate_map() {}
 
 void Rate_map::load_map(string mut_map_file, double start, double end) {
-    ifstream fin(mut_map_file);
-    if (!fin.good()) {
-        cerr << "input rate map file not found" << endl;
-        exit(1);
-    }
+    bool complete = false;
+    vector<double> v = Data_reader::read_numbers(mut_map_file, "input rate map file not found", &complete);
     rate_distances.push_back(0);
     double left;
     double right;
     double rate;
     double mut_dist;
-    while (fin >> left >> right >> rate) {
+    for (int i = 0; i + 2 < (int) v.size(); i += 3) {
+        left = v[i];
+        right = v[i + 1];
+        rate = v[i + 2];
         if (coordinates.size() > 0 and left != sequence_length) {
             cerr << "Error: each segment of the rate map " << mut_map_file << " must start where the previous one ends. " << endl;
             exit(1);
@@ -30,7 +31,7 @@ void Rate_map::load_map(string mut_map_file, double start, double end) {
         rate_distances.push_back(mut_dist);
         sequence_length = right;
     }
-    if (!fin.eof() or coordinates.empty()) {
+    if (!complete or coordinates.empty()) {
         cerr << "Error: every line of the rate map " << mut_map_file << " must be 'left right rate'. " << endl;
         exit(1);
     }
