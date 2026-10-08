@@ -135,7 +135,7 @@ void Threader_smc::exact_internal_rethread(ARG &a, tuple<double, Branch, double>
         sample_joining_branches(a);
         run_TSP(a);
         sample_joining_points(a);
-        ar = keeps_deleted_node(a) and !has_gap_node(added_branches, a) and !joins_deleted_node(a, added_branches) and !a.end_records_vanish(new_joining_branches, added_branches) ? exact_acceptance_ratio(a) : 0;
+        ar = keeps_deleted_node(a) and !has_gap_node(added_branches, a) and !joins_deleted_node(a, added_branches) and !a.empties_cut_span_end_recombination(new_joining_branches, added_branches) ? exact_acceptance_ratio(a) : 0;
     }
     double q = random();
     if (q < ar) {

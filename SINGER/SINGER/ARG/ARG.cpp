@@ -386,7 +386,7 @@ void ARG::add(map<double, Branch> &new_joining_branches, map<double, Branch> &ad
     start_tree.add(added_branches.begin()->second, new_joining_branches.begin()->second, cut_node);
 }
 
-bool ARG::end_records_vanish(map<double, Branch> &new_joining_branches, map<double, Branch> &added_branches) {
+bool ARG::empties_cut_span_end_recombination(map<double, Branch> &new_joining_branches, map<double, Branch> &added_branches) {
     auto join_it = new_joining_branches.begin();
     auto add_it = added_branches.begin();
     double first = added_branches.begin()->first, last = added_branches.rbegin()->first;
