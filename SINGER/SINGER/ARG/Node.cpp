@@ -47,6 +47,17 @@ bool Node::is_missing(double pos) {
     return it != masked_intervals.begin() and prev(it)->second > pos;
 }
 
+bool Node::likelihood_at(double pos, double &w0, double &w1) {
+    auto it = lower_bound(likelihood_sites.begin(), likelihood_sites.end(), pos,
+                          [](const pair<double, pair<double, double>> &e, double p) { return e.first < p; });
+    if (it == likelihood_sites.end() or it->first != pos) {
+        return false;
+    }
+    w0 = it->second.first;
+    w1 = it->second.second;
+    return true;
+}
+
 double Node::get_state(double pos) {
     move_iterator(pos);
     if (it->first == pos) {

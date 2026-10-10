@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -173,6 +174,46 @@ private:
         return !line.empty();
     }
 };
+
+static vector<string> split(const string &s, char sep) {
+    vector<string> out;
+    string part;
+    istringstream ss(s);
+    while (getline(ss, part, sep)) {
+        out.push_back(part);
+    }
+    return out;
+}
+
+static bool parse_likelihood(const string &s, bool gl, int count, double *G) {
+    vector<string> v = split(s, ',');
+    if ((int) v.size() != count) {
+        return false;
+    }
+    for (int k = 0; k < count; k++) {
+        char *e = nullptr;
+        double x = strtod(v[k].c_str(), &e);
+        if (e == v[k].c_str() or *e != '\0' or !isfinite(x)) {
+            return false;
+        }
+        G[k] = gl ? pow(10, x) : pow(10, -x/10);
+    }
+    return *max_element(G, G + count) > *min_element(G, G + count);
+}
+
+static string single_alt(const vector<string> &alts) {
+    string found = "";
+    for (const string &a : alts) {
+        if (a == "<*>" or a == "<NON_REF>") {
+            continue;
+        }
+        if (!found.empty()) {
+            return "";
+        }
+        found = a;
+    }
+    return found;
+}
 
 static int iupac_mask(const string &allele) {
     const string seq_nt16_str = "=ACMGRSVTWYHKDBN";
@@ -382,7 +423,7 @@ string Data_reader::selected_chrom() {
     return chrom_name;
 }
 
-int Data_reader::parse_genotype(const string &field, int expected_ploidy, int *calls) {
+int Data_reader::parse_genotype(const string &field, int expected_ploidy, int *calls, bool &unphased) {
     size_t stop = field.find(':');
     if (stop == string::npos) {
         stop = field.size();
@@ -408,11 +449,223 @@ int Data_reader::parse_genotype(const string &field, int expected_ploidy, int *c
         n++;
         i = j + 1;
     }
-    if (n == 2 and separator == '/' and calls[0] != calls[1]) {
-        calls[0] = calls[1] = -1;
-        unphased_masked++;
-    }
+    unphased = n == 2 and separator == '/' and calls[0] != calls[1];
     return i < stop ? -1 : n;
+}
+
+void Data_reader::read_calls(double start_pos, double end_pos) {
+    call_records.clear();
+    call_column.clear();
+    if (!genotype_lik or calls.empty()) {
+        return;
+    }
+    vector<string> names = sample_names();
+    Vcf_reader file(calls, selected_chrom());
+    string line;
+    while (file.next(line)) {
+        if (line.rfind("#CHROM", 0) == 0) {
+            vector<string> w = split(line, '\t');
+            map<string, int> column;
+            for (int i = 9; i < (int) w.size(); i++) {
+                column[w[i]] = i - 9;
+            }
+            if (column.empty()) {
+                Vcf_reader::fail("-genotype_calls file " + calls + " has no sample columns");
+            }
+            vector<string> absent;
+            for (const string &s : names) {
+                auto c = column.find(s);
+                call_column.push_back(c == column.end() ? -1 : c->second);
+                if (c == column.end()) {
+                    absent.push_back(s);
+                }
+            }
+            calls_absent = (int) absent.size();
+            if (calls_absent == (int) names.size()) {
+                Vcf_reader::fail("no sample of the input is a sample of -genotype_calls " + calls);
+            }
+            if (calls_absent > 0) {
+                cerr << "Warning: " << calls_absent << " input samples have no column in -genotype_calls (";
+                for (int i = 0; i < calls_absent and i < 10; i++) {
+                    cerr << (i > 0 ? ", " : "") << absent[i];
+                }
+                cerr << (calls_absent > 10 ? ", ..." : "") << "): their genotypes are read as written. " << endl;
+            }
+            continue;
+        }
+        if (line[0] == '#') {
+            continue;
+        }
+        vector<string> w = split(line, '\t');
+        if (w.size() < 10) {
+            Vcf_reader::fail("-genotype_calls file " + calls + " has a record with fewer than 10 columns");
+        }
+        long long pos = stoll(w[1]);
+        if (pos < start_pos) {
+            continue;
+        }
+        if (pos >= end_pos) {
+            break;
+        }
+        vector<string> keys = split(w[8], ':');
+        int gi = (int) (find(keys.begin(), keys.end(), "GL") - keys.begin());
+        int pi = (int) (find(keys.begin(), keys.end(), "PL") - keys.begin());
+        int fi = gi < (int) keys.size() ? gi : pi;
+        if (fi == (int) keys.size()) {
+            continue;
+        }
+        Call_record r = {w[3], split(w[4], ','), gi < (int) keys.size(), {}};
+        for (int i = 9; i < (int) w.size(); i++) {
+            vector<string> parts = split(w[i], ':');
+            r.values.push_back(fi < (int) parts.size() ? parts[fi] : "");
+        }
+        call_records[pos].push_back(r);
+    }
+}
+
+Data_reader::Record_likelihood Data_reader::record_likelihood(long long pos, const string &ref, const string &alt, const string &format) {
+    Record_likelihood r;
+    vector<string> keys = split(format, ':');
+    int gi = (int) (find(keys.begin(), keys.end(), "GL") - keys.begin());
+    int pi = (int) (find(keys.begin(), keys.end(), "PL") - keys.begin());
+    r.gl = gi < (int) keys.size();
+    r.field = r.gl ? gi : pi < (int) keys.size() ? pi : -1;
+    auto it = call_records.find(pos);
+    if (it == call_records.end()) {
+        return r;
+    }
+    for (const Call_record &c : it->second) {
+        int j = (int) (find(c.alts.begin(), c.alts.end(), alt) - c.alts.begin()) + 1;
+        bool direct = c.ref == ref and j <= (int) c.alts.size();
+        bool swapped = !direct and single_alt(c.alts) == ref and c.ref == alt;
+        if (!direct and !swapped) {
+            continue;
+        }
+        if (swapped) {
+            j = (int) (find(c.alts.begin(), c.alts.end(), ref) - c.alts.begin()) + 1;
+        }
+        int alleles = (int) c.alts.size() + 1;
+        int b = j*(j + 1)/2;
+        r.swapped = swapped;
+        r.call_gl = c.gl;
+        r.call_values.assign(call_column.size(), "");
+        for (int i = 0; i < (int) call_column.size(); i++) {
+            if (call_column[i] < 0 or call_column[i] >= (int) c.values.size()) {
+                continue;
+            }
+            vector<string> v = split(c.values[call_column[i]], ',');
+            if ((int) v.size() == alleles*(alleles + 1)/2) {
+                r.call_values[i] = swapped ? v[b + j] + "," + v[b] + "," + v[0] : v[0] + "," + v[b] + "," + v[b + j];
+            } else if ((int) v.size() == alleles) {
+                r.call_values[i] = swapped ? v[j] + "," + v[0] : v[0] + "," + v[j];
+            }
+        }
+        break;
+    }
+    return r;
+}
+
+bool Data_reader::sample_likelihood(const Record_likelihood &r, int sample, const string &field, double *G, bool &from_calls) {
+    int count = ploidy == 1 ? 2 : 3;
+    from_calls = false;
+    if (r.field >= 0) {
+        vector<string> parts = split(field, ':');
+        if (r.field < (int) parts.size() and parse_likelihood(parts[r.field], r.gl, count, G)) {
+            likelihood_seen = true;
+            return true;
+        }
+    }
+    if (sample < (int) r.call_values.size() and !r.call_values[sample].empty() and parse_likelihood(r.call_values[sample], r.call_gl, count, G)) {
+        from_calls = true;
+        likelihood_seen = true;
+        return true;
+    }
+    return false;
+}
+
+bool Data_reader::state_likelihoods(int n, int *calls, bool unphased, const double *likelihoods, double *L, int &alleles) {
+    int nc = ploidy == 1 ? 2 : 4;
+    int ng = ploidy == 1 ? 2 : 3;
+    double G[3] = {0, 0, 0};
+    for (int g = 0; g < ng; g++) {
+        G[g] = likelihoods[g];
+    }
+    int start = 0;
+    if (ploidy == 1) {
+        L[0] = G[0];
+        L[1] = G[1];
+        L[2] = L[3] = 0;
+        start = calls[0] >= 0 ? calls[0] : G[1] > G[0] ? 1 : 0;
+    } else if (n == 2 and calls[0] >= 0 and calls[1] >= 0 and !unphased) {
+        int a = calls[0], b = calls[1];
+        L[0] = G[0];
+        L[1] = a == b or a == 1 ? G[1] : 0;
+        L[2] = a == b or b == 1 ? G[1] : 0;
+        L[3] = G[2];
+        start = a + 2*b;
+    } else {
+        L[0] = G[0];
+        L[1] = L[2] = G[1];
+        L[3] = G[2];
+        int best = G[1] > G[0] ? 1 : 0;
+        best = G[2] > G[best] ? 2 : best;
+        start = unphased and calls[0] >= 0 and calls[1] >= 0 ? 2 : best == 0 ? 0 : best == 1 ? 2 : 3;
+    }
+    if (L[start] == 0) {
+        start = (int) (max_element(L, L + nc) - L);
+    }
+    double top = *max_element(L, L + nc);
+    bool other = false;
+    alleles = 0;
+    for (int c = 0; c < nc; c++) {
+        L[c] /= top;
+        other = other or (c != start and L[c] > 0);
+        if (L[c] > 0) {
+            alleles |= ploidy == 1 ? 1 << c : (1 << (c & 1)) | (1 << (c >> 1));
+        }
+    }
+    calls[0] = start & 1;
+    if (ploidy == 2) {
+        calls[1] = start >> 1;
+    }
+    return other;
+}
+
+bool Data_reader::variant_site(int alt_count, int haplotypes, int alleles) {
+    if (alt_count >= 1 and alt_count < haplotypes) {
+        return true;
+    }
+    return (alleles >> (alt_count == 0 ? 1 : 0)) & 1;
+}
+
+Data_reader::Genotype_read Data_reader::read_genotype(const string &field, int individual, double x, long long pos, const Record_likelihood *r) {
+    Genotype_read g;
+    bool unphased;
+    g.n = parse_genotype(field, ploidy, g.calls, unphased);
+    check_ploidy(field, g.n, ploidy, g.calls, pos, individual);
+    if (sample_masked(individual, x)) {
+        g.calls[0] = g.calls[1] = -1;
+        return g;
+    }
+    double G[3];
+    if (r != nullptr and sample_likelihood(*r, individual, field, G, g.from_calls)) {
+        g.likelihood = true;
+        g.entry = state_likelihoods(g.n, g.calls, unphased, G, g.L, g.alleles);
+        g.n = ploidy;
+    } else if (unphased) {
+        g.calls[0] = g.calls[1] = -1;
+        g.unphased_missing = true;
+    }
+    return g;
+}
+
+bool Data_reader::sample_masked(int sample, double x) {
+    if (sample >= (int) mask_of_sample.size() or mask_of_sample[sample] == nullptr) {
+        return false;
+    }
+    const vector<pair<double, double>> *v = mask_of_sample[sample];
+    auto it = upper_bound(v->begin(), v->end(), make_pair(x, numeric_limits<double>::infinity()));
+    return it != v->begin() and prev(it)->second > x;
 }
 
 void Data_reader::check_ploidy(const string &field, int n, int expected_ploidy, const int *calls, long long pos, int column) {
@@ -457,6 +710,15 @@ bool Data_reader::in_mask(double x) {
 }
 
 void Data_reader::read(double start_pos, double end_pos, bool with_sites) {
+    entries.clear();
+    entry_sites.clear();
+    likelihood_genotypes = call_likelihoods = swapped_records = calls_absent = sites_without_likelihood = call_sites = 0;
+    mask_of_sample.clear();
+    for (const string &s : sample_names()) {
+        auto m = sample_masks.find(s);
+        mask_of_sample.push_back(m == sample_masks.end() ? nullptr : &m->second);
+    }
+    read_calls(start_pos, end_pos);
     drop_missing_sites(start_pos, end_pos);
     if (with_sites) {
         ifstream index(input + ".index");
@@ -467,28 +729,113 @@ void Data_reader::read(double start_pos, double end_pos, bool with_sites) {
         }
     }
     scan_missing(start_pos, end_pos);
+    add_call_sites(start_pos, end_pos, with_sites);
+    print_missing_summary();
+    if (genotype_lik and !likelihood_seen) {
+        cerr << "Warning: -genotype_lik is set but no usable GL or PL was found in the input"
+             << (calls.empty() ? " and no -genotype_calls is given" : " or in -genotype_calls " + calls)
+             << ": genotypes are read as written. " << endl;
+    }
+}
+
+void Data_reader::add_call_sites(double start_pos, double end_pos, bool with_sites) {
+    if (call_records.empty()) {
+        return;
+    }
+    int haplotypes = ploidy*(int) call_column.size();
+    if (with_sites and (int) derived_sites.size() < haplotypes) {
+        derived_sites.resize(haplotypes);
+    }
+    bool added = false;
+    for (auto &p : call_records) {
+        long long pos = p.first;
+        double x = pos - start_pos;
+        if (pos < start_pos or pos >= end_pos or input_positions.count(pos) > 0 or in_mask(x)) {
+            continue;
+        }
+        string ref = p.second.front().ref, alt = single_alt(p.second.front().alts);
+        if (ref.size() != 1 or alt.size() != 1 or !is_unambiguous(ref) or !is_unambiguous(alt)) {
+            continue;
+        }
+        Record_likelihood r = record_likelihood(pos, ref, alt, "");
+        vector<int> state(haplotypes, -1);
+        vector<Genotype_entry> found;
+        int missing = 0, from_file = 0, alt_count = 0, alleles = 0;
+        for (int i = 0; i < (int) call_column.size(); i++) {
+            Genotype_read g = read_genotype("", i, x, pos, &r);
+            if (!g.likelihood) {
+                missing += ploidy;
+                continue;
+            }
+            from_file += 1;
+            alleles |= g.alleles;
+            if (g.entry) {
+                found.push_back({x, {ploidy*i, ploidy == 2 ? ploidy*i + 1 : -1}, {g.L[0], g.L[1], g.L[2], g.L[3]}});
+            }
+            for (int k = 0; k < ploidy; k++) {
+                state[ploidy*i + k] = g.calls[k];
+                alt_count += g.calls[k] == 1;
+            }
+        }
+        if (!variant_site(alt_count, haplotypes, alleles)) {
+            continue;
+        }
+        if (missing > missing_thres*haplotypes) {
+            masked.push_back({x, x + 1});
+            dropped_records += 1;
+            continue;
+        }
+        added = true;
+        call_sites += 1;
+        call_likelihoods += from_file;
+        likelihood_genotypes += (int) found.size();
+        entries.insert(entries.end(), found.begin(), found.end());
+        entry_sites.push_back(x);
+        for (int h = 0; h < haplotypes; h++) {
+            if (state[h] == 1 and with_sites) {
+                derived_sites[h].push_back(x);
+            } else if (state[h] < 0 and !sample_masked(h/ploidy, x)) {
+                missing_sites[h].push_back(x);
+                any_missing = true;
+            }
+        }
+    }
+    if (!added) {
+        return;
+    }
+    merge_intervals(masked);
+    for (auto &v : derived_sites) {
+        sort(v.begin(), v.end());
+    }
+    for (auto &v : missing_sites) {
+        sort(v.begin(), v.end());
+    }
+    stable_sort(entries.begin(), entries.end(), [](const Genotype_entry &a, const Genotype_entry &b) { return a.pos < b.pos; });
+    sort(entry_sites.begin(), entry_sites.end());
+}
+
+void Data_reader::print_missing_summary() {
+    cout << "missing data: " << dropped_records << " records dropped above -missing_thres " << missing_thres << ", "
+         << dropped_bases_total << " bases masked by the sample masks above -missing_thres, " << deleted_bases << " bases removed by deletions, "
+         << unphased_masked << " unphased heterozygous genotypes treated as missing, " << multiallelic_skipped << " multiallelic sites skipped";
+    if (genotype_lik) {
+        cout << "; genotype likelihoods: " << likelihood_genotypes << " genotypes with a likelihood, " << call_likelihoods << " taken from -genotype_calls, "
+             << swapped_records << " records with REF and ALT swapped, " << calls_absent << " samples absent from -genotype_calls, "
+             << sites_without_likelihood << " sites without genotype likelihoods taken as true, "
+             << call_sites << " positions added from -genotype_calls";
+    }
+    cout << endl;
 }
 
 void Data_reader::drop_missing_sites(double start_pos, double end_pos) {
     Vcf_reader file(input, selected_chrom());
     string line;
-    vector<const vector<pair<double, double>> *> mask_of;
     vector<pair<double, double>> dropped;
     long long prev_pos = -1;
-    int calls[2], records = 0;
+    int records = 0;
     double deleted = 0;
     while (file.next(line)) {
         if (line[0] == '#') {
-            if (line.rfind("#CHROM", 0) == 0) {
-                istringstream hs(line);
-                string w;
-                for (int k = 0; hs >> w; k++) {
-                    if (k >= 9) {
-                        auto m = sample_masks.find(w);
-                        mask_of.push_back(m == sample_masks.end() ? nullptr : &m->second);
-                    }
-                }
-            }
             continue;
         }
         istringstream iss(line);
@@ -497,6 +844,7 @@ void Data_reader::drop_missing_sites(double start_pos, double end_pos) {
         iss >> chrom >> pos >> id >> ref >> alt >> qual >> filter >> info >> format;
         if (pos < start_pos) {continue;}
         if (pos >= end_pos) {break;}
+        input_positions.insert(pos);
         double x = pos - start_pos;
         if (ref.size() > 1) {
             bool first = padding_first(ref, alt);
@@ -513,18 +861,17 @@ void Data_reader::drop_missing_sites(double start_pos, double end_pos) {
         }
         prev_pos = pos;
         bool known[2] = {is_unambiguous(ref), is_unambiguous(alt)};
+        bool weigh = genotype_lik and known[0] and known[1];
+        Record_likelihood r;
+        if (weigh) {
+            r = record_likelihood(pos, ref, alt, format);
+        }
         int individual = 0, missing = 0;
         while (iss >> genotype) {
-            int n = parse_genotype(genotype, ploidy, calls);
-            const vector<pair<double, double>> *v = mask_of[individual];
-            bool in_sample_mask = false;
-            if (v != nullptr) {
-                auto it = upper_bound(v->begin(), v->end(), make_pair(x, numeric_limits<double>::infinity()));
-                in_sample_mask = it != v->begin() and prev(it)->second > x;
-            }
+            Genotype_read g = read_genotype(genotype, individual, x, pos, weigh ? &r : nullptr);
             for (int k = 0; k < ploidy; k++) {
-                int c = k < n ? calls[k] : -1;
-                missing += in_sample_mask or c < 0 or !known[c];
+                int c = k < g.n ? g.calls[k] : -1;
+                missing += c < 0 or !known[c];
             }
             individual += 1;
         }
@@ -533,9 +880,9 @@ void Data_reader::drop_missing_sites(double start_pos, double end_pos) {
             records += 1;
         }
     }
-    double haplotypes = ploidy*(double) mask_of.size(), bases = 0;
+    double haplotypes = ploidy*(double) mask_of_sample.size(), bases = 0;
     vector<pair<double, int>> events;
-    for (auto v : mask_of) {
+    for (auto v : mask_of_sample) {
         if (v != nullptr) {
             for (auto &m : *v) {
                 events.push_back({m.first, ploidy});
@@ -554,8 +901,9 @@ void Data_reader::drop_missing_sites(double start_pos, double end_pos) {
     }
     masked.insert(masked.end(), dropped.begin(), dropped.end());
     merge_intervals(masked);
-    cout << "dropped for missing data above " << missing_thres << ": " << records << " records, " << bases << " masked bases" << endl;
-    cout << "masked bases removed by deletions: " << deleted << endl;
+    dropped_records = records;
+    dropped_bases_total = bases;
+    deleted_bases = deleted;
 }
 
 void Data_reader::naive_read_sites(double start_pos, double end_pos) {
@@ -566,7 +914,6 @@ void Data_reader::naive_read_sites(double start_pos, double end_pos) {
     int valid_mutation = 0;
     int removed_mutation = 0;
     vector<double> genotypes = {};
-    int calls[2];
     while (file.next(line)) {
         if (line.substr(0, 6) == "#CHROM") {
             istringstream iss(line);
@@ -603,12 +950,15 @@ void Data_reader::naive_read_sites(double start_pos, double end_pos) {
             prev_pos = pos;
             continue;
         }
+        Record_likelihood r;
+        if (genotype_lik) {
+            r = record_likelihood(pos, ref, alt, format);
+        }
         int individual_index = 0;
         while (iss >> genotype) {
-            int n = parse_genotype(genotype, ploidy, calls);
-            check_ploidy(genotype, n, ploidy, calls, pos, individual_index);
+            Genotype_read g = read_genotype(genotype, individual_index, pos - start_pos, pos, genotype_lik ? &r : nullptr);
             for (int k = 0; k < ploidy; k++) {
-                genotypes[ploidy*individual_index + k] = (k < n and calls[k] == 1) ? 1 : 0;
+                genotypes[ploidy*individual_index + k] = (k < g.n and g.calls[k] == 1) ? 1 : 0;
             }
             individual_index += 1;
         }
@@ -659,7 +1009,6 @@ void Data_reader::guide_read_sites(double start, double end) {
     int valid_mutation = 0;
     int removed_mutation = 0;
     vector<double> genotypes = {};
-    int calls[2];
     while (vcf_stream.next(line)) {
         istringstream iss(line);
         string chrom, id, ref, alt, qual, filter, info, format, genotype;
@@ -681,15 +1030,18 @@ void Data_reader::guide_read_sites(double start, double end) {
             prev_pos = pos;
             continue;
         }
+        Record_likelihood r;
+        if (genotype_lik) {
+            r = record_likelihood(pos, ref, alt, format);
+        }
         int individual_index = 0;
         while (iss >> genotype) {
             if (genotypes.size() < 2*individual_index + 2) {
                 genotypes.resize(2*individual_index + 2);
             }
-            int n = parse_genotype(genotype, 2, calls);
-            check_ploidy(genotype, n, 2, calls, pos, individual_index);
+            Genotype_read g = read_genotype(genotype, individual_index, pos - start, pos, genotype_lik ? &r : nullptr);
             for (int k = 0; k < 2; k++) {
-                genotypes[2*individual_index + k] = (k < n and calls[k] == 1) ? 1 : 0;
+                genotypes[2*individual_index + k] = (k < g.n and g.calls[k] == 1) ? 1 : 0;
             }
             individual_index += 1;
         }
@@ -719,7 +1071,6 @@ void Data_reader::scan_missing(double start_pos, double end_pos) {
     Vcf_reader file(input, selected_chrom());
     string line;
     long long prev_pos = -1;
-    int calls[2];
     unphased_masked = 0;
     multiallelic_skipped = 0;
     vector<string> names;
@@ -765,23 +1116,46 @@ void Data_reader::scan_missing(double start_pos, double end_pos) {
         int individual = 0;
         vector<int> missing_haplotypes;
         bool known[2] = {is_unambiguous(ref), is_unambiguous(alt)};
+        bool use_likelihood = genotype_lik and known[0] and known[1];
+        Record_likelihood r;
+        if (use_likelihood) {
+            r = record_likelihood(pos, ref, alt, format);
+            swapped_records += r.swapped;
+        }
+        vector<Genotype_entry> found;
+        double x = pos - start_pos;
+        bool any_likelihood = false;
+        int alt_count = 0, alleles = 0;
         while (iss >> genotype) {
-            int n = parse_genotype(genotype, ploidy, calls);
-            check_ploidy(genotype, n, ploidy, calls, pos, individual);
+            Genotype_read g = read_genotype(genotype, individual, x, pos, use_likelihood ? &r : nullptr);
+            if (g.entry) {
+                found.push_back({x, {ploidy*individual, ploidy == 2 ? ploidy*individual + 1 : -1}, {g.L[0], g.L[1], g.L[2], g.L[3]}});
+            }
+            call_likelihoods += g.from_calls;
+            any_likelihood = any_likelihood or g.likelihood;
+            alleles |= g.alleles;
+            unphased_masked += g.unphased_missing;
             for (int k = 0; k < ploidy; k++) {
-                int c = k < n ? calls[k] : -1;
+                int c = k < g.n ? g.calls[k] : -1;
                 if (c < 0 or !known[c]) {
                     missing_haplotypes.push_back(ploidy*individual + k);
                 }
+                alt_count += c == 1;
             }
             individual += 1;
         }
+        if (!found.empty() and variant_site(alt_count, ploidy*individual, alleles)) {
+            entries.insert(entries.end(), found.begin(), found.end());
+            entry_sites.push_back(x);
+            likelihood_genotypes += (int) found.size();
+        }
+        sites_without_likelihood += use_likelihood and !any_likelihood and missing_haplotypes.size() < missing_sites.size();
         if (missing_haplotypes.size() == missing_sites.size()) {
-            unassayed_sites.push_back(pos - start_pos);
+            unassayed_sites.push_back(x);
         } else if (missing_haplotypes.size() > 0) {
             any_missing = true;
             for (int h : missing_haplotypes) {
-                missing_sites[h].push_back(pos - start_pos);
+                missing_sites[h].push_back(x);
             }
         }
     }
@@ -805,11 +1179,5 @@ void Data_reader::scan_missing(double start_pos, double end_pos) {
             }
             missing_sites[h] = kept;
         }
-    }
-    if (unphased_masked > 0) {
-        cerr << "Warning: unphased heterozygous genotypes treated as missing: " << unphased_masked << ". " << endl;
-    }
-    if (multiallelic_skipped > 0) {
-        cerr << "Warning: multiallelic sites skipped: " << multiallelic_skipped << ". " << endl;
     }
 }

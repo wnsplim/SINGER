@@ -41,6 +41,7 @@ public:
     double bsp_c = 0.01;
     double tsp_q = 0.05;
     int random_seed = 0;
+    bool seed_given = false;
     double penalty = 0.01;
     double polar = 0.99;
     int scaling_rep = 5;
@@ -69,6 +70,8 @@ public:
     void load_data(double start_pos, double end_pos);
 
     void set_missing(vector<Node *> &leaves);
+
+    void set_entries(vector<Node *> &leaves);
 
     void build_singleton_arg();
 

@@ -14,6 +14,49 @@
 #include "Tree.hpp"
 #include "RSP_smc.hpp"
 #include "Rate_map.hpp"
+#include <array>
+#include <tuple>
+#include <unordered_map>
+
+struct Genotype_likelihood {
+    double pos;
+    Node *leaves[2];
+    double L[4];
+};
+
+inline double joining_weight(int a, int m, int b, int su, const double *p, const double *w, const double *q) {
+    return w[m]*((a == m) ? 1.0 : p[0])*((su == m) ? 1.0 : p[1])*((b == m) ? 1.0 : p[2])*q[b];
+}
+
+struct Bin_gaps {
+    bool built = false;
+    vector<int> sample = {};
+    vector<int> d = {};
+    vector<double> before = {};
+    double tail = 0;
+};
+
+struct Tree_order {
+    vector<double> times = {};
+    vector<int> order = {};
+    vector<int> up = {};
+    vector<vector<int>> kids = {};
+    int top = -1;
+
+    void assign(const Flat_tree &flat, Node *root_node);
+
+    int index_of(const Flat_tree &flat, Node *n) const;
+};
+
+struct Peel {
+    vector<char> missing = {};
+    vector<array<double, 2>> msg = {};
+    int count[2] = {0, 0};
+    int leaf[2] = {-1, -1};
+    vector<int> path = {};
+    vector<char> in_path = {};
+    vector<array<double, 2>> alt = {};
+};
 
 class ARG {
     
@@ -127,7 +170,55 @@ public:
 
     void remap_mutations();
 
-    void map_mutation(double x, Branch joining_branch, Branch added_branch, const double *joining_state_prob);
+    void map_mutation(double x, Branch joining_branch, Branch added_branch, const double *joining_state_prob, double unit_theta);
+
+    bool mutation_free(double x);
+
+    vector<Genotype_likelihood> genotype_likelihoods = {};
+
+    unordered_map<Node *, vector<int>> leaf_entries = {};
+
+    const ARG *entry_owner = nullptr;
+
+    bool impute_skip = false;
+
+    void index_genotype_likelihoods();
+
+    void set_collapsed(Node *leaf, double x, double y);
+
+    const vector<Genotype_likelihood> &entries() const;
+
+    pair<const int *, const int *> entries_in(Node *leaf, double x, double y) const;
+
+    void site_missing(const Flat_tree &flat, double pos, vector<char> &missing);
+
+    void peel_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p);
+
+    void entry_weights(const Flat_tree &flat, const Tree_order &t, double unit, double pos, const Genotype_likelihood &g, Peel &p, double *w);
+
+    void set_entry(const Flat_tree &flat, const Tree_order &t, double unit, double pos, const Genotype_likelihood &g, int c, Peel &p);
+
+    double collapsed_site_weight(const Flat_tree &flat, const Tree_order &t, double unit, double pos, const Genotype_likelihood &g, Peel &p);
+
+    void resample_site(const Flat_tree &flat, const Tree_order &t, int bin, double pos, size_t e, size_t f, Node *only, Peel &p);
+
+    void resample_entries(Node *leaf, double x, double y);
+
+    bool journal_on = false;
+
+    vector<tuple<Node *, double, double>> state_journal = {};
+
+    vector<tuple<Node *, double, double>> entry_states(Node *leaf, double x, double y);
+
+    vector<tuple<Node *, double, double>> lineage_states(const map<double, Branch> &lineage, double x, double y);
+
+    void restore_states(const vector<tuple<Node *, double, double>> &states, vector<double> &changed);
+
+    void undo_journal(vector<double> &changed);
+
+    void rebuild_mutations(vector<double> &sites);
+
+    void resample_genotypes();
 
     void joining_state_table(const Branch &joining_branch, const Branch &added_branch, double unit_theta, double *p);
 
@@ -148,7 +239,13 @@ public:
 
     double site_weight(const Flat_tree &tree, int bin, double pos, Node *summed);
 
-    double unassayed_correction(const Flat_tree &tree, int bin, double crho);
+    void sample_counts(const Flat_tree &tree, const Tree_order &t, vector<int> &leaf, vector<int> &below);
+
+    mutable vector<Bin_gaps> bin_gaps = {};
+
+    const Bin_gaps &gaps_of(int bin) const;
+
+    double unassayed_correction(const Tree_order &t, const vector<int> &leaf, const vector<int> &below, const vector<double> &lg, int bin, vector<int> &observed);
 
     Branch lineage_branch_before(map<double, Branch> &lineage, double x);
 

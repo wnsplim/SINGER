@@ -34,20 +34,25 @@ double Binary_emission::mut_emit(Branch &branch, double time, double theta, doub
     double w1 = at_root ? 1 - ancestral_prob : 1.0;
     bool lower_any = any_missing and branch.lower_node->has_missing();
     bool query_any = any_missing and node->has_missing();
+    bool query_weighted = node->likelihood_sites.size() > 0;
     for (double m : mut_set) {
         int sl = (int) branch.lower_node->get_state(m);
         int su = (int) branch.upper_node->get_state(m);
         int s0 = (int) node->get_state(m);
         bool ml = lower_any and branch.lower_node->is_missing(m);
         bool m0 = query_any and node->is_missing(m);
+        double q[2] = {1.0, 1.0};
+        if (query_weighted and node->likelihood_at(m, q[0], q[1])) {
+            m0 = true;
+        }
         if (ml or m0) {
             double p0 = u0*penalty, p1 = at_root ? 1.0 : u1*penalty, p2 = u2*penalty, po = at_root ? 1.0 : uo*penalty;
             double num = 0, den = 0;
             for (int a = ml ? 0 : sl; a <= (ml ? 1 : sl); a++) {
                 den += (a ? w1 : w0)*((a == su) ? 1.0 : po);
                 for (int b = m0 ? 0 : s0; b <= (m0 ? 1 : s0); b++) {
-                    num += w0*((a == 0) ? 1.0 : p0)*((su == 0) ? 1.0 : p1)*((b == 0) ? 1.0 : p2)
-                         + w1*((a == 1) ? 1.0 : p0)*((su == 1) ? 1.0 : p1)*((b == 1) ? 1.0 : p2);
+                    num += (w0*((a == 0) ? 1.0 : p0)*((su == 0) ? 1.0 : p1)*((b == 0) ? 1.0 : p2)
+                         + w1*((a == 1) ? 1.0 : p0)*((su == 1) ? 1.0 : p1)*((b == 1) ? 1.0 : p2))*q[b];
                 }
             }
             emit_prob *= num;

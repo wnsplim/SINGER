@@ -27,6 +27,8 @@ int main(int argc, const char * argv[]) {
     string mode = "exact";
     string tip_ages_file = "";
     string mask_file = "";
+    bool genotype_lik = false;
+    string calls_file = "";
     string chrom_name = "";
     double g = -1;
     double r = -1, m = -1, Ne = -1;
@@ -44,6 +46,7 @@ int main(int argc, const char * argv[]) {
     double epsilon_psmc = 0.05;
     int ploidy = 2;
     int seed = 42;
+    bool seed_given = false;
     for (int i = 1; i < argc; ++i) {
         string arg = argv[i];
         if (arg == "-resume") {
@@ -73,6 +76,20 @@ int main(int argc, const char * argv[]) {
                 exit(1);
             }
             mask_file = argv[++i];
+        }
+        else if (arg == "-genotype_lik") {
+            if (i + 1 < argc && argv[i+1][0] != '-') {
+                cerr << "Error: -genotype_lik flag doesn't take any value. " << endl;
+                exit(1);
+            }
+            genotype_lik = true;
+        }
+        else if (arg == "-genotype_calls") {
+            if (i + 1 >= argc || argv[i+1][0] == '-') {
+                cerr << "Error: -genotype_calls flag cannot be empty. " << endl;
+                exit(1);
+            }
+            calls_file = argv[++i];
         }
         else if (arg == "-chrom") {
             if (i + 1 >= argc || argv[i+1][0] == '-') {
@@ -299,6 +316,7 @@ int main(int argc, const char * argv[]) {
             }
             try {
                 seed = stoi(argv[++i]);
+                seed_given = true;
             } catch (const invalid_argument&) {
                 cerr << "Error: -seed flag expects a number. " << endl;
                 exit(1);
@@ -402,9 +420,16 @@ int main(int argc, const char * argv[]) {
     }
     sampler.exact = exact;
     sampler.random_seed = seed;
+    sampler.seed_given = seed_given;
     sampler.start = start_pos;
     sampler.end = end_pos;
     sampler.data.chrom_name = chrom_name;
+    sampler.data.genotype_lik = genotype_lik and !no_data;
+    if (calls_file.size() > 0 and !genotype_lik) {
+        cerr << "Warning: -genotype_calls is ignored without -genotype_lik. " << endl;
+    } else {
+        sampler.data.calls = calls_file;
+    }
     if (mask_file.size() > 0) {
         sampler.data.read_mask(mask_file, start_pos);
     }

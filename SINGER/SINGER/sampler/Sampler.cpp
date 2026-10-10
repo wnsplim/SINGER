@@ -98,6 +98,28 @@ void Sampler::build_singleton_arg() {
     }
     arg.masked = data.masked;
     arg.compute_assayed();
+    vector<Node *> leaves(sample_nodes.size());
+    for (const Node_ptr &s : sample_nodes) {
+        leaves[s->index] = s.get();
+    }
+    set_entries(leaves);
+}
+
+void Sampler::set_entries(vector<Node *> &leaves) {
+    arg.genotype_likelihoods.clear();
+    for (const Genotype_entry &e : data.entries) {
+        Genotype_likelihood g;
+        g.pos = e.pos;
+        g.leaves[0] = leaves[e.haplotypes[0]];
+        g.leaves[1] = e.haplotypes[1] < 0 ? nullptr : leaves[e.haplotypes[1]];
+        copy(e.L, e.L + 4, g.L);
+        arg.genotype_likelihoods.push_back(g);
+    }
+    arg.index_genotype_likelihoods();
+    for (double x : data.entry_sites) {
+        arg.mutation_sites.insert(x);
+        arg.mutation_branches[x];
+    }
 }
 
 void Sampler::iterative_start() {
@@ -127,6 +149,7 @@ void Sampler::iterative_start() {
             sweep_samples();
         }
     }
+    arg.resample_genotypes();
     cout << "orignal ARG length: " << arg.get_arg_length() << endl;
     rescale();
     cout << "rescaled ARG length: " << arg.get_arg_length() << endl;
@@ -181,6 +204,7 @@ void Sampler::internal_sample(int num_iters, int spacing) {
             moves += 1;
             arg.clear_remove_info();
         }
+        arg.resample_genotypes();
         arg.release_dead_nodes();
         rescale();
         random_seed = random_engine();
@@ -202,7 +226,9 @@ void Sampler::resume_internal_sample(int num_iters, int spacing) {
     string log_file = output_prefix + ".log";
     read_resume_point(log_file);
     vector<string> words = Data_reader::read_last_line(log_file);
-    random_seed = stoi(words[words.size() - 2]);
+    if (!seed_given) {
+        random_seed = stoi(words[words.size() - 2]);
+    }
     sample_index += 1;
     arg.check_incompatibility();
     cout << "Number of trees: " << arg.recombinations.size() << endl;
@@ -318,6 +344,7 @@ void Sampler::load_resume_arg() {
     arg.compute_rhos_thetas(recomb_rate, mut_rate, recomb_map, mut_map, start);
     arg.masked = data.masked;
     arg.compute_assayed();
+    set_entries(leaves);
 }
 
 void Sampler::read_resume_point(string filename) {

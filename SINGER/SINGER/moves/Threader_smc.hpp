@@ -77,6 +77,14 @@ public:
     double cut_ratio(ARG &a);
 
     double exact_acceptance_ratio(ARG &a);
+
+    double log_pi_ratio(ARG &a);
+
+    double redrawn_acceptance_ratio(ARG &a, tuple<double, Branch, double> cut_point);
+
+    map<double, Recombination> redrawn_records = {};
+
+    map<double, set<Branch>> redrawn_mutations = {};
     
     double random();
 

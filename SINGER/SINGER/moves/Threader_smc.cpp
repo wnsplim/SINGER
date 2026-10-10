@@ -68,6 +68,7 @@ void Threader_smc::thread(ARG &a, Node_ptr n) {
     a.cut_time = cut_time;
     a.add_sample(n);
     get_boundary(a);
+    set_check_points(a);
     cout << get_time() << " : begin BSP" << endl;
     run_BSP(a);
     cout << "BSP avg num of states: " << bsp.avg_num_states() << endl;
@@ -92,6 +93,7 @@ void Threader_smc::rethread_sample(ARG &a, Node *n) {
     a.cut_tree = a.get_tree_at(0);
     a.remove({0.0, Branch(n, a.cut_tree.parents[n]), cut_time});
     get_boundary(a);
+    set_check_points(a);
     run_BSP(a);
     sample_joining_branches(a);
     run_TSP(a);
@@ -129,23 +131,111 @@ void Threader_smc::exact_internal_rethread(ARG &a, tuple<double, Branch, double>
     a.remove(cut_point);
     get_boundary(a);
     set_check_points(a);
+    Node *query = a.removed_branches.begin()->second.lower_node;
+    a.set_collapsed(query, a.removed_branches.begin()->first, a.removed_branches.rbegin()->first);
+    bool entries = query->likelihood_sites.size() > 0;
+    vector<tuple<Node *, double, double>> old_states;
+    if (entries) {
+        old_states = a.entry_states(query, start, end);
+        vector<tuple<Node *, double, double>> lineage = a.lineage_states(a.removed_branches, start, end);
+        old_states.insert(old_states.end(), lineage.begin(), lineage.end());
+        a.journal_on = true;
+    }
     double ar = 0;
     if (!joins_deleted_node(a, a.removed_branches)) {
         run_BSP(a);
         sample_joining_branches(a);
         run_TSP(a);
         sample_joining_points(a);
-        ar = keeps_deleted_node(a) and !has_gap_node(added_branches, a) and !joins_deleted_node(a, added_branches) and !a.empties_cut_span_end_recombination(new_joining_branches, added_branches) ? exact_acceptance_ratio(a) : 0;
+        if (keeps_deleted_node(a) and !has_gap_node(added_branches, a) and !joins_deleted_node(a, added_branches) and !a.empties_cut_span_end_recombination(new_joining_branches, added_branches)) {
+            ar = entries ? redrawn_acceptance_ratio(a, cut_point) : exact_acceptance_ratio(a);
+        }
     }
+    a.journal_on = false;
     double q = random();
-    if (q < ar) {
+    if (q < ar and entries) {
+        a.impute_skip = true;
+        a.add(new_joining_branches, added_branches);
+        a.impute_skip = false;
+        a.recombinations.erase(a.recombinations.lower_bound(start), a.recombinations.upper_bound(end));
+        a.recombinations.insert(redrawn_records.begin(), redrawn_records.end());
+        a.mutation_branches.erase(a.mutation_branches.lower_bound(start), a.mutation_branches.lower_bound(end));
+        a.mutation_branches.insert(redrawn_mutations.begin(), redrawn_mutations.end());
+    } else if (q < ar) {
         a.add(new_joining_branches, added_branches);
         a.smc_sample_recombinations(added_branches);
     } else {
+        vector<double> changed;
+        if (entries) {
+            query->likelihood_sites.clear();
+            a.undo_journal(changed);
+        }
         a.add(a.joining_branches, a.removed_branches);
+        if (entries) {
+            a.restore_states(old_states, changed);
+            a.rebuild_mutations(changed);
+        }
         a.smc_sample_recombinations(a.removed_branches);
     }
+    a.state_journal.clear();
+    query->likelihood_sites.clear();
     a.clear_remove_info();
+}
+
+double Threader_smc::log_pi_ratio(ARG &a) {
+    int lo = max(start_index - 1, 0);
+    int hi = min(end_index, a.bin_num - 1);
+    pos_lo = a.coordinates[lo];
+    tree_lo = a.start_tree;
+    {
+        auto it = a.recombinations.upper_bound(start);
+        while (it != a.recombinations.begin()) {
+            --it;
+            if (it->first < pos_lo) break;
+            tree_lo.backward_update(it->second);
+        }
+    }
+    a.window_copy_into(new_arg, pos_lo);
+    new_arg.add(new_joining_branches, added_branches);
+    double pi_new = new_arg.corrected_smc_prior(added_branches, lo, hi, pos_lo, tree_lo) + (no_data ? 0.0 : new_arg.mutation_log_likelihood(added_branches, start, end, pos_lo, tree_lo));
+    a.window_copy_into(old_arg, pos_lo);
+    old_arg.add(a.joining_branches, a.removed_branches);
+    double pi_old = old_arg.corrected_smc_prior(a.removed_branches, lo, hi, pos_lo, tree_lo) + (no_data ? 0.0 : old_arg.mutation_log_likelihood(a.removed_branches, start, end, pos_lo, tree_lo));
+    return pi_new - pi_old;
+}
+
+// the proposal read node states that pi sums out, so those states are redrawn on the proposed ARG before the decision and the reverse densities read the redrawn values
+double Threader_smc::redrawn_acceptance_ratio(ARG &a, tuple<double, Branch, double> cut_point) {
+    double jac = cut_ratio(a);
+    double q_new = bsp.branch_log_q(new_joining_branches, start_index, a.coordinates);
+    double h_new = tsp.sel_log_q + tsp.time_log_q;
+    if (!(isfinite(q_new) and isfinite(h_new))) {
+        return 0;
+    }
+    double log_pi = log_pi_ratio(a);
+    map<double, Branch> old_jb = a.joining_branches, old_rb = a.removed_branches;
+    Node *query = old_rb.begin()->second.lower_node;
+    a.add(new_joining_branches, added_branches);
+    a.smc_sample_recombinations(added_branches);
+    a.resample_entries(query, start, end);
+    redrawn_records.clear();
+    redrawn_records.insert(a.recombinations.lower_bound(start), a.recombinations.upper_bound(end));
+    redrawn_mutations.clear();
+    redrawn_mutations.insert(a.mutation_branches.lower_bound(start), a.mutation_branches.lower_bound(end));
+    a.clear_remove_info();
+    a.cut_tree = a.get_tree_at(get<0>(cut_point));
+    a.remove({get<0>(cut_point), prev(added_branches.upper_bound(get<0>(cut_point)))->second, cut_time});
+    a.joining_branches = old_jb;
+    a.removed_branches = old_rb;
+    bsp.reset();
+    tsp.reset();
+    set_check_points(a);
+    a.set_collapsed(query, old_rb.begin()->first, old_rb.rbegin()->first);
+    run_BSP(a);
+    double q_old = bsp.branch_log_q(old_jb, start_index, a.coordinates);
+    run_TSP(a, old_jb);
+    double h_old = tsp.eval_joining_nodes(old_jb, old_rb, start_index, a.coordinates);
+    return exp(log_pi + (q_old - q_new) + (h_old - h_new) + log(jac));
 }
 
 static bool joined_at(map<double, Branch> &m, double x, double y, Node *n) {
@@ -447,25 +537,7 @@ double Threader_smc::exact_acceptance_ratio(ARG &a) {
         run_TSP(a, a.joining_branches);
     }
     double h_old = tsp.eval_joining_nodes(a.joining_branches, a.removed_branches, start_index, a.coordinates);
-    int lo = max(start_index - 1, 0);
-    int hi = min(end_index, a.bin_num - 1);
-    pos_lo = a.coordinates[lo];
-    tree_lo = a.start_tree;
-    {
-        auto it = a.recombinations.upper_bound(start);
-        while (it != a.recombinations.begin()) {
-            --it;
-            if (it->first < pos_lo) break;
-            tree_lo.backward_update(it->second);
-        }
-    }
-    a.window_copy_into(new_arg, pos_lo);
-    new_arg.add(new_joining_branches, added_branches);
-    double pi_new = new_arg.corrected_smc_prior(added_branches, lo, hi, pos_lo, tree_lo) + (no_data ? 0.0 : new_arg.mutation_log_likelihood(added_branches, start, end, pos_lo, tree_lo));
-    a.window_copy_into(old_arg, pos_lo);
-    old_arg.add(a.joining_branches, a.removed_branches);
-    double pi_old = old_arg.corrected_smc_prior(a.removed_branches, lo, hi, pos_lo, tree_lo) + (no_data ? 0.0 : old_arg.mutation_log_likelihood(a.removed_branches, start, end, pos_lo, tree_lo));
-    double log_a = (pi_new - pi_old) + (q_old - q_new) + (h_old - h_new) + log(jac);
+    double log_a = log_pi_ratio(a) + (q_old - q_new) + (h_old - h_new) + log(jac);
     return isfinite(q_new) and isfinite(h_new) ? exp(log_a) : 0;
 }
 

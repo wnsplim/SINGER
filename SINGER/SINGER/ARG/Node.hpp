@@ -57,6 +57,10 @@ public:
     bool is_missing(double pos);
 
     bool has_missing() const { return !missing_sites.empty() or !masked_intervals.empty(); }
+
+    vector<pair<double, pair<double, double>>> likelihood_sites = {};
+
+    bool likelihood_at(double pos, double &w0, double &w1);
 };
 
 shared_ptr<Node> new_node(double t);
