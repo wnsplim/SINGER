@@ -59,6 +59,14 @@ public:
 
     void reset();
 
+    vector<double> saved_row = {};
+
+    vector<Interval> saved_intervals = {};
+
+    void save_state(TSP &s);
+
+    void restore_state(TSP &s);
+
     void reserve_memory(int length);
 
     void start(Branch &branch, double t);
@@ -77,7 +85,7 @@ public:
     
     void null_emit(double theta, Node *query_node);
     
-    void mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
+    void mut_emit(double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *query_node);
     
     map<double, Node *> sample_joining_nodes(int start_index, vector<double> &coordinates);
 
@@ -103,6 +111,7 @@ public:
     Branch curr_branch = Branch();
     vector<Interval *> curr_intervals = {};
     vector<pair<int, vector<Interval *>>>  state_spaces = {{INT_MAX, {}}};
+    int n_spaces = 1;
 
     vector<pair<int, pair<double, double>>> swaps = {};
     size_t applied = 0;
@@ -126,17 +135,27 @@ public:
         vector<double> lower, factors, stays, selfs, masses;
     };
     vector<Kernel> kernels = {};
+    int n_kernels = 0;
     vector<int> kernel_at = {};
 
     double prev_rho = -1;
     double prev_theta = -1;
     double prev_width = -1, prev_crho = -1, prev_scale = -1;
     Node *prev_node = nullptr;
+    vector<double> null_logs = {};
+    bool null_logs_valid = false;
+    Node *log_node = nullptr;
+    double log_crho = -1, log_scale = -1;
+    vector<double> norms = {}, alt_norms = {};
+    long logs_stamp = 0, norm_stamp = -1, alt_stamp = -1;
+    double norm_width = -1, alt_width = -1;
+    void update_norms(Node *query_node);
 
     vector<double> cd_lb = {}, cd_ub = {}, cd_time = {};
     vector<double> cd_diagonals = {}, cd_lower = {}, cd_upper = {}, cd_factors = {}, cd_stays = {}, cd_selfs = {};
     double cd_rho = -1, cd_sister_mass = -1, cd_top = 0;
     bool cd_valid = false;
+    vector<double> A = {}, Bv = {}, BA = {}, BB = {}, GA = {}, GB = {}, HA = {}, HB = {}, SA = {}, SB = {};
     double cc_lowest_change = numeric_limits<double>::infinity();
 
     Interval *tb_interval = nullptr;
@@ -173,7 +192,7 @@ public:
     
     void compute_null_emit_probs(double theta, Node *query_node);
     
-    void compute_mut_emit_probs(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
+    void compute_mut_emit_probs(double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *query_node);
     
     void compute_diagonals(double rho);
 

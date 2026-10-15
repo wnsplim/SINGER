@@ -21,8 +21,7 @@ public:
     double bin_width = 1.0;
     bool any_missing = false;
 
-    virtual double null_emit(Branch &branch, double time, double theta, Node *node) = 0;
-    virtual double mut_emit(Branch &branch, double time, double theta, double bin_size, vector<double> &mut_set, Node *node) = 0;
+    virtual double mut_emit(Branch &branch, double time, double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *node, double norm) = 0;
 
     void set_tree_product(double c, double rho, double p, double w) {
         crho = c*rho;
@@ -30,7 +29,10 @@ public:
         bin_width = w;
     }
 
-    double norm_ratio(double ll, double lu, double l0) {
+    double null_log(Branch &branch, double time, Node *node) {
+        double ll = time - branch.lower_node->time;
+        double lu = branch.upper_node->time - time;
+        double l0 = time - node->time;
         double a = crho*ll;
         double d = crho*l0;
         double km1;
@@ -40,7 +42,7 @@ public:
             double b = crho*lu;
             km1 = d + a*b*(1 + d)/(1 + a + b);
         }
-        return exp(-bin_width*log1p(norm_scale*km1));
+        return log1p(norm_scale*km1);
     }
 };
 
@@ -60,19 +62,7 @@ inline double called_width(Node *query_node, ARG &a, int i) {
     if (!a.any_missing or query_node == nullptr or !query_node->has_missing()) {
         return w;
     }
-    vector<double> &ms = query_node->missing_sites;
-    auto lo = lower_bound(ms.begin(), ms.end(), a.coordinates[i]);
-    auto hi = lower_bound(lo, ms.end(), a.coordinates[i + 1]);
-    w -= (double) (hi - lo);
-    vector<pair<double, double>> &v = query_node->masked_intervals;
-    auto it = upper_bound(v.begin(), v.end(), make_pair(a.coordinates[i], numeric_limits<double>::infinity()));
-    if (it != v.begin()) {
-        --it;
-    }
-    for (; it != v.end() and it->first < a.coordinates[i + 1]; ++it) {
-        w -= max(0.0, min(it->second, a.coordinates[i + 1]) - max(it->first, a.coordinates[i]));
-    }
-    return max(0.0, w);
+    return query_node->called_width(i, w);
 }
 
 inline bool varying_rate(ARG &a, int lo, int hi) {

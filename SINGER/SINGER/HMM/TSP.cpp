@@ -66,15 +66,16 @@ void TSP::push_row(const vector<double> &v) {
 }
 
 void TSP::reset() {
-    state_spaces.clear();
-    state_spaces.push_back({INT_MAX, {}});
+    state_spaces[0].first = INT_MAX;
+    state_spaces[0].second.clear();
+    n_spaces = 1;
     n_rows = 0;
     curr_index = 0;
     curr_branch = Branch();
     curr_intervals.clear();
     swaps.clear();
     applied = 0;
-    kernels.clear();
+    n_kernels = 0;
     kernel_at.clear();
     thetas.clear();
     lower_sums.clear();
@@ -91,11 +92,59 @@ void TSP::reset() {
     prev_rho = -1;
     prev_theta = -1;
     prev_node = nullptr;
+    null_logs_valid = false;
     tb_kernel = -1;
     dim = 0;
     sample_index = -1;
     lower_bound = 0;
     n_arena = 0;
+}
+
+void TSP::save_state(TSP &s) {
+    deque<Interval> a;
+    vector<vector<double>> f;
+    vector<pair<int, vector<Interval *>>> p;
+    vector<Kernel> k;
+    auto park = [&]() {
+        arena.swap(a);
+        forward_probs.swap(f);
+        state_spaces.swap(p);
+        kernels.swap(k);
+    };
+    park();
+    s = *this;
+    park();
+    s.cc = make_shared<coalescent_calculator>(*cc);
+    s.cc1 = make_shared<coalescent_calculator>(*cc1);
+    s.saved_row = forward_probs[curr_index];
+    s.saved_intervals.clear();
+    for (Interval *iv : curr_intervals) {
+        s.saved_intervals.push_back(*iv);
+    }
+}
+
+void TSP::restore_state(TSP &s) {
+    deque<Interval> a;
+    vector<vector<double>> f;
+    vector<pair<int, vector<Interval *>>> p;
+    vector<Kernel> k;
+    auto park = [&]() {
+        arena.swap(a);
+        forward_probs.swap(f);
+        state_spaces.swap(p);
+        kernels.swap(k);
+    };
+    park();
+    *this = s;
+    park();
+    cc = make_shared<coalescent_calculator>(*s.cc);
+    cc1 = make_shared<coalescent_calculator>(*s.cc1);
+    forward_probs[curr_index] = saved_row;
+    for (size_t i = 0; i < curr_intervals.size(); i++) {
+        *curr_intervals[i] = saved_intervals[i];
+    }
+    state_spaces[n_spaces - 1].first = INT_MAX;
+    state_spaces[n_spaces - 1].second.clear();
 }
 
 double TSP::per_length(double rho, double L) {
@@ -109,6 +158,7 @@ void TSP::reserve_memory(int length) {
 void TSP::start(Branch &branch, double t) {
     cut_time = t;
     cd_valid = false;
+    null_logs_valid = false;
     cc_lowest_change = numeric_limits<double>::infinity();
     curr_index = 0;
     curr_branch = branch;
@@ -128,6 +178,7 @@ void TSP::transfer(Recombination &r, Branch &prev_branch, Branch &next_branch) {
     prev_rho = -1;
     prev_theta = -1;
     prev_node = nullptr;
+    null_logs_valid = false;
     sanity_check(r);
     size_t num_times = cc->num_times();
     cc->update(r);
@@ -193,6 +244,7 @@ void TSP::recombine(Branch &prev_branch, Branch &next_branch) {
     prev_rho = -1;
     prev_theta = -1;
     prev_node = nullptr;
+    null_logs_valid = false;
     curr_branch = next_branch;
     curr_index += 1;
     lower_bound = max(cut_time, next_branch.lower_node->time);
@@ -244,7 +296,15 @@ void TSP::forward(double rho) {
     bool fresh = rho != prev_rho;
     compute_diagonals(rho);
     if (fresh) {
-        kernels.push_back({lower_diagonals, factors, stays, selfs, masses});
+        if (n_kernels == (int) kernels.size()) {
+            kernels.emplace_back();
+        }
+        Kernel &k = kernels[n_kernels++];
+        k.lower = lower_diagonals;
+        k.factors = factors;
+        k.stays = stays;
+        k.selfs = selfs;
+        k.masses = masses;
     }
     compute_lower_sums();
     compute_upper_sums();
@@ -253,7 +313,7 @@ void TSP::forward(double rho) {
     if ((int) kernel_at.size() <= curr_index) {
         kernel_at.resize(curr_index + 1, -1);
     }
-    kernel_at[curr_index] = (int) kernels.size() - 1;
+    kernel_at[curr_index] = n_kernels - 1;
     push_row(lower_sums);
     for (int i = 0; i < dim; i++) {
         assert(forward_probs[curr_index][i] >= 0);
@@ -300,7 +360,7 @@ void TSP::null_emit(double theta, Node *query_node) {
     }
 }
 
-void TSP::mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node) {
+void TSP::mut_emit(double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *query_node) {
     compute_mut_emit_probs(theta, bin_size, mut_set, query_node);
     double ws = 0;
     double *curr_probs = forward_probs[curr_index].data();
@@ -528,17 +588,46 @@ void TSP::compute_null_emit_probs(double theta, Node *query_node) {
     if (theta == prev_theta and query_node == prev_node and eh->bin_width == prev_width and eh->crho == prev_crho and eh->norm_scale == prev_scale) {
         return;
     }
+    update_norms(query_node);
     prev_width = eh->bin_width;
     prev_crho = eh->crho;
     prev_scale = eh->norm_scale;
-    for (int i = 0; i < dim; i++) {
-        null_emit_probs[i] = eh->null_emit(curr_branch, curr_intervals[i]->time, theta, query_node);
-    }
+    copy(norms.begin(), norms.end(), null_emit_probs.begin());
 }
 
-void TSP::compute_mut_emit_probs(double theta, double bin_size, vector<double> &mut_set, Node *query_node) {
+void TSP::update_norms(Node *query_node) {
+    if (!(null_logs_valid and query_node == log_node and eh->crho == log_crho and eh->norm_scale == log_scale)) {
+        null_logs.resize(dim);
+        for (int i = 0; i < dim; i++) {
+            null_logs[i] = eh->null_log(curr_branch, curr_intervals[i]->time, query_node);
+        }
+        null_logs_valid = true;
+        log_node = query_node;
+        log_crho = eh->crho;
+        log_scale = eh->norm_scale;
+        logs_stamp++;
+    }
+    if (norm_stamp == logs_stamp and norm_width == eh->bin_width) {
+        return;
+    }
+    norms.swap(alt_norms);
+    swap(norm_stamp, alt_stamp);
+    swap(norm_width, alt_width);
+    if (norm_stamp == logs_stamp and norm_width == eh->bin_width) {
+        return;
+    }
+    norms.resize(dim);
     for (int i = 0; i < dim; i++) {
-        mut_emit_probs[i] = eh->mut_emit(curr_branch, curr_intervals[i]->time, theta, bin_size, mut_set, query_node);
+        norms[i] = exp(-eh->bin_width*null_logs[i]);
+    }
+    norm_stamp = logs_stamp;
+    norm_width = eh->bin_width;
+}
+
+void TSP::compute_mut_emit_probs(double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *query_node) {
+    update_norms(query_node);
+    for (int i = 0; i < dim; i++) {
+        mut_emit_probs[i] = eh->mut_emit(curr_branch, curr_intervals[i]->time, theta, bin_size, mut_set, query_node, norms[i]);
     }
 }
 
@@ -562,7 +651,9 @@ void TSP::compute_diagonals(double rho) {
             return;
         }
     }
-    vector<double> A(dim), Bv(dim), BA(dim), BB(dim), GA(dim), GB(dim), HA(dim), HB(dim), SA(dim), SB(dim);
+    for (vector<double> *v : {&A, &Bv, &BA, &BB, &GA, &GB, &HA, &HB, &SA, &SB}) {
+        v->assign(dim, 0.0);
+    }
     for (int j = 0; j < dim; j++) {
         A[j] = max(curr_intervals[j]->lb, cut_time);
         Bv[j] = curr_intervals[j]->ub;
@@ -720,11 +811,17 @@ void TSP::sanity_check(Recombination &r) {
 }
 
 void TSP::set_state_space(int x) {
-    state_spaces.insert(prev(state_spaces.end()), {x, curr_intervals});
+    if (n_spaces == (int) state_spaces.size()) {
+        state_spaces.emplace_back();
+    }
+    swap(state_spaces[n_spaces - 1], state_spaces[n_spaces]);
+    state_spaces[n_spaces - 1].first = x;
+    state_spaces[n_spaces - 1].second = curr_intervals;
+    n_spaces++;
 }
 
 vector<Interval *> &TSP::get_state_space(int x) {
-    auto it = upper_bound(state_spaces.begin(), state_spaces.end(), x,
+    auto it = upper_bound(state_spaces.begin(), state_spaces.begin() + n_spaces, x,
                           [](int k, const pair<int, vector<Interval *>> &e) { return k < e.first; });
     --it;
     return it->second;
@@ -737,7 +834,7 @@ int TSP::get_interval_index(Interval *interval, vector<Interval *> &intervals) {
 }
 
 int TSP::get_prev_breakpoint(int x) {
-    auto it = upper_bound(state_spaces.begin(), state_spaces.end(), x,
+    auto it = upper_bound(state_spaces.begin(), state_spaces.begin() + n_spaces, x,
                           [](int k, const pair<int, vector<Interval *>> &e) { return k < e.first; });
     --it;
     return it->first;

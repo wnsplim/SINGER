@@ -41,7 +41,16 @@ public:
 
     void add_mutation(double pos);
 
-    double get_state(double pos);
+    double get_state(double pos) {
+        if (it->first == pos) {
+            return it->second;
+        }
+        if (it->first < pos and next(it)->first > pos) {
+            return 0;
+        }
+        move_iterator(pos);
+        return it->first == pos ? it->second : 0;
+    }
 
     void write_state(double pos, double s);
 
@@ -57,6 +66,24 @@ public:
     bool is_missing(double pos);
 
     bool has_missing() const { return !missing_sites.empty() or !masked_intervals.empty(); }
+
+    static vector<double> table_sites;
+
+    static int site_index(double pos);
+
+    vector<char> missing_table = {};
+
+    void build_missing_table();
+
+    bool missing_at(int s, double pos) { return s >= 0 ? missing_table[s] : is_missing(pos); }
+
+    vector<pair<int, double>> width_table = {};
+
+    size_t width_at = 0;
+
+    int flat_index = -1;
+
+    double called_width(int bin, double assayed);
 
     vector<pair<double, pair<double, double>>> likelihood_sites = {};
 

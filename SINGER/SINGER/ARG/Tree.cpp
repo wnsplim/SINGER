@@ -60,14 +60,30 @@ double Flat_tree::length() const {
     return l;
 }
 
+static vector<map<Node *, Node *, compare_node>::node_type> spare_nodes;
+
 void Tree::delete_branch(const Branch &b) {
     assert(b.upper_node != nullptr and b.lower_node != nullptr);
-    parents.erase(b.lower_node);
+    auto nh = parents.extract(b.lower_node);
+    if (nh and spare_nodes.size() < 64) {
+        spare_nodes.push_back(move(nh));
+    }
 }
 
 void Tree::insert_branch(const Branch &b) {
     assert(b.upper_node != nullptr and b.lower_node != nullptr);
-    parents[b.lower_node] = b.upper_node;
+    auto it = parents.lower_bound(b.lower_node);
+    if (it != parents.end() and !parents.key_comp()(b.lower_node, it->first)) {
+        it->second = b.upper_node;
+    } else if (spare_nodes.empty()) {
+        parents.emplace_hint(it, b.lower_node, b.upper_node);
+    } else {
+        auto nh = move(spare_nodes.back());
+        spare_nodes.pop_back();
+        nh.key() = b.lower_node;
+        nh.mapped() = b.upper_node;
+        parents.insert(it, move(nh));
+    }
 }
 
 void Tree::forward_update(Recombination &r) {

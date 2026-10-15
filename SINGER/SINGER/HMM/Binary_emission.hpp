@@ -25,9 +25,7 @@ public:
 
     ~Binary_emission();
 
-    double null_emit(Branch &branch, double time, double theta, Node *node) override;
-
-    double mut_emit(Branch &branch, double time, double theta, double bin_size, vector<double> &mut_set, Node *node) override;
+    double mut_emit(Branch &branch, double time, double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *node, double norm) override;
 };
 
 #endif /* Binary_emission_hpp */

@@ -24,6 +24,7 @@ void coalescent_calculator::set_events(vector<pair<double, int>> &events) {
         sgn.push_back(e.second);
     }
     rebuild_from = 0;
+    memo_n = memo_next = 0;
 }
 
 void coalescent_calculator::start(set<Branch> &branches) {
@@ -51,6 +52,7 @@ void coalescent_calculator::update(Recombination &r) {
 }
 
 void coalescent_calculator::update(double t_old, double t_new) {
+    memo_n = memo_next = 0;
     if (t_old > cut_time) {
         auto it = lower_bound(t.begin(), t.end(), t_old);
         if (it != t.end() and *it == t_old) {
@@ -140,15 +142,25 @@ void coalescent_calculator::at(double x, double &g, double &q) {
     q = Q[j] + ((t[j] - cut_time)*ea - (x - cut_time)*ex)/k + (ea - ex)/k/k;
 }
 
+double coalescent_calculator::g_at(double x) {
+    for (int k = 0; k < memo_n; k++) {
+        if (memo_x[k] == x) {
+            return memo_g[k];
+        }
+    }
+    double g, q;
+    at(x, g, q);
+    memo_x[memo_next] = x;
+    memo_g[memo_next] = g;
+    memo_next = (memo_next + 1) % 4;
+    memo_n = min(memo_n + 1, 4);
+    return g;
+}
+
 double coalescent_calculator::prob(double x, double y) {
     refresh();
-    double gx, qx, gy, qy;
-    if (x == cut_time) {
-        gx = g_cut;
-    } else {
-        at(x, gx, qx);
-    }
-    at(y, gy, qy);
+    double gx = (x == cut_time) ? g_cut : g_at(x);
+    double gy = g_at(y);
     return max(gy - gx, 0.0);
 }
 

@@ -73,12 +73,16 @@ private:
     double tail_Q = 0;
     double g_cut = 0;
     int rebuild_from = 0;
+    double memo_x[4] = {}, memo_g[4] = {};
+    int memo_n = 0, memo_next = 0;
 
     void set_events(vector<pair<double, int>> &events);
 
     void refresh();
 
     void at(double x, double &g, double &q);
+
+    double g_at(double x);
 
 };
 

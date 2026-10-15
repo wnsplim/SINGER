@@ -11,7 +11,7 @@ RSP_smc::RSP_smc() {
 }
 
 void RSP_smc::set_tree(Tree &tree) {
-    vector<pair<double, int>> events;
+    events.clear();
     for (auto &x : tree.parents) {
         if (x.first->time > 0) {
             events.push_back({x.first->time, x.first->is_sample ? -1 : 1});

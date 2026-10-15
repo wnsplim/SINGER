@@ -11,14 +11,7 @@ Binary_emission::Binary_emission() {}
 
 Binary_emission::~Binary_emission() {}
 
-double Binary_emission::null_emit(Branch &branch, double time, double theta, Node *node) {
-    double ll = time - branch.lower_node->time;
-    double lu = branch.upper_node->time - time;
-    double l0 = time - node->time;
-    return norm_ratio(ll, lu, l0);
-}
-
-double Binary_emission::mut_emit(Branch &branch, double time, double theta, double bin_size, vector<double> &mut_set, Node *node) {
+double Binary_emission::mut_emit(Branch &branch, double time, double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *node, double norm) {
     double emit_prob = 1;
     double old_prob = 1;
     double ll = time - branch.lower_node->time;
@@ -35,12 +28,12 @@ double Binary_emission::mut_emit(Branch &branch, double time, double theta, doub
     bool lower_any = any_missing and branch.lower_node->has_missing();
     bool query_any = any_missing and node->has_missing();
     bool query_weighted = node->likelihood_sites.size() > 0;
-    for (double m : mut_set) {
+    for (auto [m, site] : mut_set) {
         int sl = (int) branch.lower_node->get_state(m);
         int su = (int) branch.upper_node->get_state(m);
         int s0 = (int) node->get_state(m);
-        bool ml = lower_any and branch.lower_node->is_missing(m);
-        bool m0 = query_any and node->is_missing(m);
+        bool ml = lower_any and branch.lower_node->missing_at(site, m);
+        bool m0 = query_any and node->missing_at(site, m);
         double q[2] = {1.0, 1.0};
         if (query_weighted and node->likelihood_at(m, q[0], q[1])) {
             m0 = true;
@@ -73,7 +66,7 @@ double Binary_emission::mut_emit(Branch &branch, double time, double theta, doub
             old_prob *= uo;
         }
     }
-    emit_prob *= norm_ratio(ll, lu, l0);
+    emit_prob *= norm;
     emit_prob /= old_prob;
     assert(emit_prob != 0);
     return emit_prob;

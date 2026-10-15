@@ -120,6 +120,7 @@ void Sampler::set_entries(vector<Node *> &leaves) {
         arg.mutation_sites.insert(x);
         arg.mutation_branches[x];
     }
+    arg.index_missing(leaves);
 }
 
 void Sampler::iterative_start() {

@@ -232,6 +232,8 @@ void ARG::rebuild_anchors() {
     anchor_dirty.clear();
 }
 
+static vector<map<double, Recombination>::node_type> spare_records;
+
 void ARG::window_copy_into(ARG &c, double lo_pos) {
     c.Ne = Ne;
     c.root = root;
@@ -247,12 +249,29 @@ void ARG::window_copy_into(ARG &c, double lo_pos) {
     }
     c.mutation_sites.insert(c.mutation_sites.end(), *mutation_sites.rbegin());
     c.mutation_branches.clear();
-    c.recombinations.clear();
-    c.recombinations.insert(*recombinations.begin());
-    for (auto it = recombinations.lower_bound(lo_pos); it != recombinations.end() and it->first <= end; ++it) {
-        c.recombinations.insert(c.recombinations.end(), *it);
+    while (!c.recombinations.empty()) {
+        spare_records.push_back(c.recombinations.extract(c.recombinations.begin()));
     }
-    c.recombinations.insert(*recombinations.rbegin());
+    auto copy_record = [&](const pair<const double, Recombination> &e) {
+        if (spare_records.empty()) {
+            c.recombinations.insert(c.recombinations.end(), e);
+            return;
+        }
+        auto nh = move(spare_records.back());
+        spare_records.pop_back();
+        nh.key() = e.first;
+        nh.mapped() = e.second;
+        c.recombinations.insert(c.recombinations.end(), move(nh));
+    };
+    copy_record(*recombinations.begin());
+    auto r_it = recombinations.lower_bound(lo_pos);
+    if (r_it == recombinations.begin()) {
+        ++r_it;
+    }
+    for (; r_it != recombinations.end() and r_it->first <= end; ++r_it) {
+        copy_record(*r_it);
+    }
+    copy_record(*recombinations.rbegin());
     c.bin_num = bin_num;
     c.penalty = penalty;
     c.ancestral_prob = ancestral_prob;
@@ -788,6 +807,62 @@ void ARG::index_genotype_likelihoods() {
     }
 }
 
+static double searched_width(Node *n, double w, double x0, double x1) {
+    vector<double> &ms = n->missing_sites;
+    auto lo = lower_bound(ms.begin(), ms.end(), x0);
+    auto hi = lower_bound(lo, ms.end(), x1);
+    w -= (double) (hi - lo);
+    vector<pair<double, double>> &v = n->masked_intervals;
+    auto it = upper_bound(v.begin(), v.end(), make_pair(x0, numeric_limits<double>::infinity()));
+    if (it != v.begin()) {
+        --it;
+    }
+    for (; it != v.end() and it->first < x1; ++it) {
+        w -= max(0.0, min(it->second, x1) - max(it->first, x0));
+    }
+    return max(0.0, w);
+}
+
+vector<pair<double, int>>::iterator ARG::site_at(double x) {
+    if (site_list.size() != mutation_sites.size()) {
+        site_list.clear();
+        for (double m : mutation_sites) {
+            site_list.push_back({m, Node::site_index(m)});
+        }
+    }
+    return lower_bound(site_list.begin(), site_list.end(), x, [](const pair<double, int> &e, double p) { return e.first < p; });
+}
+
+void ARG::index_missing(const vector<Node *> &leaves) {
+    set<double> sites = mutation_sites;
+    for (Node *n : leaves) {
+        for (auto &x : n->mutation_sites) {
+            sites.insert(x.first);
+        }
+    }
+    Node::table_sites.assign(sites.begin(), sites.end());
+    for (Node *n : leaves) {
+        if (!n->has_missing()) {
+            continue;
+        }
+        n->build_missing_table();
+        vector<int> bins;
+        for (double x : n->missing_sites) {
+            bins.push_back(get_index(x));
+        }
+        for (auto &v : n->masked_intervals) {
+            for (int i = get_index(max(0.0, v.first)); i < bin_num and coordinates[i] < v.second; i++) {
+                bins.push_back(i);
+            }
+        }
+        sort(bins.begin(), bins.end());
+        bins.erase(unique(bins.begin(), bins.end()), bins.end());
+        for (int i : bins) {
+            n->width_table.push_back({i, searched_width(n, assayed[i], coordinates[i], coordinates[i + 1])});
+        }
+    }
+}
+
 pair<const int *, const int *> ARG::entries_in(Node *leaf, double x, double y) const {
     const ARG *o = entry_owner == nullptr ? this : entry_owner;
     auto it = o->leaf_entries.find(leaf);
@@ -834,12 +909,22 @@ int Tree_order::index_of(const Flat_tree &flat, Node *n) const {
 void Tree_order::assign(const Flat_tree &flat, Node *root_node) {
     int nb = (int) flat.parents.size();
     times.resize(nb);
+    next_runs.clear();
     for (int k = 0; k < nb; k++) {
         times[k] = flat.parents[k].first->time;
+        flat.parents[k].first->flat_index = k;
+        if (k > 0 and times[k] == times[k - 1]) {
+            next_runs.back()++;
+        } else {
+            next_runs.push_back(1);
+        }
     }
-    order.resize(nb);
-    iota(order.begin(), order.end(), 0);
-    sort(order.begin(), order.end(), [&](int i, int j) { return times[i] < times[j]; });
+    if (next_runs != runs) {
+        runs.swap(next_runs);
+        order.resize(nb);
+        iota(order.begin(), order.end(), 0);
+        sort(order.begin(), order.end(), [&](int i, int j) { return times[i] < times[j]; });
+    }
     up.assign(nb, -1);
     kids.resize(nb);
     for (vector<int> &v : kids) {
@@ -850,7 +935,7 @@ void Tree_order::assign(const Flat_tree &flat, Node *root_node) {
         if (flat.parents[k].second == root_node) {
             top = k;
         } else {
-            up[k] = index_of(flat, flat.parents[k].second);
+            up[k] = flat.parents[k].second->flat_index;
             kids[up[k]].push_back(k);
         }
     }
@@ -859,9 +944,10 @@ void Tree_order::assign(const Flat_tree &flat, Node *root_node) {
 void ARG::site_missing(const Flat_tree &flat, double pos, vector<char> &missing) {
     int nb = (int) flat.parents.size();
     missing.assign(nb, 0);
+    int site = any_missing ? Node::site_index(pos) : -1;
     for (int k = 0; k < nb; k++) {
         Node *l = flat.parents[k].first;
-        missing[k] = l->is_sample and any_missing and l->has_missing() and l->is_missing(pos);
+        missing[k] = l->is_sample and any_missing and l->has_missing() and l->missing_at(site, pos);
     }
 }
 
@@ -1291,6 +1377,7 @@ double ARG::site_weight(const Flat_tree &tree, int bin, double pos, Node *summed
     double w[2] = {1.0, 1.0};
     double root_prior[2] = {1.0, 1.0};
     bool same[2] = {true, true};
+    int site = any_missing ? Node::site_index(pos) : -1;
     for (int k = 0; k < (int) tree.parents.size(); k++) {
         Node *l = tree.parents[k].first;
         Node *u = tree.parents[k].second;
@@ -1303,7 +1390,7 @@ double ARG::site_weight(const Flat_tree &tree, int bin, double pos, Node *summed
             continue;
         }
         double length = penalty*theta*tree.lengths[k];
-        if (any_missing and l->has_missing() and l->is_missing(pos)) {
+        if (any_missing and l->has_missing() and l->missing_at(site, pos)) {
             w[0] *= 1 + length;
             w[1] *= 1 + length;
             continue;
@@ -1334,7 +1421,7 @@ double ARG::site_weight(const Flat_tree &tree, int bin, double pos, Node *summed
 }
 
 double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, double y, double pos_p, const Tree &tree_p) {
-    Flat_tree tree;
+    Flat_tree &tree = likelihood_tree;
     tree.assign(tree_p);
     for (auto it = recombinations.lower_bound(pos_p); it != recombinations.end() and it->first <= x; ++it) {
         tree.forward_update(it->second);
@@ -1342,17 +1429,21 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
     auto recomb_it = recombinations.upper_bound(x);
     auto mut_it = mutation_sites.lower_bound(x);
     auto lin_it = lineage.begin();
+    Node *summed = Branch().upper_node;
     auto [qi, qe] = entries_in(lineage.begin()->second.lower_node, x, y);
     const vector<Genotype_likelihood> &gl = entries();
-    Tree_order t;
+    Tree_order &t = likelihood_order;
     bool order_stale = true;
-    vector<int> leaf, below, observed;
-    vector<double> lg;
+    vector<int> &leaf = likelihood_leaf, &below = likelihood_below, &observed = likelihood_observed;
+    vector<double> &lg = likelihood_lg;
     double lg_rho = -1;
+    double lg_values_rho = -1;
     Peel peel;
     double ll = 0;
     double crho = -1;
     double p = 1.0;
+    double log_p_of = numeric_limits<double>::quiet_NaN();
+    double log_p = 0;
     int since_full = 0;
     int i_end = get_index(y);
     for (int i = get_index(x); i < i_end; i++) {
@@ -1384,7 +1475,11 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
             }
             since_full = 0;
         }
-        ll -= assayed[i]*log1p((p - 1)/penalty);
+        if (p != log_p_of) {
+            log_p_of = p;
+            log_p = log1p((p - 1)/penalty);
+        }
+        ll -= assayed[i]*log_p;
         if (any_missing) {
             if (order_stale) {
                 t.assign(tree, root.get());
@@ -1394,18 +1489,33 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
             }
             if (lg_rho != crho) {
                 lg_rho = crho;
-                lg.resize(tree.parents.size());
+                vector<pair<Node *, Node *>> &old_parents = likelihood_lg_parents;
+                vector<double> &next = likelihood_lg_next;
+                next.resize(tree.parents.size());
+                size_t j = 0;
+                size_t j_end = crho == lg_values_rho ? old_parents.size() : 0;
                 for (int k = 0; k < (int) tree.parents.size(); k++) {
-                    lg[k] = tree.parents[k].second == root.get() ? 0.0 : log1p(crho*tree.lengths[k]);
+                    Node *l = tree.parents[k].first, *u = tree.parents[k].second;
+                    while (j < j_end and (old_parents[j].first->time < l->time or (old_parents[j].first->time == l->time and old_parents[j].first->index < l->index))) {
+                        j++;
+                    }
+                    if (j < j_end and old_parents[j].first == l and old_parents[j].second == u) {
+                        next[k] = lg[j];
+                    } else {
+                        next[k] = u == root.get() ? 0.0 : log1p(crho*tree.lengths[k]);
+                    }
                 }
+                lg.swap(next);
+                old_parents = tree.parents;
+                lg_values_rho = crho;
             }
             ll += unassayed_correction(t, leaf, below, lg, i, observed);
         }
         double q = coordinates[i] + 0.5*w;
         while (lin_it != lineage.end() and lin_it->first < q) {
+            summed = lin_it->second.upper_node;
             ++lin_it;
         }
-        Node *summed = (lin_it == lineage.begin()) ? Branch().upper_node : prev(lin_it)->second.upper_node;
         while (*mut_it < coordinates[i + 1]) {
             while (qi != qe and gl[*qi].pos < *mut_it) {
                 qi++;
@@ -1551,7 +1661,7 @@ double ARG::unassayed_correction(const Tree_order &t, const vector<int> &leaf, c
 }
 
 double ARG::corrected_smc_prior(map<double, Branch> &lineage, int lo, int hi, double p, const Tree &tree_p) {
-    Flat_tree tree;
+    Flat_tree &tree = likelihood_tree;
     tree.assign(tree_p);
     for (auto it = recombinations.lower_bound(p); it != recombinations.end() and it->first <= coordinates[lo]; ++it) {
         tree.forward_update(it->second);
@@ -1567,6 +1677,7 @@ double ARG::corrected_smc_prior(map<double, Branch> &lineage, int lo, int hi, do
     RSP_smc rsp = RSP_smc();
     rsp.set_tree(tree);
     double visible_length = tree.length() - rsp.unchanged_recomb_length(tree);
+    double stay_rho = numeric_limits<double>::quiet_NaN(), stay_length = 0, stay_log = 0;
     auto recomb_it = recombinations.upper_bound(coordinates[lo]);
     for (int i = lo; i < hi; i++) {
         double rho = rhos[i];
@@ -1583,7 +1694,12 @@ double ARG::corrected_smc_prior(map<double, Branch> &lineage, int lo, int hi, do
                 cerr << "bin " << i << " is too wide for one record per bin: rho*visible length = " << rho*visible_length << endl;
                 exit(1);
             }
-            log_likelihood += log1p(-rho*visible_length);
+            if (rho != stay_rho or visible_length != stay_length) {
+                stay_rho = rho;
+                stay_length = visible_length;
+                stay_log = log1p(-rho*visible_length);
+            }
+            log_likelihood += stay_log;
         }
     }
     return log_likelihood;

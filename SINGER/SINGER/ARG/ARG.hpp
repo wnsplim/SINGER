@@ -42,6 +42,7 @@ struct Tree_order {
     vector<int> up = {};
     vector<vector<int>> kids = {};
     int top = -1;
+    vector<int> runs = {}, next_runs = {};
 
     void assign(const Flat_tree &flat, Node *root_node);
 
@@ -184,6 +185,12 @@ public:
 
     void index_genotype_likelihoods();
 
+    void index_missing(const vector<Node *> &leaves);
+
+    vector<pair<double, int>> site_list = {};
+
+    vector<pair<double, int>>::iterator site_at(double x);
+
     void set_collapsed(Node *leaf, double x, double y);
 
     const vector<Genotype_likelihood> &entries() const;
@@ -234,6 +241,16 @@ public:
     void clear_remove_info();
 
     double corrected_smc_prior(map<double, Branch> &lineage, int lo, int hi, double p, const Tree &tree_p);
+
+    Flat_tree likelihood_tree;
+
+    Tree_order likelihood_order;
+
+    vector<int> likelihood_leaf = {}, likelihood_below = {}, likelihood_observed = {};
+
+    vector<double> likelihood_lg = {}, likelihood_lg_next = {};
+
+    vector<pair<Node *, Node *>> likelihood_lg_parents = {};
 
     double mutation_log_likelihood(map<double, Branch> &lineage, double x, double y, double p, const Tree &tree_p);
 

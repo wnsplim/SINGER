@@ -27,6 +27,7 @@ void Threader_smc::reset() {
     end = 0;
     start_index = 0;
     end_index = 0;
+    resume_index = -1;
 }
 
 static bool held_between(ARG &a, Node *n, double x, double y) {
@@ -145,6 +146,9 @@ void Threader_smc::exact_internal_rethread(ARG &a, tuple<double, Branch, double>
     if (!joins_deleted_node(a, a.removed_branches)) {
         run_BSP(a);
         sample_joining_branches(a);
+        if (!entries) {
+            find_resume_index(a);
+        }
         run_TSP(a);
         sample_joining_points(a);
         if (keeps_deleted_node(a) and !has_gap_node(added_branches, a) and !joins_deleted_node(a, added_branches) and !a.empties_cut_span_end_recombination(new_joining_branches, added_branches)) {
@@ -300,10 +304,10 @@ void Threader_smc::run_BSP(ARG &a) {
     bsp.set_emission(pe);
     bsp.start(a.start_tree, cut_time);
     auto recomb_it = a.recombinations.upper_bound(start);
-    auto mut_it = a.mutation_sites.lower_bound(start);
+    auto mut_it = a.site_at(start);
     auto query_it = a.removed_branches.begin();
     vector<double> mutations;
-    vector<double> mut_set = {};
+    vector<pair<double, int>> mut_set = {};
     set<Branch> deletions = {};
     set<Branch> insertions = {};
     Node *query_node = nullptr;
@@ -341,7 +345,7 @@ void Threader_smc::run_BSP(ARG &a) {
         }
         pe->set_tree_product(pe->penalty, no_data ? 0.0 : rho, p_tree, called_width(query_node, a, i));
         mut_set.clear();
-        while (*mut_it < a.coordinates[i + 1]) {
+        while (mut_it->first < a.coordinates[i + 1]) {
             mut_set.push_back(*mut_it);
             mut_it++;
         }
@@ -361,28 +365,46 @@ void Threader_smc::run_TSP(ARG &a) {
     run_TSP(a, new_joining_branches);
 }
 
-void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb) {
+void Threader_smc::find_resume_index(ARG &a) {
+    auto new_it = new_joining_branches.upper_bound(start);
+    auto old_it = a.joining_branches.upper_bound(start);
+    Branch new_branch = new_joining_branches.begin()->second;
+    Branch old_branch = a.joining_branches.begin()->second;
+    for (int i = start_index; i < end_index; i++) {
+        auto old_at = old_it;
+        if (a.coordinates[i] == new_it->first) {
+            new_branch = new_it->second;
+            new_it++;
+        }
+        if (a.coordinates[i] == old_it->first) {
+            old_branch = old_it->second;
+            old_it++;
+        }
+        if (new_branch != old_branch) {
+            if (i > start_index) {
+                resume_index = i;
+                resume_join_it = old_at;
+            }
+            return;
+        }
+    }
+}
+
+void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb, bool resume) {
     tsp.reserve_memory(end_index - start_index);
     tsp.set_gap(gap);
     tsp.set_emission(be);
-    tsp.cc = make_shared<coalescent_calculator>(cut_time);
-    tsp.cc->start(a.start_tree);
-    tsp.cc1 = make_shared<coalescent_calculator>(cut_time);
-    tsp.cc1->extra = 1;
-    tsp.cc1->start(a.start_tree);
-    Branch start_branch = jb.begin()->second;
-    tsp.start(start_branch, cut_time);
-    auto recomb_it = a.recombinations.upper_bound(start);
-    auto join_it = jb.upper_bound(start);
-    auto mut_it = a.mutation_sites.lower_bound(start);
-    auto query_it = a.removed_branches.lower_bound(start);
-    Branch prev_branch = start_branch;
-    Branch next_branch = start_branch;
+    map<double, Recombination>::iterator recomb_it;
+    map<double, Branch>::iterator join_it;
+    vector<pair<double, int>>::iterator mut_it;
+    map<double, Branch>::iterator query_it;
+    Branch prev_branch;
+    Branch next_branch;
     Node *query_node = nullptr;
-    vector<double> mut_set = {};
-    bool varying = varying_rate(a, start_index, end_index);
-    Tree tree = a.start_tree;
-    RSP_smc rsp;
+    vector<pair<double, int>> mut_set = {};
+    bool varying;
+    Tree &tree = tsp_tree;
+    RSP_smc &rsp = tsp_rsp;
     auto set_sister_mass = [&](Branch &b) {
         double lo = b.lower_node->time;
         if (lo < cut_time) {
@@ -392,11 +414,57 @@ void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb) {
             tsp.sister_mass = 0;
         }
     };
-    set_sister_mass(start_branch);
-    double curr_rho = a.thetas[start_index]/(a.coordinates[start_index + 1] - a.coordinates[start_index]);
-    double p_tree = branch_product(a.start_tree, be->penalty, curr_rho, a.cut_node);
+    double curr_rho;
+    double p_tree;
+    int first = start_index;
+    if (resume) {
+        tsp.restore_state(saved_tsp);
+        recomb_it = saved_recomb_it;
+        join_it = resume_join_it;
+        mut_it = saved_mut_it;
+        query_it = saved_query_it;
+        prev_branch = saved_prev_branch;
+        next_branch = saved_next_branch;
+        query_node = saved_query_node;
+        varying = varying_rate(a, start_index, end_index);
+        tree = saved_tree;
+        curr_rho = saved_curr_rho;
+        p_tree = saved_p_tree;
+        first = resume_index;
+    } else {
+        tsp.cc = make_shared<coalescent_calculator>(cut_time);
+        tsp.cc->start(a.start_tree);
+        tsp.cc1 = make_shared<coalescent_calculator>(cut_time);
+        tsp.cc1->extra = 1;
+        tsp.cc1->start(a.start_tree);
+        Branch start_branch = jb.begin()->second;
+        tsp.start(start_branch, cut_time);
+        recomb_it = a.recombinations.upper_bound(start);
+        join_it = jb.upper_bound(start);
+        mut_it = a.site_at(start);
+        query_it = a.removed_branches.lower_bound(start);
+        prev_branch = start_branch;
+        next_branch = start_branch;
+        varying = varying_rate(a, start_index, end_index);
+        tree = a.start_tree;
+        set_sister_mass(start_branch);
+        curr_rho = a.thetas[start_index]/(a.coordinates[start_index + 1] - a.coordinates[start_index]);
+        p_tree = branch_product(a.start_tree, be->penalty, curr_rho, a.cut_node);
+    }
     be->any_missing = a.any_missing;
-    for (int i = start_index; i < end_index; i++) {
+    for (int i = first; i < end_index; i++) {
+        if (i == resume_index and !resume) {
+            tsp.save_state(saved_tsp);
+            saved_recomb_it = recomb_it;
+            saved_mut_it = mut_it;
+            saved_query_it = query_it;
+            saved_prev_branch = prev_branch;
+            saved_next_branch = next_branch;
+            saved_query_node = query_node;
+            saved_tree = tree;
+            saved_curr_rho = curr_rho;
+            saved_p_tree = p_tree;
+        }
         if (a.coordinates[i] == query_it->first) {
             query_node = query_it->second.lower_node;
             query_it++;
@@ -432,7 +500,7 @@ void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb) {
         }
         be->set_tree_product(be->penalty, no_data ? 0.0 : rho, p_tree, called_width(query_node, a, i));
         mut_set.clear();
-        while (*mut_it < a.coordinates[i+1]) {
+        while (mut_it->first < a.coordinates[i+1]) {
             mut_set.push_back(*mut_it);
             mut_it++;
         }
@@ -531,10 +599,14 @@ double Threader_smc::exact_acceptance_ratio(ARG &a) {
     double q_old = bsp.branch_log_q(a.joining_branches, start_index, a.coordinates);
     double h_new = tsp.sel_log_q + tsp.time_log_q;
     if (a.joining_branches != new_joining_branches) {
-        set<double> check_points = tsp.check_points;
-        tsp.reset();
-        tsp.check_points = check_points;
-        run_TSP(a, a.joining_branches);
+        if (resume_index >= 0) {
+            run_TSP(a, a.joining_branches, true);
+        } else {
+            set<double> check_points = tsp.check_points;
+            tsp.reset();
+            tsp.check_points = check_points;
+            run_TSP(a, a.joining_branches);
+        }
     }
     double h_old = tsp.eval_joining_nodes(a.joining_branches, a.removed_branches, start_index, a.coordinates);
     double log_a = log_pi_ratio(a) + (q_old - q_new) + (h_old - h_new) + log(jac);

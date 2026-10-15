@@ -47,6 +47,30 @@ bool Node::is_missing(double pos) {
     return it != masked_intervals.begin() and prev(it)->second > pos;
 }
 
+vector<double> Node::table_sites = {};
+
+int Node::site_index(double pos) {
+    auto it = lower_bound(table_sites.begin(), table_sites.end(), pos);
+    return it != table_sites.end() and *it == pos ? (int) (it - table_sites.begin()) : -1;
+}
+
+void Node::build_missing_table() {
+    missing_table.resize(table_sites.size());
+    for (size_t s = 0; s < table_sites.size(); s++) {
+        missing_table[s] = is_missing(table_sites[s]);
+    }
+}
+
+double Node::called_width(int bin, double assayed) {
+    while (width_at > 0 and width_table[width_at - 1].first >= bin) {
+        width_at--;
+    }
+    while (width_at < width_table.size() and width_table[width_at].first < bin) {
+        width_at++;
+    }
+    return width_at < width_table.size() and width_table[width_at].first == bin ? width_table[width_at].second : assayed;
+}
+
 bool Node::likelihood_at(double pos, double &w0, double &w1) {
     auto it = lower_bound(likelihood_sites.begin(), likelihood_sites.end(), pos,
                           [](const pair<double, pair<double, double>> &e, double p) { return e.first < p; });
@@ -56,16 +80,6 @@ bool Node::likelihood_at(double pos, double &w0, double &w1) {
     w0 = it->second.first;
     w1 = it->second.second;
     return true;
-}
-
-double Node::get_state(double pos) {
-    move_iterator(pos);
-    if (it->first == pos) {
-        return it->second;
-    } else {
-        return 0;
-    }
-    return 0;
 }
 
 void Node::write_state(double pos, double s) {

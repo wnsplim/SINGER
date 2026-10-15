@@ -89,6 +89,7 @@ void approx_BSP::reset() {
     prev_rho = -1;
     prev_theta = -1;
     prev_node = nullptr;
+    null_logs_valid = false;
     eval_rp_times = nullptr;
     eval_rp_n = 0;
     eval_rp_rho = -1;
@@ -108,6 +109,7 @@ void approx_BSP::reserve_memory(int length) {
 void approx_BSP::start(Tree &tree, double t) {
     cut_time = t;
     curr_index = 0;
+    null_logs_valid = false;
     for (auto &x : tree.parents) {
         if (x.second->time > cut_time) {
             valid_branches.insert(Branch(x.first, x.second));
@@ -188,6 +190,7 @@ void approx_BSP::transfer(Recombination &r) {
     rhos.push_back(0);
     prev_rho = -1;
     prev_theta = -1;
+    null_logs_valid = false;
     recomb_sums.push_back(0);
     weight_sums.push_back(0);
     sanity_check(r);
@@ -245,7 +248,7 @@ void approx_BSP::null_emit(double theta, Node *query_node) {
     }
 }
 
-void approx_BSP::mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node) {
+void approx_BSP::mut_emit(double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *query_node) {
     compute_mut_emit_probs(theta, bin_size, mut_set, query_node);
     double ws = 0;
     double *curr_probs = row(curr_index);
@@ -534,17 +537,46 @@ void approx_BSP::compute_null_emit_prob(double theta, Node *query_node) {
     if (theta == prev_theta and query_node == prev_node and eh->bin_width == prev_width and eh->crho == prev_crho and eh->norm_scale == prev_scale) {
         return;
     }
+    update_norms(query_node);
     prev_width = eh->bin_width;
     prev_crho = eh->crho;
     prev_scale = eh->norm_scale;
-    for (int i = 0; i < dim; i++) {
-        null_emit_probs[i] = eh->null_emit(curr_intervals[i]->branch, time_points[i], theta, query_node);
-    }
+    copy(norms.begin(), norms.end(), null_emit_probs.begin());
 }
 
-void approx_BSP::compute_mut_emit_probs(double theta, double bin_size, vector<double> &mut_set, Node *query_node) {
+void approx_BSP::update_norms(Node *query_node) {
+    if (!(null_logs_valid and query_node == log_node and eh->crho == log_crho and eh->norm_scale == log_scale)) {
+        null_logs.resize(dim);
+        for (int i = 0; i < dim; i++) {
+            null_logs[i] = eh->null_log(curr_intervals[i]->branch, time_points[i], query_node);
+        }
+        null_logs_valid = true;
+        log_node = query_node;
+        log_crho = eh->crho;
+        log_scale = eh->norm_scale;
+        logs_stamp++;
+    }
+    if (norm_stamp == logs_stamp and norm_width == eh->bin_width) {
+        return;
+    }
+    norms.swap(alt_norms);
+    swap(norm_stamp, alt_stamp);
+    swap(norm_width, alt_width);
+    if (norm_stamp == logs_stamp and norm_width == eh->bin_width) {
+        return;
+    }
+    norms.resize(dim);
     for (int i = 0; i < dim; i++) {
-        mut_emit_probs[i] = eh->mut_emit(curr_intervals[i]->branch, time_points[i], theta, bin_size, mut_set, query_node);
+        norms[i] = exp(-eh->bin_width*null_logs[i]);
+    }
+    norm_stamp = logs_stamp;
+    norm_width = eh->bin_width;
+}
+
+void approx_BSP::compute_mut_emit_probs(double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *query_node) {
+    update_norms(query_node);
+    for (int i = 0; i < dim; i++) {
+        mut_emit_probs[i] = eh->mut_emit(curr_intervals[i]->branch, time_points[i], theta, bin_size, mut_set, query_node, norms[i]);
     }
 }
 
@@ -661,7 +693,7 @@ void approx_BSP::generate_intervals(Recombination &r) {
         }
     }
     push_row(temp);
-    curr_intervals = move(temp_intervals);
+    curr_intervals.swap(temp_intervals);
 }
 
 double approx_BSP::get_overwrite_prob(Recombination &r, double lb, double ub) {

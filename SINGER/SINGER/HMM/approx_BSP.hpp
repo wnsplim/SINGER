@@ -53,6 +53,14 @@ public:
     double prev_theta = -1;
     double prev_width = -1, prev_crho = -1, prev_scale = -1;
     Node *prev_node = nullptr;
+    vector<double> null_logs = {};
+    bool null_logs_valid = false;
+    Node *log_node = nullptr;
+    double log_crho = -1, log_scale = -1;
+    vector<double> norms = {}, alt_norms = {};
+    long logs_stamp = 0, norm_stamp = -1, alt_stamp = -1;
+    double norm_width = -1, alt_width = -1;
+    void update_norms(Node *query_node);
     
     int dim = 0;
     double recomb_sum = 0;
@@ -112,7 +120,7 @@ public:
     
     void null_emit(double theta, Node *query_node);
     
-    void mut_emit(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
+    void mut_emit(double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *query_node);
     
     map<double, Branch> sample_joining_branches(int start_index, vector<double> &coordinates);
 
@@ -126,7 +134,7 @@ public:
     
     void compute_null_emit_prob(double theta, Node *query_node);
     
-    void compute_mut_emit_probs(double theta, double bin_size, vector<double> &mut_set, Node *query_node);
+    void compute_mut_emit_probs(double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *query_node);
     
     void transfer_helper(Interval_info &next_interval, Interval_ptr &prev_interval, double w);
     

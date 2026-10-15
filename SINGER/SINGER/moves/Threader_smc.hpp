@@ -51,8 +51,24 @@ public:
     map<double, Branch> added_branches = {};
     double pos_lo = 0;
     Tree tree_lo;
+    Tree tsp_tree;
+    RSP_smc tsp_rsp;
     ARG new_arg;
     ARG old_arg;
+    int resume_index = -1;
+    map<double, Branch>::iterator resume_join_it;
+    TSP saved_tsp;
+    Tree saved_tree;
+    map<double, Recombination>::iterator saved_recomb_it;
+    vector<pair<double, int>>::iterator saved_mut_it;
+    map<double, Branch>::iterator saved_query_it;
+    Branch saved_prev_branch;
+    Branch saved_next_branch;
+    Node *saved_query_node = nullptr;
+    double saved_curr_rho = 0;
+    double saved_p_tree = 0;
+
+    void find_resume_index(ARG &a);
 
     void get_boundary(ARG &a);
     
@@ -62,7 +78,7 @@ public:
 
     void run_TSP(ARG &a);
 
-    void run_TSP(ARG &a, map<double, Branch> &jb);
+    void run_TSP(ARG &a, map<double, Branch> &jb, bool resume = false);
     
     void sample_joining_branches(ARG &a);
 
