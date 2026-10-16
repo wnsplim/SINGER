@@ -433,7 +433,7 @@ int main(int argc, const char * argv[]) {
     sampler.end = end_pos;
     sampler.data.chrom_name = chrom_name;
     sampler.data.genotype_lik = genotype_lik and !no_data;
-    sampler.data.phase = (phase or genotype_lik) and !no_data;
+    sampler.data.phase = phase and !no_data;
     if (calls_file.size() > 0 and !genotype_lik) {
         cerr << "Warning: -genotype_calls is ignored without -genotype_lik. " << endl;
     } else {
