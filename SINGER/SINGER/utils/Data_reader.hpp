@@ -27,6 +27,7 @@ public:
     int ploidy = 2;
     double missing_thres = 0.5;
     bool genotype_lik = false;
+    bool phase = false;
     std::string calls = "";
     std::vector<std::pair<double, double>> masked = {};
     std::map<std::string, std::vector<std::pair<double, double>>> sample_masks = {};
@@ -79,12 +80,13 @@ private:
         bool likelihood = false;
         bool from_calls = false;
         bool entry = false;
+        bool het = false;
         bool unphased_missing = false;
         int alleles = 0;
         double L[4] = {0, 0, 0, 0};
     };
 
-    Genotype_read read_genotype(const std::string &field, int individual, double x, long long pos, const Record_likelihood *r);
+    Genotype_read read_genotype(const std::string &field, int individual, double x, long long pos, const Record_likelihood *r, bool known = true);
 
     std::map<long long, std::vector<Call_record>> call_records = {};
     std::vector<int> call_column = {};
@@ -94,6 +96,7 @@ private:
     int dropped_records = 0;
     double deleted_bases = 0;
     int likelihood_genotypes = 0;
+    int het_entries = 0;
     int call_likelihoods = 0;
     int swapped_records = 0;
     int calls_absent = 0;
@@ -109,7 +112,7 @@ private:
 
     bool sample_likelihood(const Record_likelihood &r, int sample, const std::string &field, double *G, bool &from_calls);
 
-    bool state_likelihoods(int n, int *calls, bool unphased, const double *likelihoods, double *L, int &alleles);
+    bool state_likelihoods(int n, int *calls, bool unphased, bool het, const double *likelihoods, double *L, int &alleles);
 
     bool variant_site(int alt_count, int haplotypes, int alleles);
 

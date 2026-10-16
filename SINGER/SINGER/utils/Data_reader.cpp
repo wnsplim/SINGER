@@ -583,7 +583,7 @@ bool Data_reader::sample_likelihood(const Record_likelihood &r, int sample, cons
     return false;
 }
 
-bool Data_reader::state_likelihoods(int n, int *calls, bool unphased, const double *likelihoods, double *L, int &alleles) {
+bool Data_reader::state_likelihoods(int n, int *calls, bool unphased, bool het, const double *likelihoods, double *L, int &alleles) {
     int nc = ploidy == 1 ? 2 : 4;
     int ng = ploidy == 1 ? 2 : 3;
     double G[3] = {0, 0, 0};
@@ -596,7 +596,7 @@ bool Data_reader::state_likelihoods(int n, int *calls, bool unphased, const doub
         L[1] = G[1];
         L[2] = L[3] = 0;
         start = calls[0] >= 0 ? calls[0] : G[1] > G[0] ? 1 : 0;
-    } else if (n == 2 and calls[0] >= 0 and calls[1] >= 0 and !unphased) {
+    } else if (n == 2 and calls[0] >= 0 and calls[1] >= 0 and !unphased and !het) {
         int a = calls[0], b = calls[1];
         L[0] = G[0];
         L[1] = a == b or a == 1 ? G[1] : 0;
@@ -609,7 +609,7 @@ bool Data_reader::state_likelihoods(int n, int *calls, bool unphased, const doub
         L[3] = G[2];
         int best = G[1] > G[0] ? 1 : 0;
         best = G[2] > G[best] ? 2 : best;
-        start = unphased and calls[0] >= 0 and calls[1] >= 0 ? 2 : best == 0 ? 0 : best == 1 ? 2 : 3;
+        start = het ? calls[0] + 2*calls[1] : unphased and calls[0] >= 0 and calls[1] >= 0 ? 2 : best == 0 ? 0 : best == 1 ? 2 : 3;
     }
     if (L[start] == 0) {
         start = (int) (max_element(L, L + nc) - L);
@@ -638,7 +638,7 @@ bool Data_reader::variant_site(int alt_count, int haplotypes, int alleles) {
     return (alleles >> (alt_count == 0 ? 1 : 0)) & 1;
 }
 
-Data_reader::Genotype_read Data_reader::read_genotype(const string &field, int individual, double x, long long pos, const Record_likelihood *r) {
+Data_reader::Genotype_read Data_reader::read_genotype(const string &field, int individual, double x, long long pos, const Record_likelihood *r, bool known) {
     Genotype_read g;
     bool unphased;
     g.n = parse_genotype(field, ploidy, g.calls, unphased);
@@ -647,11 +647,15 @@ Data_reader::Genotype_read Data_reader::read_genotype(const string &field, int i
         g.calls[0] = g.calls[1] = -1;
         return g;
     }
+    g.het = phase and known and g.n == 2 and g.calls[0] >= 0 and g.calls[1] >= 0 and g.calls[0] != g.calls[1];
     double G[3];
     if (r != nullptr and sample_likelihood(*r, individual, field, G, g.from_calls)) {
         g.likelihood = true;
-        g.entry = state_likelihoods(g.n, g.calls, unphased, G, g.L, g.alleles);
+        g.entry = state_likelihoods(g.n, g.calls, unphased, g.het, G, g.L, g.alleles);
         g.n = ploidy;
+    } else if (g.het) {
+        const double G_het[3] = {0, 1, 0};
+        g.entry = state_likelihoods(g.n, g.calls, unphased, true, G_het, g.L, g.alleles);
     } else if (unphased) {
         g.calls[0] = g.calls[1] = -1;
         g.unphased_missing = true;
@@ -712,7 +716,7 @@ bool Data_reader::in_mask(double x) {
 void Data_reader::read(double start_pos, double end_pos, bool with_sites) {
     entries.clear();
     entry_sites.clear();
-    likelihood_genotypes = call_likelihoods = swapped_records = calls_absent = sites_without_likelihood = call_sites = 0;
+    likelihood_genotypes = het_entries = call_likelihoods = swapped_records = calls_absent = sites_without_likelihood = call_sites = 0;
     mask_of_sample.clear();
     for (const string &s : sample_names()) {
         auto m = sample_masks.find(s);
@@ -824,6 +828,9 @@ void Data_reader::print_missing_summary() {
              << sites_without_likelihood << " sites without genotype likelihoods taken as true, "
              << call_sites << " positions added from -genotype_calls";
     }
+    if (phase) {
+        cout << "; phase: " << het_entries << " heterozygous genotypes read as entries";
+    }
     cout << endl;
 }
 
@@ -868,7 +875,7 @@ void Data_reader::drop_missing_sites(double start_pos, double end_pos) {
         }
         int individual = 0, missing = 0;
         while (iss >> genotype) {
-            Genotype_read g = read_genotype(genotype, individual, x, pos, weigh ? &r : nullptr);
+            Genotype_read g = read_genotype(genotype, individual, x, pos, weigh ? &r : nullptr, known[0] and known[1]);
             for (int k = 0; k < ploidy; k++) {
                 int c = k < g.n ? g.calls[k] : -1;
                 missing += c < 0 or !known[c];
@@ -1125,11 +1132,13 @@ void Data_reader::scan_missing(double start_pos, double end_pos) {
         vector<Genotype_entry> found;
         double x = pos - start_pos;
         bool any_likelihood = false;
-        int alt_count = 0, alleles = 0;
+        int alt_count = 0, alleles = 0, with_likelihood = 0, hets = 0;
         while (iss >> genotype) {
-            Genotype_read g = read_genotype(genotype, individual, x, pos, use_likelihood ? &r : nullptr);
+            Genotype_read g = read_genotype(genotype, individual, x, pos, use_likelihood ? &r : nullptr, known[0] and known[1]);
             if (g.entry) {
                 found.push_back({x, {ploidy*individual, ploidy == 2 ? ploidy*individual + 1 : -1}, {g.L[0], g.L[1], g.L[2], g.L[3]}});
+                with_likelihood += g.likelihood;
+                hets += g.het;
             }
             call_likelihoods += g.from_calls;
             any_likelihood = any_likelihood or g.likelihood;
@@ -1147,7 +1156,8 @@ void Data_reader::scan_missing(double start_pos, double end_pos) {
         if (!found.empty() and variant_site(alt_count, ploidy*individual, alleles)) {
             entries.insert(entries.end(), found.begin(), found.end());
             entry_sites.push_back(x);
-            likelihood_genotypes += (int) found.size();
+            likelihood_genotypes += with_likelihood;
+            het_entries += hets;
         }
         sites_without_likelihood += use_likelihood and !any_likelihood and missing_haplotypes.size() < missing_sites.size();
         if (missing_haplotypes.size() == missing_sites.size()) {

@@ -28,6 +28,7 @@ int main(int argc, const char * argv[]) {
     string tip_ages_file = "";
     string mask_file = "";
     bool genotype_lik = false;
+    bool phase = false;
     string calls_file = "";
     string chrom_name = "";
     double g = -1;
@@ -83,6 +84,13 @@ int main(int argc, const char * argv[]) {
                 exit(1);
             }
             genotype_lik = true;
+        }
+        else if (arg == "-phase") {
+            if (i + 1 < argc && argv[i+1][0] != '-') {
+                cerr << "Error: -phase flag doesn't take any value. " << endl;
+                exit(1);
+            }
+            phase = true;
         }
         else if (arg == "-genotype_calls") {
             if (i + 1 >= argc || argv[i+1][0] == '-') {
@@ -425,6 +433,7 @@ int main(int argc, const char * argv[]) {
     sampler.end = end_pos;
     sampler.data.chrom_name = chrom_name;
     sampler.data.genotype_lik = genotype_lik and !no_data;
+    sampler.data.phase = (phase or genotype_lik) and !no_data;
     if (calls_file.size() > 0 and !genotype_lik) {
         cerr << "Warning: -genotype_calls is ignored without -genotype_lik. " << endl;
     } else {

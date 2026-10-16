@@ -62,7 +62,8 @@ The optional flags include:
 |**-g**|optional|generation time in years, required with `-tip_ages`|
 |**-mask**|optional|BED file of the regions that have no data, for example masked or unassayed regions. SINGER treats these regions as missing data and does not use the VCF records in them. A fourth column with a VCF sample name restricts the region to that sample.|
 |**-missing_thres**|optional|a record or base where more than this fraction of the haplotypes has no data (a missing or ambiguous allele, or a masked region of that sample) is dropped for every sample, default at 0.5.|
-|**-genotype_lik**|optional|read the GL or PL of each genotype, from the input record or else from `-genotype_calls`, and let the MCMC redraw that genotype from its likelihood and the ARG; the written phase is kept, and a genotype without a likelihood is read as written.|
+|**-genotype_lik**|optional|read the GL or PL of each genotype, from the input record or else from `-genotype_calls`, and let the MCMC redraw that genotype from its likelihood and the ARG; a genotype without a likelihood is read as written. Implies `-phase`.|
+|**-phase**|optional|let the MCMC redraw the phase of each heterozygous genotype, site by site, from the ARG; the written phase is the starting state. Without `-genotype_lik` only the written heterozygous genotypes are redrawn.|
 |**-genotype_calls**|optional|the caller's VCF whose GL or PL are used where the input has none, matched by position, REF, ALT and sample name; its variant positions absent from the input are added. Read only with `-genotype_lik`.|
 |**-chrom**|optional|the chromosome to read from the input file (default: the first chromosome in the file)|
 
