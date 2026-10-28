@@ -27,6 +27,9 @@ int main(int argc, const char * argv[]) {
     string mode = "exact";
     string tip_ages_file = "";
     string mask_file = "";
+    string mask_p_file = "";
+    string chrom_n = "";
+    string chrom_p = "";
     bool genotype_lik = false;
     bool phase = false;
     string calls_file = "";
@@ -71,12 +74,19 @@ int main(int argc, const char * argv[]) {
             }
             tip_ages_file = argv[++i];
         }
-        else if (arg == "-mask") {
+        else if (arg == "-mask_n") {
             if (i + 1 >= argc || argv[i+1][0] == '-') {
-                cerr << "Error: -mask flag cannot be empty. " << endl;
+                cerr << "Error: -mask_n flag cannot be empty. " << endl;
                 exit(1);
             }
             mask_file = argv[++i];
+        }
+        else if (arg == "-mask_p") {
+            if (i + 1 >= argc || argv[i+1][0] == '-') {
+                cerr << "Error: -mask_p flag cannot be empty. " << endl;
+                exit(1);
+            }
+            mask_p_file = argv[++i];
         }
         else if (arg == "-genotype_lik") {
             if (i + 1 < argc && argv[i+1][0] != '-') {
@@ -105,6 +115,20 @@ int main(int argc, const char * argv[]) {
                 exit(1);
             }
             chrom_name = argv[++i];
+        }
+        else if (arg == "-chrom_n") {
+            if (i + 1 >= argc || argv[i+1][0] == '-') {
+                cerr << "Error: -chrom_n flag cannot be empty. " << endl;
+                exit(1);
+            }
+            chrom_n = argv[++i];
+        }
+        else if (arg == "-chrom_p") {
+            if (i + 1 >= argc || argv[i+1][0] == '-') {
+                cerr << "Error: -chrom_p flag cannot be empty. " << endl;
+                exit(1);
+            }
+            chrom_p = argv[++i];
         }
         else if (arg == "-g") {
             if (i + 1 >= argc || argv[i+1][0] == '-') {
@@ -432,6 +456,8 @@ int main(int argc, const char * argv[]) {
     sampler.start = start_pos;
     sampler.end = end_pos;
     sampler.data.chrom_name = chrom_name;
+    sampler.data.chrom_n = chrom_n;
+    sampler.data.chrom_p = chrom_p;
     sampler.data.genotype_lik = genotype_lik and !no_data;
     sampler.data.phase = phase and !no_data;
     if (calls_file.size() > 0 and !genotype_lik) {
@@ -441,6 +467,9 @@ int main(int argc, const char * argv[]) {
     }
     if (mask_file.size() > 0) {
         sampler.data.read_mask(mask_file, start_pos);
+    }
+    if (mask_p_file.size() > 0) {
+        sampler.data.read_positive_mask(mask_p_file, start_pos, end_pos);
     }
     if (resume) {
         sampler.sequence_length = end_pos - start_pos;

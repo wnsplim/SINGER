@@ -24,6 +24,8 @@ public:
 
     std::string input = "";
     std::string chrom_name = "";
+    std::string chrom_n = "";
+    std::string chrom_p = "";
     int ploidy = 2;
     double missing_thres = 0.5;
     bool genotype_lik = false;
@@ -52,6 +54,8 @@ public:
     std::string selected_chrom();
 
     void read_mask(std::string filename, double start);
+
+    void read_positive_mask(std::string filename, double start, double end);
 
     void read(double start_pos, double end_pos, bool with_sites);
 

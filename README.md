@@ -60,12 +60,15 @@ The optional flags include:
 |**-scaling_bin**|optional|the number of time bins used for ARG rescaling, default at 100|
 |**-tip_ages**|optional|file with the sampling ages in calendar years before present, see [Heterochronous samples](#heterochronous-samples-ancient-dna)|
 |**-g**|optional|generation time in years, required with `-tip_ages`|
-|**-mask**|optional|BED file of the regions that have no data, for example masked or unassayed regions. SINGER treats these regions as missing data and does not use the VCF records in them. A fourth column with a VCF sample name restricts the region to that sample.|
+|**-mask_n**|optional|Negative mask. A BED file of the regions to mask. A row without a sample name masks its region for all samples, and SINGER ignores the VCF records in that region. A row with a VCF sample name in a fourth column masks the region for that sample only, and SINGER treats both of its haplotypes as missing data there.|
+|**-mask_p**|optional|Positive mask. A BED file of the accessible regions, for example the 1000 Genomes strict accessibility mask for GRCh37 ([20141020.strict_mask.whole_genome.bed](https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/supporting/accessible_genome_masks/20141020.strict_mask.whole_genome.bed)). SINGER masks each base between `-start` and `-end` outside these regions for all samples. You can use `-mask_p` together with `-mask_n`.|
 |**-missing_thres**|optional|a record or base where more than this fraction of the haplotypes has no data (a missing or ambiguous allele, or a masked region of that sample) is dropped for every sample, default at 0.5.|
 |**-genotype_lik**|optional|read the GL or PL of each genotype, from the input record or else from `-genotype_calls`, and let the MCMC redraw that genotype from its likelihood and the ARG; a genotype without a likelihood is read as written; a written heterozygous genotype keeps its written phase unless `-phase` is also given.|
 |**-phase**|optional|let the MCMC redraw the phase of each heterozygous genotype, site by site, from the ARG; the written phase is the starting state. Without `-genotype_lik` only the written heterozygous genotypes are redrawn.|
 |**-genotype_calls**|optional|the caller's VCF whose GL or PL are used where the input has none, matched by position, REF, ALT and sample name; its variant positions absent from the input are added. Read only with `-genotype_lik`.|
 |**-chrom**|optional|the chromosome to read from the input file (default: the first chromosome in the file)|
+|**-chrom_n**|optional|the chromosome to read from the `-mask_n` file (default: the `-chrom` chromosome)|
+|**-chrom_p**|optional|the chromosome to read from the `-mask_p` file (default: the `-chrom` chromosome)|
 
 The output files will be:
 

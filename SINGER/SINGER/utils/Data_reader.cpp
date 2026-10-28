@@ -689,23 +689,62 @@ void Data_reader::read_mask(string filename, double start) {
         exit(1);
     }
     string line, chrom, name;
-    string vcf_chrom = selected_chrom();
+    string mask_name = chrom_n.empty() ? selected_chrom() : chrom_n;
     double lo, hi;
+    bool found = false;
     while (getline(fin, line)) {
         istringstream iss(line);
-        if (!(iss >> chrom >> lo >> hi) or chrom != vcf_chrom) {
+        if (!(iss >> chrom >> lo >> hi) or chrom != mask_name) {
             continue;
         }
+        found = true;
         if (iss >> name) {
             sample_masks[name].push_back({lo + 1 - start, hi + 1 - start});
         } else {
             masked.push_back({lo + 1 - start, hi + 1 - start});
         }
     }
+    if (!found) {
+        cerr << "Error: the -mask_n file " << filename << " has no row for chromosome " << mask_name << ". " << endl;
+        exit(1);
+    }
     merge_intervals(masked);
     for (auto &m : sample_masks) {
         merge_intervals(m.second);
     }
+}
+
+void Data_reader::read_positive_mask(string filename, double start, double end) {
+    ifstream fin(filename);
+    if (!fin.good()) {
+        cerr << "mask file not found: " << filename << endl;
+        exit(1);
+    }
+    string line, chrom, mask_name = chrom_p.empty() ? selected_chrom() : chrom_p;
+    double lo, hi;
+    vector<pair<double, double>> accessible;
+    while (getline(fin, line)) {
+        istringstream iss(line);
+        if ((iss >> chrom) and chrom == mask_name and (iss >> lo >> hi)) {
+            accessible.push_back({lo + 1 - start, hi + 1 - start});
+        }
+    }
+    if (accessible.empty()) {
+        cerr << "Error: the -mask_p file " << filename << " has no row for chromosome " << mask_name << ". " << endl;
+        exit(1);
+    }
+    merge_intervals(accessible);
+    double gap_start = 0, length = end - start;
+    for (auto &a : accessible) {
+        if (a.first > gap_start and gap_start < length) {
+            masked.push_back({gap_start, min(a.first, length)});
+        }
+        gap_start = max(gap_start, a.second);
+    }
+    if (gap_start < length) {
+        masked.push_back({gap_start, length});
+    }
+    merge_intervals(masked);
 }
 
 bool Data_reader::in_mask(double x) {
