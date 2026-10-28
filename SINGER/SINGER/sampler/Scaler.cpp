@@ -108,6 +108,12 @@ void Scaler::compute_deltas(ARG &a, Rate_map &mm, double start, double m) {
             }
         }
     }
+    times.clear();
+    position.clear();
+    for (int i = 0; i < (int) sorted_nodes.size(); i++) {
+        times.push_back(sorted_nodes[i]->time);
+        position[sorted_nodes[i]] = i;
+    }
 }
 
 void Scaler::compute_old_grid() {
@@ -117,7 +123,7 @@ void Scaler::compute_old_grid() {
     partial_sum(node_deltas.begin(), node_deltas.end(), rates.begin());
     assert(rates.back() > -1);
     for (int i = 1; i < sorted_nodes.size(); i++) {
-        accumulated_arg_length[i] = accumulated_arg_length[i-1] + rates[i-1]*(sorted_nodes[i]->time - sorted_nodes[i-1]->time);
+        accumulated_arg_length[i] = accumulated_arg_length[i-1] + rates[i-1]*(times[i] - times[i-1]);
     }
     double unit_arg_length = accumulated_arg_length.back()/num_windows;
     double partial_arg_length = 0;
@@ -133,9 +139,9 @@ void Scaler::compute_old_grid() {
         residue = accumulated_arg_length[new_index] - partial_arg_length;
         residue = max(0.0, residue);
         expected_arg_length[i-1] = unit_arg_length;
-        old_grid.push_back(sorted_nodes[new_index]->time - residue/rate);
+        old_grid.push_back(times[new_index] - residue/rate);
     }
-    old_grid.back() = nextafter(sorted_nodes.back()->time, INT_MAX);
+    old_grid.back() = nextafter(times.back(), INT_MAX);
     assert(old_grid.size() == num_windows + 1);
 }
 
@@ -156,10 +162,11 @@ void Scaler::compute_new_grid(double theta) {
 
 void Scaler::map_mutations(ARG &a) {
     observed_arg_length.resize(num_windows);
+    auto time_of = [&](Node *n) { return n == a.root.get() ? n->time : times[position.at(n)]; };
     for (auto &x : a.mutations) {
-        if (x.first > 0 and x.first < a.sequence_length) {
+        if (x.first > 0) {
             for (auto &y : x.second) {
-                add_mutation(1.0, y.first.lower_node->time, y.first.upper_node->time);
+                add_mutation(1.0, time_of(y.first.lower_node), time_of(y.first.upper_node));
             }
         }
     }
@@ -200,34 +207,29 @@ void Scaler::rescale(ARG &a, double theta) {
         if (sorted_nodes[i]->is_sample) {
             continue;
         }
-        while (sorted_nodes[i]->time > old_grid[k+1]) {
+        while (times[i] > old_grid[k+1]) {
             k++;
             assert(k <= num_windows);
         }
-        new_t = scaling_factors[k]*(sorted_nodes[i]->time - old_grid[k]) + new_grid[k];
+        new_t = scaling_factors[k]*(times[i] - old_grid[k]) + new_grid[k];
         assert(new_t >= old_t);
-        sorted_nodes[i]->time = new_t;
+        times[i] = new_t;
         old_t = new_t;
     }
     if (heterochronous) {
         double last = 0;
-        for (Node *n : sorted_nodes) {
-            if (n->is_sample) {
+        for (int i = 0; i < sorted_nodes.size(); i++) {
+            if (sorted_nodes[i]->is_sample) {
                 continue;
             }
             double lb = 0;
-            for (Node *c : children[n]) {
-                lb = max(lb, c->time);
+            for (Node *c : children[sorted_nodes[i]]) {
+                lb = max(lb, times[position.at(c)]);
             }
-            if (n->time <= lb) {
-                n->time = max(lb, last) + 1e-6;
-                last = n->time;
+            if (times[i] <= lb) {
+                times[i] = max(lb, last) + 1e-6;
+                last = times[i];
             }
         }
-        a.resort_after_time_change();
     }
-    for (auto &x : a.recombinations) {
-        x.second.start_time = -1;
-    }
-    a.adjust_recombinations();
 }

@@ -56,7 +56,7 @@ The optional flags include:
 |**-n**|optional|the number of posterior samples, default at 100|
 |**-thin**|optional|the number of MCMC iterations between adjacent samples, default at 200|
 |**-polar**|optional|the probability of correct polarization, default at 0.5 for unpolarized data, please use 0.99 for polarized data|
-|**-scaling_rep**|optional|the number of ARG rescaling rounds applied after the initial build and after each posterior sample, default at 1. Set to 0 to disable rescaling|
+|**-scaling_rep**|optional|the number of ARG rescaling rounds applied to a copy of each written posterior sample, default at 1. The rescaled node times are written to `prefix_of_output_files_rescaled_nodes_{i}.txt`; the MCMC itself is never rescaled, and the other output files are the sampled ARG. Set to 0 to disable rescaling|
 |**-scaling_bin**|optional|the number of time bins used for ARG rescaling, default at 100|
 |**-tip_ages**|optional|file with the sampling ages in calendar years before present, see [Heterochronous samples](#heterochronous-samples-ancient-dna)|
 |**-g**|optional|generation time in years, required with `-tip_ages`|
@@ -73,14 +73,14 @@ The output files will be:
 prefix_of_output_files_nodes_{i}.txt, prefix_of_output_files_branches_{i}.txt, prefix_of_output_files_muts_{i}.txt, prefix_of_output_files_recombs_{i}.txt
 ```
 
-with `i` from `0` to `num_samples - 1`. We recommend converting these files to tree sequence format in tskit, with this function:
+with `i` from `0` to `num_samples - 1`, and `prefix_of_output_files_rescaled_nodes_{i}.txt` when `-scaling_rep` is above 0. We recommend converting these files to tree sequence format in tskit, with this function:
 
 ```
 path_to_singer/convert_to_tskit.py -input prefix_of_arg_files -output prefix_of_tskit_files
 -start start_index -end end_index -step step_size
 ```
 
-This tool will convert ARG sample with index from `start_index` to `end_index`, with interval size `step_size`. 
+This tool will convert ARG sample with index from `start_index` to `end_index`, with interval size `step_size`. Add `-rescaled` to use the rescaled node times in place of the sampled ones; `convert_long_ARG.py` takes the same flag, and for `merge_ARG.py` list the `rescaled_nodes` files in the file table. 
 
 ### Rate maps
 

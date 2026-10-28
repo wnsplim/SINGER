@@ -20,6 +20,8 @@ public:
     bool heterochronous = false;
     unordered_map<Node *, vector<Node *>> children = {};
     vector<Node *> sorted_nodes = {};
+    vector<double> times = {};
+    unordered_map<Node *, int> position = {};
     vector<double> node_deltas = {};
     vector<double> rates = {};
     vector<double> accumulated_arg_length = {};

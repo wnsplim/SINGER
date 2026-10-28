@@ -84,7 +84,7 @@ public:
 
     void debug_resume_internal_sample(int num_iters, int spacing);
 
-    void rescale();
+    void rescale(string filename);
 
     void start_log();
 

@@ -62,10 +62,10 @@ def read_ARG(node_file, branch_file, mutation_file):
     return ts
 
 
-def write_trees(input_prefix, output_prefix, start, end, step, vcf_file=None):
+def write_trees(input_prefix, output_prefix, start, end, step, vcf_file=None, rescaled=False):
     for i in range(start, end, step):
         trees_file = f"{output_prefix}_{i}.trees"
-        node_file = f"{input_prefix}_nodes_{i}.txt"
+        node_file = f"{input_prefix}_{'rescaled_nodes' if rescaled else 'nodes'}_{i}.txt"
         branch_file = f"{input_prefix}_branches_{i}.txt"
         mutation_file = f"{input_prefix}_muts_{i}.txt"
         if not os.path.exists(node_file):
@@ -95,6 +95,9 @@ def main():
     parser.add_argument('-vcf', type=str, default=None,
                         help='Input file of the SINGER run (.vcf, .vcf.gz or .bcf). Sample names from the header are '
                              'attached as individuals, and tips are named <sample>_0 / <sample>_1.')
+    parser.add_argument('-rescaled', action='store_true',
+                        help='Use the rescaled node times (<input>_rescaled_nodes_<i>.txt, written when SINGER runs with '
+                             '-scaling_rep above 0) in place of the sampled ones (<input>_nodes_<i>.txt).')
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -102,7 +105,7 @@ def main():
 
     args = parser.parse_args()
 
-    write_trees(args.input, args.output, args.start, args.end, args.step, args.vcf)
+    write_trees(args.input, args.output, args.start, args.end, args.step, args.vcf, args.rescaled)
 
 if __name__ == '__main__':
     main()

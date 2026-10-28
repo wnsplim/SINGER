@@ -284,7 +284,7 @@ def main():
     parser.add_argument('-g', type=float, help='Generation time in years, used with -tip_ages.')
     parser.add_argument('-mask', type=str, help='BED file of regions without data; only the remaining bases enter the mutation model.')
     parser.add_argument('-chrom', type=str, help='Chromosome to read from the VCF. Default: the first one in the file.')
-    parser.add_argument('-scaling_rep', type=int, help='Number of ARG rescaling rounds after the initial build and after each sample; 0 disables rescaling. Default: 1.')
+    parser.add_argument('-scaling_rep', type=int, help='Number of ARG rescaling rounds applied to a copy of each written sample, whose node times are written to <output>_rescaled_nodes_<i>.txt; the MCMC itself is never rescaled; 0 disables rescaling. Default: 1.')
     parser.add_argument('-scaling_bin', type=int, help='Number of time bins used for ARG rescaling. Default: 100.')
     parser.add_argument('-max_attempts', type=int, default=100, help='Maximum number of automatic restarts (-debug) after a failed run; 0 disables them. Each failed command is appended to OUTPUT.attempts. Default: 100.')
 

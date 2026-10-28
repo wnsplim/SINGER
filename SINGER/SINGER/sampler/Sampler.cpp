@@ -149,8 +149,6 @@ void Sampler::iterative_start() {
     arg.resample_genotypes();
     arg.draw_mutations();
     cout << "orignal ARG length: " << arg.get_arg_length() << endl;
-    rescale();
-    cout << "rescaled ARG length: " << arg.get_arg_length() << endl;
     string node_file = output_prefix + "_start_nodes_" + to_string(sample_index) + ".txt";
     string branch_file= output_prefix + "_start_branches_" + to_string(sample_index) + ".txt";
     string recomb_file = output_prefix + "_start_recombs_" + to_string(sample_index) + ".txt";
@@ -158,6 +156,7 @@ void Sampler::iterative_start() {
     arg.write(node_file, branch_file, recomb_file, mut_file);
     string coord_file = output_prefix + "_coordinates.txt";
     arg.write_coordinates(coord_file);
+    rescale(output_prefix + "_start_rescaled_nodes_" + to_string(sample_index) + ".txt");
 }
 
 void Sampler::sweep_samples() {
@@ -197,7 +196,6 @@ void Sampler::internal_sample(int num_iters, int spacing) {
         arg.resample_genotypes();
         arg.release_dead_nodes();
         arg.draw_mutations();
-        rescale();
         random_seed = random_engine();
         write_sample();
         arg.check_incompatibility();
@@ -206,8 +204,10 @@ void Sampler::internal_sample(int num_iters, int spacing) {
         string branch_file= output_prefix + "_branches_" + to_string(sample_index) + ".txt";
         string recomb_file = output_prefix + "_recombs_" + to_string(sample_index) + ".txt";
         string mut_file = output_prefix + "_muts_" + to_string(sample_index) + ".txt";
+        string rescaled_file = output_prefix + "_rescaled_nodes_" + to_string(sample_index) + ".txt";
         sample_index += 1;
         arg.write(node_file, branch_file, recomb_file, mut_file);
+        rescale(rescaled_file);
         cout << "Number of trees: " << arg.recombinations.size() << endl;
         cout << "Number of flippings: " << arg.count_flipping() << endl;
     }
@@ -248,7 +248,7 @@ void Sampler::debug_resume_internal_sample(int num_iters, int spacing) {
     }
 }
 
-void Sampler::rescale() {
+void Sampler::rescale(string filename) {
     if (scaling_rep == 0) {
         return;
     }
@@ -258,6 +258,14 @@ void Sampler::rescale() {
     for (int i = 0; i < scaling_rep; i++) {
         scaler.reset();
         scaler.rescale(arg, mut_rate);
+    }
+    vector<double> times(scaler.times.size());
+    for (int i = 0; i < (int) times.size(); i++) {
+        times[scaler.sorted_nodes[i]->index] = scaler.times[i];
+    }
+    ofstream file(filename);
+    for (double t : times) {
+        file << setprecision(numeric_limits<double>::max_digits10) << (t + arg.time_offset)*arg.Ne << "\n";
     }
 }
 

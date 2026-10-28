@@ -67,7 +67,7 @@ def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates):
 
     return ts
 
-def generate_file_lists(vcf_prefix, output_prefix, MCMC_iteration):
+def generate_file_lists(vcf_prefix, output_prefix, MCMC_iteration, rescaled=False):
     # Read block_coordinates from the index file
     with open(f"{vcf_prefix}.index", 'r') as f:
         rows = [line.split() for line in f if line.strip()]
@@ -79,7 +79,7 @@ def generate_file_lists(vcf_prefix, output_prefix, MCMC_iteration):
     mutation_files = []
 
     for i in range(len(block_coordinates)):
-        node_files.append(f"{output_prefix}_{i}_{i+1}_nodes_{MCMC_iteration}.txt")
+        node_files.append(f"{output_prefix}_{i}_{i+1}_{'rescaled_nodes' if rescaled else 'nodes'}_{MCMC_iteration}.txt")
         branch_files.append(f"{output_prefix}_{i}_{i+1}_branches_{MCMC_iteration}.txt")
         mutation_files.append(f"{output_prefix}_{i}_{i+1}_muts_{MCMC_iteration}.txt")
     return node_files, branch_files, mutation_files, block_coordinates
@@ -97,11 +97,12 @@ def main():
     parser.add_argument("-vcf", required=True, help="Input file of the SINGER run (.vcf, .vcf.gz or .bcf)")
     parser.add_argument("-output", required=True, help="Output files prefix")
     parser.add_argument("-iteration", type=int, required=True, help="MCMC iteration for generating filenames")
+    parser.add_argument("-rescaled", action="store_true", help="Use the rescaled node times (_rescaled_nodes_ files, written when SINGER runs with -scaling_rep above 0) in place of the sampled ones (_nodes_ files)")
         
     args = parser.parse_args()
 
     # Generate file lists
-    node_files, branch_files, mutation_files, block_coordinates = generate_file_lists(args.vcf, args.output, args.iteration)
+    node_files, branch_files, mutation_files, block_coordinates = generate_file_lists(args.vcf, args.output, args.iteration, args.rescaled)
     ts = read_long_ARG(node_files, branch_files, mutation_files, block_coordinates)
     ts = vcf_io.add_individuals_from_vcf(ts, args.vcf)
     write_output_ts(ts, args.output, args.iteration)
