@@ -19,9 +19,9 @@ public:
     double crho = 0;
     double norm_scale = 1.0;
     double bin_width = 1.0;
-    bool any_missing = false;
+    vector<const Site_messages *> sites = {};
 
-    virtual double mut_emit(Branch &branch, double time, double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *node, double norm) = 0;
+    double mut_emit(Branch &branch, double time, Node *node, double norm);
 
     void set_tree_product(double c, double rho, double p, double w) {
         crho = c*rho;

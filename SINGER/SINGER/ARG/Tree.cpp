@@ -208,17 +208,14 @@ double Tree::log_exp(double lambda, double x) {
     return -lambda*x + log(lambda);
 }
 
-void Tree::impute_states(double m, set<Branch> &mutation_branches) {
-    map<Node *, double> states = {};
-    for (const Branch &b : mutation_branches) {
-        states[b.lower_node] = b.lower_node->get_state(m);
-        states[b.upper_node] = b.upper_node->get_state(m);
-    }
+void Tree::impute_states(double m, map<Node *, double> states) {
     for (auto &x : parents) {
         impute_states_helper(x.first, states);
     }
     for (auto &x : states) {
-        x.first->write_state(m, x.second);
+        if (x.first->is_sample) {
+            x.first->write_state(m, x.second);
+        }
     }
 }
 

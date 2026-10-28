@@ -13,7 +13,6 @@
 #include <sstream>
 #include "ARG.hpp"
 #include "Threader_smc.hpp"
-#include "Binary_emission.hpp"
 #include "Emission.hpp"
 #include "Scaler.hpp"
 #include "Rate_map.hpp"

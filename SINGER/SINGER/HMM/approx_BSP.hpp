@@ -15,7 +15,6 @@
 #include "coalescent_calculator.hpp"
 #include "Interval.hpp"
 #include "Emission.hpp"
-#include "Binary_emission.hpp"
 
 using Interval_ptr = Interval *;
 
@@ -120,7 +119,7 @@ public:
     
     void null_emit(double theta, Node *query_node);
     
-    void mut_emit(double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *query_node);
+    void mut_emit(Node *query_node);
     
     map<double, Branch> sample_joining_branches(int start_index, vector<double> &coordinates);
 
@@ -134,7 +133,7 @@ public:
     
     void compute_null_emit_prob(double theta, Node *query_node);
     
-    void compute_mut_emit_probs(double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *query_node);
+    void compute_mut_emit_probs(Node *query_node);
     
     void transfer_helper(Interval_info &next_interval, Interval_ptr &prev_interval, double w);
     

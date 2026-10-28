@@ -22,7 +22,6 @@ ARG::ARG(double N, double l) {
     r.set_pos(INT_MAX);
     recombinations[INT_MAX] = r;
     mutation_sites.insert(INT_MAX);
-    mutation_branches[INT_MAX] = {};
 }
 
 ARG::~ARG() {
@@ -110,9 +109,6 @@ void ARG::build_singleton_arg(const Node_ptr &n) {
     Recombination r = Recombination({}, {branch});
     r.set_pos(0.0);
     recombinations[0] = r;
-    for (double x : mutation_sites) {
-        mutation_branches[x] = {branch};
-    }
 }
 
 void ARG::add_sample(const Node_ptr &n) {
@@ -157,9 +153,6 @@ void ARG::resort_after_time_change() {
         Recombination &r = x.second;
         r.deleted_branches = set<Branch>(r.deleted_branches.begin(), r.deleted_branches.end());
         r.inserted_branches = set<Branch>(r.inserted_branches.begin(), r.inserted_branches.end());
-    }
-    for (auto &x : mutation_branches) {
-        x.second = set<Branch>(x.second.begin(), x.second.end());
     }
     node_set.clear();
     create_node_set();
@@ -248,7 +241,6 @@ void ARG::window_copy_into(ARG &c, double lo_pos) {
         c.mutation_sites.insert(c.mutation_sites.end(), *it);
     }
     c.mutation_sites.insert(c.mutation_sites.end(), *mutation_sites.rbegin());
-    c.mutation_branches.clear();
     while (!c.recombinations.empty()) {
         spare_records.push_back(c.recombinations.extract(c.recombinations.begin()));
     }
@@ -360,7 +352,6 @@ void ARG::remove(tuple<double, Branch, double> cut_point) {
     end = removed_branches.rbegin()->first;
     remove_empty_recombinations();
     anchors_changed(start, end);
-    remap_mutations();
     cut_tree.remove(center_branch, cut_node);
     backward_tree.remove(removed_branches.begin()->second, cut_node);
     start_tree = move(backward_tree);
@@ -403,9 +394,6 @@ void ARG::add(map<double, Branch> &new_joining_branches, map<double, Branch> &ad
     }
     remove_empty_recombinations();
     anchors_changed(start, end);
-    if (!impute_skip) {
-        impute(new_joining_branches, added_branches);
-    }
     start_tree.add(added_branches.begin()->second, new_joining_branches.begin()->second, cut_node);
 }
 
@@ -491,17 +479,6 @@ void ARG::adjust_recombinations() {
     }
 }
 
-int ARG::count_flipping() {
-    int count = 0;
-    for (auto &x : mutation_branches) {
-        set<Branch> &branches = x.second;
-        if (branches.size() > 1 and branches.rbegin()->upper_node == root.get()) {
-            count += 1;
-        }
-    }
-    return count;
-}
-
 void ARG::read_coordinates(string filename) {
     for (double x : Data_reader::read_numbers(filename, "input file not found")) {
         coordinates.push_back(x);
@@ -534,80 +511,6 @@ void ARG::read(string node_file, string branch_file, string recomb_file, string 
     read_muts(mut_file);
 }
 
-void ARG::impute(map<double, Branch> &new_joining_branches, map<double, Branch> &added_branches) {
-    double start = added_branches.begin()->first;
-    double end = added_branches.rbegin()->first;
-    auto mut_it = mutation_sites.lower_bound(start);
-    auto join_it = new_joining_branches.begin();
-    auto add_it = added_branches.begin();
-    double m = 0;
-    Branch joining_branch = Branch();
-    Branch added_branch = Branch();
-    Branch table_joining = Branch();
-    Branch table_added = Branch();
-    double table_theta = -1;
-    double p[32];
-    int bi = get_index(start);
-    while (add_it->first < end) {
-        added_branch = add_it->second;
-        if (join_it->first == add_it->first) {
-            joining_branch = join_it->second;
-            join_it++;
-        }
-        add_it++;
-        while (*mut_it < add_it->first) {
-            m = *mut_it;
-            while (coordinates[bi + 1] <= m) {
-                bi++;
-            }
-            double unit_theta = thetas[bi]/(coordinates[bi + 1] - coordinates[bi]);
-            if (unit_theta != table_theta or joining_branch != table_joining or added_branch != table_added) {
-                joining_state_table(joining_branch, added_branch, unit_theta, p);
-                table_theta = unit_theta;
-                table_joining = joining_branch;
-                table_added = added_branch;
-            }
-            map_mutation(m, joining_branch, added_branch, p, unit_theta);
-            mut_it++;
-        }
-    }
-}
-
-void ARG::joining_state_table(const Branch &joining_branch, const Branch &added_branch, double unit_theta, double *p) {
-    double tm = added_branch.upper_node->time;
-    double ll = tm - joining_branch.lower_node->time;
-    double lu = joining_branch.upper_node->time - tm;
-    double l0 = tm - added_branch.lower_node->time;
-    double u0 = ll*unit_theta;
-    double u1 = isinf(lu) ? 1.0 : lu*unit_theta;
-    double u2 = l0*unit_theta;
-    bool at_root = isinf(lu);
-    double w0 = at_root ? ancestral_prob : 1.0;
-    double w1 = at_root ? 1 - ancestral_prob : 1.0;
-    double pen[4] = {1.0, penalty, penalty*penalty, penalty*penalty*penalty};
-    for (int c = 0; c < 8; c++) {
-        int sl = c & 1, su = (c >> 1) & 1, s0 = (c >> 2) & 1;
-        int base = at_root ? 0 : abs(sl - su);
-        int k0 = sl + s0 + (at_root ? 0 : su);
-        double t0 = w0*(sl ? u0 : 1.0)*(su ? u1 : 1.0)*(s0 ? u2 : 1.0)*pen[k0 - base];
-        double t1 = w1*(sl ? 1.0 : u0)*(su ? 1.0 : u1)*(s0 ? 1.0 : u2)*pen[(at_root ? 2 : 3) - k0 - base];
-        p[c] = t1/(t0 + t1);
-    }
-    if (!any_missing) {
-        return;
-    }
-    double p0 = u0*penalty, p1 = at_root ? 1.0 : u1*penalty, p2 = u2*penalty;
-    for (int mask = 1; mask < 4; mask++) {
-        bool ml = mask & 1, m0 = mask & 2;
-        for (int c = 0; c < 8; c++) {
-            int sl = c & 1, su = (c >> 1) & 1, s0 = (c >> 2) & 1;
-            double t0 = w0*(ml or sl == 0 ? 1.0 : p0)*(su == 0 ? 1.0 : p1)*(m0 or s0 == 0 ? 1.0 : p2);
-            double t1 = w1*(ml or sl == 1 ? 1.0 : p0)*(su == 1 ? 1.0 : p1)*(m0 or s0 == 1 ? 1.0 : p2);
-            p[8*mask + c] = t1/(t0 + t1);
-        }
-    }
-}
-
 void ARG::compute_assayed() {
     int n = (int) coordinates.size() - 1;
     assayed.resize(n);
@@ -631,163 +534,32 @@ void ARG::compute_assayed() {
     }
 }
 
-void ARG::map_mutation(double x, Branch joining_branch, Branch added_branch, const double *joining_state_prob, double unit_theta) {
-    double sl, su, s0, sm;
-    Branch new_branch;
-    Node *lower_node = joining_branch.lower_node;
-    Node *query_node = added_branch.lower_node;
-    bool ml = any_missing and lower_node->is_missing(x);
-    bool m0 = any_missing and query_node->is_missing(x);
-    sl = lower_node->get_state(x);
-    su = joining_branch.upper_node->get_state(x);
-    s0 = query_node->get_state(x);
-    double q[2];
-    bool weighted = query_node->likelihood_sites.size() > 0 and query_node->likelihood_at(x, q[0], q[1]);
-    double tm = added_branch.upper_node->time;
-    double lu = joining_branch.upper_node->time - tm;
-    double p[3] = {(tm - lower_node->time)*unit_theta*penalty, isinf(lu) ? 1.0 : lu*unit_theta*penalty, (tm - query_node->time)*unit_theta*penalty};
-    double w[2] = {isinf(lu) ? ancestral_prob : 1.0, isinf(lu) ? 1 - ancestral_prob : 1.0};
-    if (weighted) {
-        double T[4] = {0, 0, 0, 0};
-        for (int a = ml ? 0 : (int) sl; a <= (ml ? 1 : (int) sl); a++) {
-            for (int b = 0; b < 2; b++) {
-                for (int m = 0; m < 2; m++) {
-                    T[m + 2*b] += joining_weight(a, m, b, (int) su, p, w, q);
-                }
-            }
-        }
-        double r = uniform_random()*(T[0] + T[1] + T[2] + T[3]);
-        int t = 0;
-        while (t < 3 and r >= T[t]) {
-            r -= T[t];
-            t++;
-        }
-        sm = t & 1;
-        s0 = t >> 1;
-        query_node->write_state(x, s0);
-    } else if (sl == su and (m0 or s0 == sl) and mutation_free(x)) {
-        double ones[2] = {1.0, 1.0};
-        double T[2] = {0, 0};
-        for (int a = ml ? 0 : (int) sl; a <= (ml ? 1 : (int) sl); a++) {
-            for (int b = m0 ? 0 : (int) s0; b <= (m0 ? 1 : (int) s0); b++) {
-                for (int m = 0; m < 2; m++) {
-                    T[m] += joining_weight(a, m, b, (int) su, p, w, ones)*(a == m and b == m and su == m ? penalty : 1.0);
-                }
-            }
-        }
-        sm = uniform_random()*(T[0] + T[1]) < T[0] ? 0 : 1;
-    } else {
-        int c = ((int) sl) | (((int) su) << 1) | (((int) s0) << 2) | (ml ? 8 : 0) | (m0 ? 16 : 0);
-        sm = uniform_random() < joining_state_prob[c] ? 1 : 0;
-    }
-    added_branch.upper_node->write_state(x, sm);
-    if (sl != su) {
-        mutation_branches[x].erase(joining_branch);
-    }
-    if (sm != sl and !ml) {
-        new_branch = Branch(lower_node, added_branch.upper_node);
-        mutation_branches[x].insert(new_branch);
-    }
-    if (sm != su) {
-        new_branch = Branch(added_branch.upper_node, joining_branch.upper_node);
-        mutation_branches[x].insert(new_branch);
-    }
-    if (sm != s0 and !m0) {
-        mutation_branches[x].insert(added_branch);
-    }
-    for (const Branch &b : mutation_branches[x]) {
-        assert(b.lower_node->get_state(x) != b.upper_node->get_state(x));
-    }
-}
-
-bool ARG::mutation_free(double x) {
-    auto it = mutation_branches.find(x);
-    if (it == mutation_branches.end() or it->second.empty()) {
-        return true;
-    }
-    return it->second.size() == 1 and it->second.begin()->upper_node == root.get();
-}
-
-void ARG::remap_mutations() {
-    double x = joining_branches.begin()->first;
-    double y = joining_branches.rbegin()->first;
-    auto mut_it = mutation_branches.lower_bound(x);
-    auto join_it = joining_branches.begin();
-    auto remove_it = removed_branches.begin();
-    Node *joining_node = nullptr;
-    Branch joining_branch = Branch();
-    Branch removed_branch = Branch();
-    Branch lower_branch = Branch();
-    Branch upper_branch = Branch();
-    while (mut_it->first < y) {
-        while (join_it->first <= mut_it->first) {
-            joining_branch = join_it->second;
-            assert(joining_branch != Branch());
-            join_it++;
-        }
-        while (remove_it->first <= mut_it->first) {
-            removed_branch = remove_it->second;
-            joining_node = removed_branch.upper_node;
-            assert(joining_node != nullptr);
-            remove_it++;
-        }
-        assert(removed_branch != Branch());
-        lower_branch = Branch(joining_branch.lower_node, joining_node);
-        upper_branch = Branch(joining_node, joining_branch.upper_node);
-        mut_it->second.erase(removed_branch);
-        mut_it->second.erase(lower_branch);
-        mut_it->second.erase(upper_branch);
-        Node *lower_node = lower_branch.lower_node;
-        double sl = lower_node->get_state(mut_it->first);
-        double su = upper_branch.upper_node->get_state(mut_it->first);
-        bool ml = any_missing and lower_node->is_missing(mut_it->first);
-        if (sl != su and !ml) {
-            mut_it->second.insert(joining_branch);
-        }
-        for (const Branch &b : mut_it->second) {
-            double m = mut_it->first;
-            assert(b.lower_node->get_state(m) != b.upper_node->get_state(m));
-        }
-        mut_it++;
-    }
-}
-
 int ARG::num_unmapped() {
     int count = 0;
-    for (auto &x : mutation_branches) {
-        set<Branch> &branches = x.second;
-        if (branches.size() > 1) {
-            if (branches.rbegin()->upper_node == root.get()) {
-                if (branches.size() > 2) {
-                    count += 1;
-                }
-            } else {
-                if (branches.size() > 1) {
-                    count += 1;
-                }
-            }
+    for (auto &x : mutations) {
+        int below_top = 0;
+        for (auto &m : x.second) {
+            below_top += m.first.upper_node != root.get();
         }
+        count += below_top > 1;
     }
     return count;
 }
 
 void ARG::check_incompatibility() {
+    cout << "Number of incompatibilities: " << num_unmapped() << endl;
+}
+
+int ARG::count_flipping() {
     int count = 0;
-    for (auto &x : mutation_branches) {
-        set<Branch> &branches = x.second;
-        if (branches.size() > 1) {
-            if (branches.rbegin()->upper_node == root.get()) {
-                if (branches.size() > 2) {
-                    count += 1;
-                }
-            } else {
-                if (branches.size() > 1) {
-                    count += 1;
-                }
-            }
+    for (auto &x : mutations) {
+        bool at_top = false;
+        for (auto &m : x.second) {
+            at_top = at_top or m.first.upper_node == root.get();
         }
+        count += at_top and x.second.size() > 1;
     }
-    cout << "Number of incompatibilities: " << count << endl;
+    return count;
 }
 
 void ARG::clear_remove_info() {
@@ -909,21 +681,13 @@ int Tree_order::index_of(const Flat_tree &flat, Node *n) const {
 void Tree_order::assign(const Flat_tree &flat, Node *root_node) {
     int nb = (int) flat.parents.size();
     times.resize(nb);
-    next_runs.clear();
+    if ((int) order.size() != nb) {
+        order.resize(nb);
+        iota(order.begin(), order.end(), 0);
+    }
     for (int k = 0; k < nb; k++) {
         times[k] = flat.parents[k].first->time;
         flat.parents[k].first->flat_index = k;
-        if (k > 0 and times[k] == times[k - 1]) {
-            next_runs.back()++;
-        } else {
-            next_runs.push_back(1);
-        }
-    }
-    if (next_runs != runs) {
-        runs.swap(next_runs);
-        order.resize(nb);
-        iota(order.begin(), order.end(), 0);
-        sort(order.begin(), order.end(), [&](int i, int j) { return times[i] < times[j]; });
     }
     up.assign(nb, -1);
     kids.resize(nb);
@@ -931,10 +695,18 @@ void Tree_order::assign(const Flat_tree &flat, Node *root_node) {
         v.clear();
     }
     top = -1;
+    leaf.clear();
     for (int k = 0; k < nb; k++) {
+        Node *l = flat.parents[k].first;
+        if (l->is_sample) {
+            if (l->index >= (int) leaf.size()) {
+                leaf.resize(l->index + 1, -1);
+            }
+            leaf[l->index] = k;
+        }
         if (flat.parents[k].second == root_node) {
             top = k;
-        } else {
+        } else if (flat.parents[k].second->flat_index >= 0) {
             up[k] = flat.parents[k].second->flat_index;
             kids[up[k]].push_back(k);
         }
@@ -959,12 +731,14 @@ void ARG::peel_site(const Flat_tree &flat, const Tree_order &t, double unit, dou
     int nb = (int) flat.parents.size();
     site_missing(flat, pos, p.missing);
     p.msg.assign(nb, {1.0, 1.0});
+    p.empty.assign(nb, {1.0, 1.0});
     p.count[0] = p.count[1] = 0;
     for (int k : t.order) {
         Node *l = flat.parents[k].first;
         if (l->is_sample and !p.missing[k]) {
             int h = (int) l->get_state(pos);
             p.msg[k] = leaf_message(h);
+            p.empty[k] = leaf_message(h);
             p.count[h] += 1;
         }
         if (t.up[k] >= 0) {
@@ -972,8 +746,79 @@ void ARG::peel_site(const Flat_tree &flat, const Tree_order &t, double unit, dou
             double m0 = p.msg[k][0], m1 = p.msg[k][1];
             p.msg[t.up[k]][0] *= m0 + len*m1;
             p.msg[t.up[k]][1] *= m1 + len*m0;
+            p.empty[t.up[k]][0] *= p.empty[k][0];
+            p.empty[t.up[k]][1] *= p.empty[k][1];
         }
     }
+}
+
+double ARG::root_value(const array<double, 2> &top, bool seen0, bool seen1) const {
+    double prior[2] = {ancestral_prob, 1 - ancestral_prob};
+    bool seen[2] = {seen0, seen1};
+    double v = 0;
+    for (int s = 0; s < 2; s++) {
+        v += prior[s]*(top[s] - (seen[1 - s] ? 0.0 : 1 - penalty));
+    }
+    return v/penalty;
+}
+
+double ARG::site_value(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p) {
+    peel_site(flat, t, unit, pos, p);
+    return root_value(p.msg[t.top], p.count[0] > 0, p.count[1] > 0);
+}
+
+void ARG::emission_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s) {
+    int nb = (int) flat.parents.size();
+    peel_site(flat, t, unit, pos, p);
+    double prior[2] = {ancestral_prob, 1 - ancestral_prob};
+    s.unit = unit;
+    s.top = t.top;
+    s.above.resize(nb);
+    s.above[t.top] = {prior[0], prior[1]};
+    vector<array<double, 2>> &outside = p.outside;
+    outside.resize(nb);
+    outside[t.top] = {prior[0], prior[1]};
+    vector<char> &main = p.in_main;
+    main.assign(nb, 0);
+    main[t.top] = 1;
+    for (int i = nb - 1; i >= 0; i--) {
+        int v = t.order[i];
+        if (v != t.top) {
+            if (t.up[v] < 0 or !main[t.up[v]]) {
+                continue;
+            }
+            main[v] = 1;
+            double len = unit*flat.lengths[v];
+            outside[v] = {s.above[v][0] + len*s.above[v][1], s.above[v][1] + len*s.above[v][0]};
+        }
+        for (int c : t.kids[v]) {
+            array<double, 2> a = outside[v];
+            for (int d : t.kids[v]) {
+                if (d != c) {
+                    double len = unit*flat.lengths[d];
+                    a[0] *= p.msg[d][0] + len*p.msg[d][1];
+                    a[1] *= p.msg[d][1] + len*p.msg[d][0];
+                }
+            }
+            s.above[c] = a;
+        }
+    }
+    array<double, 2> nu_empty;
+    double w[2];
+    if (query->likelihood_sites.size() > 0 and query->likelihood_at(pos, w[0], w[1])) {
+        s.nu = {w[0], w[1]};
+        nu_empty = s.nu;
+    } else if (query->is_sample) {
+        bool missing = any_missing and query->has_missing() and query->missing_at(Node::site_index(pos), pos);
+        s.nu = missing ? array<double, 2>{1.0, 1.0} : leaf_message((int) query->get_state(pos));
+        nu_empty = s.nu;
+    } else {
+        s.nu = p.msg[query->flat_index];
+        nu_empty = p.empty[query->flat_index];
+    }
+    s.empty_term = (1 - penalty)*(prior[0]*p.empty[t.top][0]*nu_empty[0] + prior[1]*p.empty[t.top][1]*nu_empty[1]);
+    s.scale = (prior[0]*p.msg[t.top][0] + prior[1]*p.msg[t.top][1])*(s.nu[0] + s.nu[1]);
+    s.in.swap(p.msg);
 }
 
 static void path_peel(const Flat_tree &flat, const Tree_order &t, double unit, Peel &p, vector<array<double, 2>> &out) {
@@ -1010,7 +855,6 @@ void ARG::entry_weights(const Flat_tree &flat, const Tree_order &t, double unit,
         rotate(p.path.begin(), p.path.begin() + below, p.path.end());
     }
     p.alt.resize(flat.parents.size());
-    double prior[2] = {ancestral_prob, 1 - ancestral_prob};
     for (int c = 0; c < nc; c++) {
         if (g.L[c] == 0) {
             w[c] = 0;
@@ -1024,11 +868,7 @@ void ARG::entry_weights(const Flat_tree &flat, const Tree_order &t, double unit,
         }
         path_peel(flat, t, unit, p, p.alt);
         const array<double, 2> &top = p.in_path[t.top] ? p.alt[t.top] : p.msg[t.top];
-        double v = 0;
-        for (int s = 0; s < 2; s++) {
-            v += prior[s]*(top[s] - (seen[1 - s] ? 0.0 : 1 - penalty));
-        }
-        w[c] = g.L[c]*v;
+        w[c] = g.L[c]*root_value(top, seen[0], seen[1]);
     }
 }
 
@@ -1041,12 +881,15 @@ void ARG::set_entry(const Flat_tree &flat, const Tree_order &t, double unit, dou
             p.count[h] += 1;
             p.msg[k] = leaf_message(h);
         }
+        if (journal_on and g.leaves[j]->get_state(pos) != h) {
+            state_journal.push_back({g.leaves[j], pos, g.leaves[j]->get_state(pos)});
+        }
         g.leaves[j]->write_state(pos, h);
     }
     path_peel(flat, t, unit, p, p.msg);
 }
 
-double ARG::collapsed_site_weight(const Flat_tree &flat, const Tree_order &t, double unit, double pos, const Genotype_likelihood &g, Peel &p) {
+double ARG::collapsed_site_value(const Flat_tree &flat, const Tree_order &t, double unit, double pos, const Genotype_likelihood &g, Peel &p) {
     int nc = g.leaves[1] == nullptr ? 2 : 4;
     peel_site(flat, t, unit, pos, p);
     double w[4];
@@ -1120,115 +963,58 @@ void ARG::resample_entries(Node *leaf, double x, double y) {
     }
 }
 
-vector<tuple<Node *, double, double>> ARG::entry_states(Node *leaf, double x, double y) {
-    vector<tuple<Node *, double, double>> out;
-    auto [lo, hi] = entries_in(leaf, x, y);
-    for (const int *i = lo; i != hi; ++i) {
-        const Genotype_likelihood &g = genotype_likelihoods[*i];
-        out.push_back({g.leaves[0], g.pos, g.leaves[0]->get_state(g.pos)});
-        if (g.leaves[1] != nullptr) {
-            out.push_back({g.leaves[1], g.pos, g.leaves[1]->get_state(g.pos)});
-        }
-    }
-    return out;
-}
-
-vector<tuple<Node *, double, double>> ARG::lineage_states(const map<double, Branch> &lineage, double x, double y) {
-    vector<tuple<Node *, double, double>> out;
-    for (auto m_it = mutation_sites.lower_bound(x); m_it != mutation_sites.end() and *m_it < y; ++m_it) {
-        auto l_it = lineage.upper_bound(*m_it);
-        if (l_it == lineage.begin()) {
-            continue;
-        }
-        Node *n = prev(l_it)->second.upper_node;
-        if (n == nullptr or n == root.get()) {
-            continue;
-        }
-        out.push_back({n, *m_it, n->get_state(*m_it)});
-    }
-    return out;
-}
-
-void ARG::restore_states(const vector<tuple<Node *, double, double>> &states, vector<double> &changed) {
-    for (const auto &s : states) {
-        if (get<0>(s)->get_state(get<1>(s)) != get<2>(s)) {
-            get<0>(s)->write_state(get<1>(s), get<2>(s));
-            changed.push_back(get<1>(s));
-        }
-    }
-}
-
-void ARG::undo_journal(vector<double> &changed) {
+void ARG::undo_journal() {
     for (auto it = state_journal.rbegin(); it != state_journal.rend(); ++it) {
         get<0>(*it)->write_state(get<1>(*it), get<2>(*it));
-        changed.push_back(get<1>(*it));
     }
     state_journal.clear();
 }
 
-void ARG::rebuild_mutations(vector<double> &sites) {
-    sort(sites.begin(), sites.end());
-    sites.erase(unique(sites.begin(), sites.end()), sites.end());
-    if (sites.empty()) {
-        return;
-    }
+void ARG::draw_mutations() {
+    mutations.clear();
     Flat_tree flat;
-    flat.assign(get_tree_at(sites[0]));
-    auto r_it = recombinations.upper_bound(sites[0]);
-    vector<char> missing;
-    for (double pos : sites) {
+    Tree_order t;
+    Peel p;
+    vector<int> state;
+    auto r_it = recombinations.begin();
+    bool stale = true;
+    int bin = 0;
+    for (auto it = mutation_sites.lower_bound(0); it != mutation_sites.end() and *it < sequence_length; ++it) {
+        double pos = *it;
         while (r_it != recombinations.end() and r_it->first <= pos) {
             flat.forward_update(r_it->second);
             r_it++;
+            stale = true;
         }
-        site_missing(flat, pos, missing);
-        set<Branch> &mb = mutation_branches[pos];
-        mb.clear();
+        if (stale) {
+            t.assign(flat, root.get());
+            stale = false;
+        }
+        while (coordinates[bin + 1] <= pos) {
+            bin++;
+        }
+        double unit = penalty*thetas[bin]/(coordinates[bin + 1] - coordinates[bin]);
+        peel_site(flat, t, unit, pos, p);
+        draw_states(flat, t, unit, p, state);
+        vector<pair<Branch, int>> &rows = mutations[pos];
         for (int k = 0; k < (int) flat.parents.size(); k++) {
-            Node *l = flat.parents[k].first;
-            if (!missing[k] and l->get_state(pos) != flat.parents[k].second->get_state(pos)) {
-                mb.insert(Branch(l, flat.parents[k].second));
+            int above = k == t.top ? 0 : state[t.up[k]];
+            if (!p.missing[k] and state[k] != above) {
+                rows.push_back({Branch(flat.parents[k].first, flat.parents[k].second), state[k]});
             }
         }
     }
 }
 
-void ARG::resample_site(const Flat_tree &flat, const Tree_order &t, int bin, double pos, size_t e, size_t f, Node *only, Peel &p) {
+void ARG::draw_states(const Flat_tree &flat, const Tree_order &t, double unit, const Peel &p, vector<int> &state) {
     int nb = (int) flat.parents.size();
     int top = t.top;
-    double unit = penalty*thetas[bin]/(coordinates[bin + 1] - coordinates[bin]);
-    double prior[2] = {ancestral_prob, 1 - ancestral_prob};
-    peel_site(flat, t, unit, pos, p);
-    const vector<char> &missing = p.missing;
     const vector<array<double, 2>> &msg = p.msg;
-    vector<size_t> active;
-    for (size_t i = e; i < f; i++) {
-        const Genotype_likelihood &g = genotype_likelihoods[i];
-        if (only == nullptr or g.leaves[0] == only or g.leaves[1] == only) {
-            active.push_back(i);
-        }
-    }
-    for (size_t i : active) {
-        Genotype_likelihood &g = genotype_likelihoods[i];
-        int nc = g.leaves[1] == nullptr ? 2 : 4;
-        double w[4];
-        entry_weights(flat, t, unit, pos, g, p, w);
-        double total = 0;
-        for (int c = 0; c < nc; c++) {
-            total += w[c];
-        }
-        double u = uniform_random()*total;
-        int c = 0;
-        while (c < nc - 1 and u >= w[c]) {
-            u -= w[c];
-            c++;
-        }
-        set_entry(flat, t, unit, pos, g, c, p);
-    }
+    double prior[2] = {ancestral_prob, 1 - ancestral_prob};
     int same = p.count[0] + p.count[1] == 0 ? -1 : p.count[1] == 0 ? 0 : p.count[0] == 0 ? 1 : -2;
     auto completion = [&](int k) { return msg[k][same] + unit*flat.lengths[k]*msg[k][1 - same]; };
-    vector<int> state(nb, 0);
-    bool drawn = false, restricted = false;
+    state.assign(nb, 0);
+    bool restricted = false;
     if (same >= 0) {
         double w_same = prior[same]*penalty;
         double w_rest = prior[same]*(msg[top][same] - 1);
@@ -1236,7 +1022,7 @@ void ARG::resample_site(const Flat_tree &flat, const Tree_order &t, int bin, dou
         double u = uniform_random()*(w_same + w_rest + w_other);
         if (u < w_same) {
             fill(state.begin(), state.end(), same);
-            drawn = true;
+            return;
         } else if (u < w_same + w_rest) {
             state[top] = same;
             restricted = true;
@@ -1252,7 +1038,7 @@ void ARG::resample_site(const Flat_tree &flat, const Tree_order &t, int bin, dou
             rest *= completion(c);
         }
     }
-    for (int i = nb - 1; i >= 0 and !drawn; i--) {
+    for (int i = nb - 1; i >= 0; i--) {
         int k = t.order[i];
         if (k == top) {
             continue;
@@ -1279,6 +1065,41 @@ void ARG::resample_site(const Flat_tree &flat, const Tree_order &t, int bin, dou
             restricted = false;
         }
     }
+}
+
+void ARG::resample_site(const Flat_tree &flat, const Tree_order &t, int bin, double pos, size_t e, size_t f, Node *only, Peel &p) {
+    int nb = (int) flat.parents.size();
+    int top = t.top;
+    double unit = penalty*thetas[bin]/(coordinates[bin + 1] - coordinates[bin]);
+    double prior[2] = {ancestral_prob, 1 - ancestral_prob};
+    peel_site(flat, t, unit, pos, p);
+    const vector<char> &missing = p.missing;
+    vector<size_t> active;
+    for (size_t i = e; i < f; i++) {
+        const Genotype_likelihood &g = genotype_likelihoods[i];
+        if (only == nullptr or g.leaves[0] == only or g.leaves[1] == only) {
+            active.push_back(i);
+        }
+    }
+    for (size_t i : active) {
+        Genotype_likelihood &g = genotype_likelihoods[i];
+        int nc = g.leaves[1] == nullptr ? 2 : 4;
+        double w[4];
+        entry_weights(flat, t, unit, pos, g, p, w);
+        double total = 0;
+        for (int c = 0; c < nc; c++) {
+            total += w[c];
+        }
+        double u = uniform_random()*total;
+        int c = 0;
+        while (c < nc - 1 and u >= w[c]) {
+            u -= w[c];
+            c++;
+        }
+        set_entry(flat, t, unit, pos, g, c, p);
+    }
+    vector<int> state;
+    draw_states(flat, t, unit, p, state);
     int mismatches = 0;
     for (int k = 0; k < nb; k++) {
         mismatches += k != top and !missing[k] and state[k] != state[t.up[k]];
@@ -1352,72 +1173,47 @@ void ARG::resample_site(const Flat_tree &flat, const Tree_order &t, int bin, dou
             state[k] = inside[k] ? 1 - r : r;
         }
     }
-    set<Branch> &mb = mutation_branches[pos];
-    mb.clear();
-    for (int k = 0; k < nb; k++) {
-        Node *l = flat.parents[k].first;
-        if (!missing[k] and l->get_state(pos) != state[k]) {
-            if (journal_on) {
-                state_journal.push_back({l, pos, l->get_state(pos)});
+    for (size_t i : active) {
+        for (Node *l : genotype_likelihoods[i].leaves) {
+            if (l == nullptr) {
+                continue;
             }
-            l->write_state(pos, state[k]);
-        }
-    }
-    for (int k = 0; k < nb; k++) {
-        Node *l = flat.parents[k].first;
-        if (!missing[k] and l->get_state(pos) != flat.parents[k].second->get_state(pos)) {
-            mb.insert(Branch(l, flat.parents[k].second));
+            int k = t.index_of(flat, l);
+            if (!missing[k] and l->get_state(pos) != state[k]) {
+                if (journal_on) {
+                    state_journal.push_back({l, pos, l->get_state(pos)});
+                }
+                l->write_state(pos, state[k]);
+            }
         }
     }
 }
 
-double ARG::site_weight(const Flat_tree &tree, int bin, double pos, Node *summed) {
-    double theta = thetas[bin]/(coordinates[bin + 1] - coordinates[bin]);
-    Node *root_node = root.get();
-    double w[2] = {1.0, 1.0};
-    double root_prior[2] = {1.0, 1.0};
-    bool same[2] = {true, true};
-    int site = any_missing ? Node::site_index(pos) : -1;
-    for (int k = 0; k < (int) tree.parents.size(); k++) {
-        Node *l = tree.parents[k].first;
-        Node *u = tree.parents[k].second;
-        if (u == root_node) {
-            for (int s = 0; s < 2; s++) {
-                double sm = (l == summed) ? s : l->get_state(pos);
-                root_prior[s] = (sm == 0) ? ancestral_prob : 1 - ancestral_prob;
-                w[s] *= root_prior[s];
-            }
-            continue;
+void ARG::reference_peel(const Flat_tree &flat, const Tree_order &t, double unit, vector<array<double, 2>> &msg) const {
+    msg.assign(flat.parents.size(), {1.0, 1.0});
+    for (int k : t.order) {
+        if (flat.parents[k].first->is_sample) {
+            msg[k] = {1.0, 0.0};
         }
-        double length = penalty*theta*tree.lengths[k];
-        if (any_missing and l->has_missing() and l->missing_at(site, pos)) {
-            w[0] *= 1 + length;
-            w[1] *= 1 + length;
-            continue;
-        }
-        if (l != summed and u != summed) {
-            if (l->get_state(pos) != u->get_state(pos)) {
-                w[0] *= length;
-                w[1] *= length;
-                same[0] = same[1] = false;
-            }
-            continue;
-        }
-        for (int s = 0; s < 2; s++) {
-            double sl = (l == summed) ? s : l->get_state(pos);
-            double su = (u == summed) ? s : u->get_state(pos);
-            if (sl != su) {
-                w[s] *= length;
-                same[s] = false;
-            }
+        if (t.up[k] >= 0) {
+            double len = unit*flat.lengths[k];
+            double m0 = msg[k][0], m1 = msg[k][1];
+            msg[t.up[k]][0] *= m0 + len*m1;
+            msg[t.up[k]][1] *= m1 + len*m0;
         }
     }
-    for (int s = 0; s < 2; s++) {
-        if (same[s]) {
-            w[s] -= (1 - penalty)*root_prior[s];
+}
+
+void ARG::repeel_path(const Flat_tree &flat, const Tree_order &t, double unit, int k, vector<array<double, 2>> &msg) const {
+    for (int q = t.up[k]; q >= 0; q = t.up[q]) {
+        array<double, 2> m = {1.0, 1.0};
+        for (int c : t.kids[q]) {
+            double len = unit*flat.lengths[c];
+            m[0] *= msg[c][0] + len*msg[c][1];
+            m[1] *= msg[c][1] + len*msg[c][0];
         }
+        msg[q] = m;
     }
-    return (summed == nullptr) ? w[0] : w[0] + w[1];
 }
 
 double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, double y, double pos_p, const Tree &tree_p) {
@@ -1428,23 +1224,52 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
     }
     auto recomb_it = recombinations.upper_bound(x);
     auto mut_it = mutation_sites.lower_bound(x);
-    auto lin_it = lineage.begin();
-    Node *summed = Branch().upper_node;
     auto [qi, qe] = entries_in(lineage.begin()->second.lower_node, x, y);
     const vector<Genotype_likelihood> &gl = entries();
+    const ARG *owner = entry_owner == nullptr ? this : entry_owner;
     Tree_order &t = likelihood_order;
+    Peel &peel = likelihood_peel;
     bool order_stale = true;
-    vector<int> &leaf = likelihood_leaf, &below = likelihood_below, &observed = likelihood_observed;
-    vector<double> &lg = likelihood_lg;
-    double lg_rho = -1;
-    double lg_values_rho = -1;
-    Peel peel;
+    double ref_unit = -1;
+    double log_ref = 0;
     double ll = 0;
     double crho = -1;
     double p = 1.0;
     double log_p_of = numeric_limits<double>::quiet_NaN();
     double log_p = 0;
     int since_full = 0;
+    int samples = (int) sample_nodes.size();
+    vector<char> missing(samples, 0), target(samples, 0), seen(samples, 0);
+    vector<int> missing_list, touched;
+    bool pattern_valid = false;
+    double log_pattern = 0;
+    int observed = samples;
+    auto apply_pattern = [&](double c) {
+        bool changed = false;
+        if (!pattern_valid) {
+            pattern_msg = reference_msg;
+            for (int s : missing_list) {
+                int k = t.leaf[s];
+                pattern_msg[k] = {1.0, 1.0};
+                repeel_path(tree, t, c, k, pattern_msg);
+            }
+            pattern_valid = true;
+            changed = true;
+        }
+        for (int s : touched) {
+            if (target[s] != missing[s]) {
+                missing[s] = target[s];
+                int k = t.leaf[s];
+                pattern_msg[k] = missing[s] ? array<double, 2>{1.0, 1.0} : array<double, 2>{1.0, 0.0};
+                observed += missing[s] ? -1 : 1;
+                repeel_path(tree, t, c, k, pattern_msg);
+                changed = true;
+            }
+        }
+        if (changed) {
+            log_pattern = log(root_value(pattern_msg[t.top], observed > 0, false));
+        }
+    };
     int i_end = get_index(y);
     for (int i = get_index(x); i < i_end; i++) {
         double w = coordinates[i + 1] - coordinates[i];
@@ -1480,80 +1305,65 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
             log_p = log1p((p - 1)/penalty);
         }
         ll -= assayed[i]*log_p;
+        if (order_stale) {
+            t.assign(tree, root.get());
+            order_stale = false;
+            ref_unit = -1;
+        }
+        if (c != ref_unit) {
+            reference_peel(tree, t, c, reference_msg);
+            log_ref = log(root_value(reference_msg[t.top], true, false));
+            ref_unit = c;
+            pattern_valid = false;
+        }
+        double rest = assayed[i];
         if (any_missing) {
-            if (order_stale) {
-                t.assign(tree, root.get());
-                order_stale = false;
-                sample_counts(tree, t, leaf, below);
-                lg_rho = -1;
-            }
-            if (lg_rho != crho) {
-                lg_rho = crho;
-                vector<pair<Node *, Node *>> &old_parents = likelihood_lg_parents;
-                vector<double> &next = likelihood_lg_next;
-                next.resize(tree.parents.size());
-                size_t j = 0;
-                size_t j_end = crho == lg_values_rho ? old_parents.size() : 0;
-                for (int k = 0; k < (int) tree.parents.size(); k++) {
-                    Node *l = tree.parents[k].first, *u = tree.parents[k].second;
-                    while (j < j_end and (old_parents[j].first->time < l->time or (old_parents[j].first->time == l->time and old_parents[j].first->index < l->index))) {
-                        j++;
+            const Bin_gaps &g = owner->gaps_of(i);
+            if (!g.sample.empty()) {
+                touched = missing_list;
+                for (int s : touched) {
+                    target[s] = 0;
+                    seen[s] = 1;
+                }
+                for (size_t j = 0; j < g.sample.size(); j++) {
+                    if (g.before[j] > 0) {
+                        apply_pattern(c);
+                        ll += g.before[j]*log_pattern;
+                        rest -= g.before[j];
                     }
-                    if (j < j_end and old_parents[j].first == l and old_parents[j].second == u) {
-                        next[k] = lg[j];
-                    } else {
-                        next[k] = u == root.get() ? 0.0 : log1p(crho*tree.lengths[k]);
+                    int s = g.sample[j];
+                    target[s] = g.d[j] < 0;
+                    if (!seen[s]) {
+                        seen[s] = 1;
+                        touched.push_back(s);
                     }
                 }
-                lg.swap(next);
-                old_parents = tree.parents;
-                lg_values_rho = crho;
+                if (g.tail > 0) {
+                    apply_pattern(c);
+                    ll += g.tail*log_pattern;
+                    rest -= g.tail;
+                }
+                missing_list.clear();
+                for (int s : touched) {
+                    seen[s] = 0;
+                    if (missing[s]) {
+                        missing_list.push_back(s);
+                    }
+                }
             }
-            ll += unassayed_correction(t, leaf, below, lg, i, observed);
-        }
-        double q = coordinates[i] + 0.5*w;
-        while (lin_it != lineage.end() and lin_it->first < q) {
-            summed = lin_it->second.upper_node;
-            ++lin_it;
         }
         while (*mut_it < coordinates[i + 1]) {
             while (qi != qe and gl[*qi].pos < *mut_it) {
                 qi++;
             }
             const Genotype_likelihood *g = qi != qe and gl[*qi].pos == *mut_it ? &gl[*qi] : nullptr;
-            if (g == nullptr) {
-                ll += log(site_weight(tree, i, *mut_it, summed));
-            } else {
-                if (order_stale) {
-                    t.assign(tree, root.get());
-                    order_stale = false;
-                    if (any_missing) {
-                        sample_counts(tree, t, leaf, below);
-                        lg_rho = -1;
-                    }
-                }
-                ll += log(collapsed_site_weight(tree, t, c, *mut_it, *g, peel));
-            }
+            ll += log(g == nullptr ? site_value(tree, t, c, *mut_it, peel) : collapsed_site_value(tree, t, c, *mut_it, *g, peel));
+            rest -= 1;
             mut_it++;
         }
+        ll += rest*log_ref;
     }
     return ll;
-}
-
-void ARG::sample_counts(const Flat_tree &tree, const Tree_order &t, vector<int> &leaf, vector<int> &below) {
-    int nb = (int) tree.parents.size();
-    leaf.assign(sample_nodes.size(), -1);
-    below.assign(nb, 0);
-    for (int k : t.order) {
-        Node *c = tree.parents[k].first;
-        if (c->is_sample) {
-            leaf[c->index] = k;
-            below[k] = 1;
-        }
-        if (t.up[k] >= 0) {
-            below[t.up[k]] += below[k];
-        }
-    }
 }
 
 const Bin_gaps &ARG::gaps_of(int bin) const {
@@ -1632,32 +1442,22 @@ const Bin_gaps &ARG::gaps_of(int bin) const {
         gaps -= get<1>(e);
     }
     g.tail = x1 > prev ? count_of(prev, x1) : 0.0;
+    g.uniform = true;
+    for (auto &e : events) {
+        double x = get<0>(e);
+        if (x == x0 and get<1>(e) < 0) {
+            g.full.push_back(get<2>(e)->index);
+        } else if (x != x1 or get<1>(e) < 0) {
+            g.uniform = false;
+        }
+    }
+    if (g.uniform) {
+        sort(g.full.begin(), g.full.end());
+        g.count = accumulate(g.before.begin(), g.before.end(), g.tail);
+    } else {
+        g.full.clear();
+    }
     return g;
-}
-
-double ARG::unassayed_correction(const Tree_order &t, const vector<int> &leaf, const vector<int> &below, const vector<double> &lg, int bin, vector<int> &observed) {
-    const Bin_gaps &g = (entry_owner == nullptr ? this : entry_owner)->gaps_of(bin);
-    if (g.sample.empty()) {
-        return 0;
-    }
-    observed = below;
-    double log_pu = 0, total = 0;
-    for (size_t j = 0; j < g.sample.size(); j++) {
-        if (g.before[j] > 0) {
-            total += g.before[j]*log1p(expm1(log_pu)/penalty);
-        }
-        int d = g.d[j];
-        for (int k = leaf[g.sample[j]]; k >= 0; k = t.up[k]) {
-            observed[k] += d;
-            if (observed[k] == (d < 0 ? 0 : 1)) {
-                log_pu += d < 0 ? lg[k] : -lg[k];
-            }
-        }
-    }
-    if (g.tail > 0) {
-        total += g.tail*log1p(expm1(log_pu)/penalty);
-    }
-    return total;
 }
 
 double ARG::corrected_smc_prior(map<double, Branch> &lineage, int lo, int hi, double p, const Tree &tree_p) {
@@ -1810,11 +1610,6 @@ void ARG::release_dead_nodes() {
     for (Node *n : sample_nodes) {
         live.insert(n);
     }
-    for (auto &x : mutation_branches) {
-        for (const Branch &b : x.second) {
-            keep_branch(b);
-        }
-    }
     for (auto *m : {&joining_branches, &removed_branches}) {
         for (auto &x : *m) {
             keep_branch(x.second);
@@ -1927,12 +1722,9 @@ void ARG::write_mutations(string filename) {
     ofstream file;
     file.open(filename);
     file.precision(numeric_limits<double>::max_digits10);
-    for (auto &x : mutation_branches) {
-        double m = x.first;
+    for (auto &x : mutations) {
         for (auto &y : x.second) {
-            if (m < sequence_length and m >= 0) {
-                file << m << " " << y.lower_node->index << " " << y.upper_node->index << " " << y.lower_node->get_state(m) << "\n";
-            }
+            file << x.first << " " << y.first.lower_node->index << " " << y.first.upper_node->index << " " << y.second << "\n";
         }
     }
 }
@@ -2051,44 +1843,23 @@ void ARG::read_muts(string filename) {
     vector<double> v = Data_reader::read_numbers(filename, "input file not found");
     create_node_set();
     vector<Node *> nodes = node_list;
-    double pos;
-    int n1;
-    int n2;
-    double s;
-    Node *ln;
-    Node *un;
-    Branch b;
+    map<double, map<Node *, double>> marked;
     for (int i = 0; i + 3 < (int) v.size(); i += 4) {
-        pos = v[i];
-        n1 = (int) v[i + 1];
-        n2 = (int) v[i + 2];
-        s = v[i + 3];
+        double pos = v[i];
         if (pos <= sequence_length) {
             mutation_sites.insert(pos);
-            ln = nodes[n1];
-            if (n2 == -1) {
-                un = root.get();
-            } else {
-                un = nodes[n2];
-            }
-            if (s == 1) {
-                ln->write_state(pos, 1);
-                un->write_state(pos, 0);
-            } else {
-                un->write_state(pos, 1);
-                ln->write_state(pos, 0);
-            }
-            b = Branch(ln, un);
-            mutation_branches[pos].insert(b);
+            Node *ln = nodes[(int) v[i + 1]];
+            Node *un = v[i + 2] == -1 ? root.get() : nodes[(int) v[i + 2]];
+            marked[pos][ln] = v[i + 3];
+            marked[pos][un] = 1 - v[i + 3];
         }
     }
     Tree tree = Tree();
-    auto m_it = mutation_branches.begin();
+    auto m_it = marked.begin();
     auto r_it = recombinations.begin();
     while (r_it->first < sequence_length) {
-        Recombination &r = r_it->second;
-        tree.forward_update(r);
-        while (m_it->first < next(r_it)->first) {
+        tree.forward_update(r_it->second);
+        while (m_it != marked.end() and m_it->first < next(r_it)->first) {
             tree.impute_states(m_it->first, m_it->second);
             m_it++;
         }

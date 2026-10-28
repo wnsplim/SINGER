@@ -248,8 +248,8 @@ void approx_BSP::null_emit(double theta, Node *query_node) {
     }
 }
 
-void approx_BSP::mut_emit(double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *query_node) {
-    compute_mut_emit_probs(theta, bin_size, mut_set, query_node);
+void approx_BSP::mut_emit(Node *query_node) {
+    compute_mut_emit_probs(query_node);
     double ws = 0;
     double *curr_probs = row(curr_index);
     const double *emit_probs = mut_emit_probs.data();
@@ -573,10 +573,10 @@ void approx_BSP::update_norms(Node *query_node) {
     norm_width = eh->bin_width;
 }
 
-void approx_BSP::compute_mut_emit_probs(double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *query_node) {
+void approx_BSP::compute_mut_emit_probs(Node *query_node) {
     update_norms(query_node);
     for (int i = 0; i < dim; i++) {
-        mut_emit_probs[i] = eh->mut_emit(curr_intervals[i]->branch, time_points[i], theta, bin_size, mut_set, query_node, norms[i]);
+        mut_emit_probs[i] = eh->mut_emit(curr_intervals[i]->branch, time_points[i], query_node, norms[i]);
     }
 }
 

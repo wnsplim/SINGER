@@ -12,7 +12,7 @@
 #include <chrono>
 #include <sstream>
 #include "ARG.hpp"
-#include "Polar_emission.hpp"
+#include "Emission.hpp"
 #include "approx_BSP.hpp"
 #include "TSP.hpp"
 
@@ -45,8 +45,15 @@ public:
     double gap;
     double cutoff;
     static bool no_data;
-    shared_ptr<Binary_emission> be = make_shared<Binary_emission>();
-    shared_ptr<Polar_emission> pe = make_shared<Polar_emission>();
+    shared_ptr<Emission> be = make_shared<Emission>();
+    shared_ptr<Emission> pe = make_shared<Emission>();
+    Flat_tree emit_flat;
+    Tree_order emit_order;
+    Peel emit_peel;
+    vector<Site_messages> site_pool = {};
+    unordered_map<double, int> site_slot = {};
+    vector<vector<Node *>> emit_nodes = {};
+    int emit_trees = 0;
     map<double, Branch> new_joining_branches = {};
     map<double, Branch> added_branches = {};
     double pos_lo = 0;
@@ -74,6 +81,8 @@ public:
     
     void set_check_points(ARG &a);
 
+    void set_emission_sites(ARG &a, Emission &e, bool &stale, int bin, vector<pair<double, int>> &mut_set, Node *query_node, const Tree *tree);
+
     void run_BSP(ARG &a);
 
     void run_TSP(ARG &a);
@@ -96,12 +105,19 @@ public:
 
     double log_pi_ratio(ARG &a);
 
+    double data_log_ratio(ARG &a);
+
+    Flat_tree ratio_flat;
+    Tree_order ratio_order;
+    vector<array<double, 2>> ratio_ref = {};
+    vector<array<double, 2>> ratio_pattern = {};
+    Peel ratio_peel;
+    vector<array<double, 2>> ratio_cell = {};
+
     double redrawn_acceptance_ratio(ARG &a, tuple<double, Branch, double> cut_point);
 
     map<double, Recombination> redrawn_records = {};
 
-    map<double, set<Branch>> redrawn_mutations = {};
-    
     double random();
 
 };

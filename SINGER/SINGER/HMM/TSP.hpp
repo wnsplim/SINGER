@@ -85,7 +85,7 @@ public:
     
     void null_emit(double theta, Node *query_node);
     
-    void mut_emit(double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *query_node);
+    void mut_emit(Node *query_node);
     
     map<double, Node *> sample_joining_nodes(int start_index, vector<double> &coordinates);
 
@@ -192,7 +192,7 @@ public:
     
     void compute_null_emit_probs(double theta, Node *query_node);
     
-    void compute_mut_emit_probs(double theta, double bin_size, vector<pair<double, int>> &mut_set, Node *query_node);
+    void compute_mut_emit_probs(Node *query_node);
     
     void compute_diagonals(double rho);
 

@@ -28,6 +28,8 @@ void Threader_smc::reset() {
     start_index = 0;
     end_index = 0;
     resume_index = -1;
+    site_slot.clear();
+    emit_trees = 0;
 }
 
 static bool held_between(ARG &a, Node *n, double x, double y) {
@@ -134,14 +136,9 @@ void Threader_smc::exact_internal_rethread(ARG &a, tuple<double, Branch, double>
     set_check_points(a);
     Node *query = a.removed_branches.begin()->second.lower_node;
     a.set_collapsed(query, a.removed_branches.begin()->first, a.removed_branches.rbegin()->first);
-    bool entries = query->likelihood_sites.size() > 0;
-    vector<tuple<Node *, double, double>> old_states;
-    if (entries) {
-        old_states = a.entry_states(query, start, end);
-        vector<tuple<Node *, double, double>> lineage = a.lineage_states(a.removed_branches, start, end);
-        old_states.insert(old_states.end(), lineage.begin(), lineage.end());
-        a.journal_on = true;
-    }
+    auto [entry_lo, entry_hi] = a.entries_in(query, start, end);
+    bool entries = entry_lo != entry_hi;
+    a.journal_on = entries;
     double ar = 0;
     if (!joins_deleted_node(a, a.removed_branches)) {
         run_BSP(a);
@@ -158,27 +155,15 @@ void Threader_smc::exact_internal_rethread(ARG &a, tuple<double, Branch, double>
     a.journal_on = false;
     double q = random();
     if (q < ar and entries) {
-        a.impute_skip = true;
         a.add(new_joining_branches, added_branches);
-        a.impute_skip = false;
         a.recombinations.erase(a.recombinations.lower_bound(start), a.recombinations.upper_bound(end));
         a.recombinations.insert(redrawn_records.begin(), redrawn_records.end());
-        a.mutation_branches.erase(a.mutation_branches.lower_bound(start), a.mutation_branches.lower_bound(end));
-        a.mutation_branches.insert(redrawn_mutations.begin(), redrawn_mutations.end());
     } else if (q < ar) {
         a.add(new_joining_branches, added_branches);
         a.smc_sample_recombinations(added_branches);
     } else {
-        vector<double> changed;
-        if (entries) {
-            query->likelihood_sites.clear();
-            a.undo_journal(changed);
-        }
+        a.undo_journal();
         a.add(a.joining_branches, a.removed_branches);
-        if (entries) {
-            a.restore_states(old_states, changed);
-            a.rebuild_mutations(changed);
-        }
         a.smc_sample_recombinations(a.removed_branches);
     }
     a.state_journal.clear();
@@ -201,14 +186,301 @@ double Threader_smc::log_pi_ratio(ARG &a) {
     }
     a.window_copy_into(new_arg, pos_lo);
     new_arg.add(new_joining_branches, added_branches);
-    double pi_new = new_arg.corrected_smc_prior(added_branches, lo, hi, pos_lo, tree_lo) + (no_data ? 0.0 : new_arg.mutation_log_likelihood(added_branches, start, end, pos_lo, tree_lo));
+    double pi_new = new_arg.corrected_smc_prior(added_branches, lo, hi, pos_lo, tree_lo);
     a.window_copy_into(old_arg, pos_lo);
     old_arg.add(a.joining_branches, a.removed_branches);
-    double pi_old = old_arg.corrected_smc_prior(a.removed_branches, lo, hi, pos_lo, tree_lo) + (no_data ? 0.0 : old_arg.mutation_log_likelihood(a.removed_branches, start, end, pos_lo, tree_lo));
-    return pi_new - pi_old;
+    double pi_old = old_arg.corrected_smc_prior(a.removed_branches, lo, hi, pos_lo, tree_lo);
+    if (no_data) {
+        return pi_new - pi_old;
+    }
+    return pi_new - pi_old + data_log_ratio(a);
 }
 
-// the proposal read node states that pi sums out, so those states are redrawn on the proposed ARG before the decision and the reverse densities read the redrawn values
+double Threader_smc::data_log_ratio(ARG &a) {
+    Flat_tree &flat = ratio_flat;
+    Tree_order &t = ratio_order;
+    vector<array<double, 2>> &ref = ratio_ref, &pat = ratio_pattern;
+    flat.assign(a.start_tree);
+    double prior[2] = {a.ancestral_prob, 1 - a.ancestral_prob};
+    double pen = a.penalty;
+    const ARG *owner = a.entry_owner == nullptr ? &a : a.entry_owner;
+    auto [qi, qe] = a.entries_in(a.removed_branches.begin()->second.lower_node, start, end);
+    const vector<Genotype_likelihood> &gl = a.entries();
+    auto recomb_it = a.recombinations.upper_bound(start);
+    auto mut_it = a.mutation_sites.lower_bound(start);
+    auto oj = a.joining_branches.begin(), on = a.removed_branches.begin();
+    auto nj = new_joining_branches.begin(), nn = added_branches.begin();
+    Branch bo, bn, ro, rn;
+    vector<char> main;
+    vector<int> path;
+    int samples = (int) a.sample_nodes.size();
+    vector<char> missing(samples, 0), target(samples, 0), seen(samples, 0);
+    vector<int> missing_list, touched;
+    int observed_main = 0, observed_sub = 0;
+    double unit = -1, p_common = 1;
+    bool order_stale = true, ref_valid = false, pattern_valid = false, pattern_value_valid = false, z_valid = false;
+    double ref_value = 0, pattern_value = 0, z_diff = 0;
+
+    auto above = [&](const vector<array<double, 2>> &msg, int d) {
+        path.clear();
+        for (int k = d; k != t.top; k = t.up[k]) {
+            path.push_back(k);
+        }
+        array<double, 2> A = {prior[0], prior[1]};
+        int v = t.top;
+        for (int j = (int) path.size() - 1; j >= 0; j--) {
+            int c = path[j];
+            array<double, 2> B = A;
+            for (int sib : t.kids[v]) {
+                if (sib != c) {
+                    double len = unit*flat.lengths[sib];
+                    B[0] *= msg[sib][0] + len*msg[sib][1];
+                    B[1] *= msg[sib][1] + len*msg[sib][0];
+                }
+            }
+            if (j == 0) {
+                return B;
+            }
+            double len = unit*flat.lengths[c];
+            A = {B[0] + len*B[1], B[1] + len*B[0]};
+            v = c;
+        }
+        return A;
+    };
+    auto join = [&](const Branch &b, double time, Node *query, const array<double, 2> &nu, const array<double, 2> &m_d, const array<double, 2> &up) {
+        double l2 = unit*(time - b.lower_node->time), l3 = unit*(time - query->time);
+        double m0 = (m_d[0] + l2*m_d[1])*(nu[0] + l3*nu[1]), m1 = (m_d[1] + l2*m_d[0])*(nu[1] + l3*nu[0]);
+        if (b.upper_node == a.root.get()) {
+            return prior[0]*m0 + prior[1]*m1;
+        }
+        double l1 = unit*(b.upper_node->time - time);
+        return up[0]*(m0 + l1*m1) + up[1]*(m1 + l1*m0);
+    };
+    auto log_z = [&](const Branch &b, double time, Node *query) {
+        double l2 = unit*(time - b.lower_node->time), l3 = unit*(time - query->time);
+        double p = p_common*(1 + l2)*(1 + l3);
+        if (b.upper_node != a.root.get()) {
+            double l1 = unit*(b.upper_node->time - time);
+            p *= (1 + l1)/(1 + l1 + l2);
+        }
+        return log1p((p - 1)/pen);
+    };
+    auto pattern_log_ratio = [&](const vector<array<double, 2>> &msg) {
+        Node *query = ro.lower_node;
+        int kq = query->flat_index, kd_o = bo.lower_node->flat_index, kd_n = bn.lower_node->flat_index;
+        double e1 = observed_main == 0 and observed_sub == 0 ? 1.0 : 0.0;
+        double c = (1 - pen)*(prior[0] + prior[1]*e1);
+        array<double, 2> up_o = bo.upper_node == a.root.get() ? array<double, 2>{0, 0} : above(msg, kd_o);
+        array<double, 2> up_n = bn.upper_node == a.root.get() ? array<double, 2>{0, 0} : above(msg, kd_n);
+        double w_o = join(bo, ro.upper_node->time, query, msg[kq], msg[kd_o], up_o);
+        double w_n = join(bn, rn.upper_node->time, query, msg[kq], msg[kd_n], up_n);
+        return log((w_n - c)/(w_o - c));
+    };
+    auto apply_pattern = [&]() {
+        if (!pattern_valid) {
+            pat = ref;
+            for (int s : missing_list) {
+                int k = t.leaf[s];
+                pat[k] = {1.0, 1.0};
+                a.repeel_path(flat, t, unit, k, pat);
+            }
+            pattern_valid = true;
+            pattern_value_valid = false;
+        }
+        for (int s : touched) {
+            if (target[s] != missing[s]) {
+                missing[s] = target[s];
+                int k = t.leaf[s];
+                pat[k] = missing[s] ? array<double, 2>{1.0, 1.0} : array<double, 2>{1.0, 0.0};
+                (main[k] ? observed_main : observed_sub) += missing[s] ? -1 : 1;
+                a.repeel_path(flat, t, unit, k, pat);
+                pattern_value_valid = false;
+            }
+        }
+        if (!pattern_value_valid) {
+            pattern_value = pattern_log_ratio(pat);
+            pattern_value_valid = true;
+        }
+    };
+    auto entry_log_ratio = [&](const Genotype_likelihood &g, double pos) {
+        Node *query = ro.lower_node;
+        Peel &p = ratio_peel;
+        vector<array<double, 2>> &msg = ratio_cell;
+        a.peel_site(flat, t, unit, pos, p);
+        int nc = g.leaves[1] == nullptr ? 2 : 4;
+        int kl[2] = {t.index_of(flat, g.leaves[0]), g.leaves[1] == nullptr ? -1 : t.index_of(flat, g.leaves[1])};
+        int kq = query->flat_index, kd_o = bo.lower_node->flat_index, kd_n = bn.lower_node->flat_index;
+        double w_o = 0, w_n = 0;
+        for (int c = 0; c < nc; c++) {
+            if (g.L[c] == 0) {
+                continue;
+            }
+            msg = p.msg;
+            int count[2] = {p.count[0], p.count[1]};
+            for (int j = 0; j < 2 and kl[j] >= 0; j++) {
+                if (!p.missing[kl[j]]) {
+                    int h = j == 0 ? (c & 1) : (c >> 1);
+                    count[(int) g.leaves[j]->get_state(pos)] -= 1;
+                    count[h] += 1;
+                    msg[kl[j]] = {h == 0 ? 1.0 : 0.0, h == 1 ? 1.0 : 0.0};
+                    a.repeel_path(flat, t, unit, kl[j], msg);
+                }
+            }
+            double empty = (1 - pen)*(prior[0]*(count[1] == 0) + prior[1]*(count[0] == 0));
+            array<double, 2> up_o = bo.upper_node == a.root.get() ? array<double, 2>{0, 0} : above(msg, kd_o);
+            array<double, 2> up_n = bn.upper_node == a.root.get() ? array<double, 2>{0, 0} : above(msg, kd_n);
+            w_o += g.L[c]*(join(bo, ro.upper_node->time, query, msg[kq], msg[kd_o], up_o) - empty);
+            w_n += g.L[c]*(join(bn, rn.upper_node->time, query, msg[kq], msg[kd_n], up_n) - empty);
+        }
+        return log(w_n/w_o);
+    };
+
+    double ll = 0;
+    for (int i = start_index; i < end_index; i++) {
+        double x = a.coordinates[i];
+        double w = a.coordinates[i + 1] - x;
+        bool moved = false;
+        while (oj != a.joining_branches.end() and oj->first <= x) {
+            bo = oj->second;
+            ++oj;
+            moved = true;
+        }
+        while (on != a.removed_branches.end() and on->first <= x) {
+            ro = on->second;
+            ++on;
+            moved = true;
+        }
+        while (nj != new_joining_branches.end() and nj->first <= x) {
+            bn = nj->second;
+            ++nj;
+            moved = true;
+        }
+        while (nn != added_branches.end() and nn->first <= x) {
+            rn = nn->second;
+            ++nn;
+            moved = true;
+        }
+        if (recomb_it->first == x) {
+            flat.forward_update(recomb_it->second);
+            ++recomb_it;
+            order_stale = true;
+        }
+        double c = pen*a.thetas[i]/w;
+        if (order_stale or c != unit) {
+            if (order_stale) {
+                t.assign(flat, a.root.get());
+                main.assign(flat.parents.size(), 0);
+                main[t.top] = 1;
+                for (int k = (int) flat.parents.size() - 1; k >= 0; k--) {
+                    if (k != t.top and t.up[k] >= 0 and main[t.up[k]]) {
+                        main[k] = 1;
+                    }
+                }
+                order_stale = false;
+            }
+            unit = c;
+            a.reference_peel(flat, t, unit, ref);
+            p_common = 1;
+            observed_main = observed_sub = 0;
+            for (int k = 0; k < (int) flat.parents.size(); k++) {
+                Node *l = flat.parents[k].first;
+                if (l->is_sample) {
+                    (main[k] ? observed_main : observed_sub) += 1;
+                }
+                if (k != t.top and flat.parents[k].second != a.cut_node) {
+                    p_common *= 1 + unit*flat.lengths[k];
+                }
+            }
+            for (int s : missing_list) {
+                (main[t.leaf[s]] ? observed_main : observed_sub) -= 1;
+            }
+            ref_valid = pattern_valid = z_valid = false;
+        }
+        if (moved) {
+            ref_valid = pattern_value_valid = z_valid = false;
+        }
+        if (!z_valid) {
+            z_diff = log_z(bn, rn.upper_node->time, rn.lower_node) - log_z(bo, ro.upper_node->time, ro.lower_node);
+            z_valid = true;
+        }
+        ll -= a.assayed[i]*z_diff;
+        if (!ref_valid) {
+            int all_main = observed_main, all_sub = observed_sub;
+            for (int s : missing_list) {
+                (main[t.leaf[s]] ? all_main : all_sub) += 1;
+            }
+            swap(observed_main, all_main);
+            swap(observed_sub, all_sub);
+            ref_value = pattern_log_ratio(ref);
+            swap(observed_main, all_main);
+            swap(observed_sub, all_sub);
+            ref_valid = true;
+        }
+        double rest = a.assayed[i];
+        if (a.any_missing) {
+            const Bin_gaps &g = owner->gaps_of(i);
+            if (g.uniform and g.full == missing_list) {
+                touched.clear();
+                apply_pattern();
+                ll += g.count*pattern_value;
+                rest -= g.count;
+            } else if (!g.sample.empty()) {
+                touched = missing_list;
+                for (int s : touched) {
+                    target[s] = 0;
+                    seen[s] = 1;
+                }
+                for (size_t j = 0; j < g.sample.size(); j++) {
+                    if (g.before[j] > 0) {
+                        apply_pattern();
+                        ll += g.before[j]*pattern_value;
+                        rest -= g.before[j];
+                    }
+                    int s = g.sample[j];
+                    target[s] = g.d[j] < 0;
+                    if (!seen[s]) {
+                        seen[s] = 1;
+                        touched.push_back(s);
+                    }
+                }
+                if (g.tail > 0) {
+                    apply_pattern();
+                    ll += g.tail*pattern_value;
+                    rest -= g.tail;
+                }
+                missing_list.clear();
+                for (int s : touched) {
+                    seen[s] = 0;
+                    if (missing[s]) {
+                        missing_list.push_back(s);
+                    }
+                }
+                sort(missing_list.begin(), missing_list.end());
+            }
+        }
+        while (*mut_it < a.coordinates[i + 1]) {
+            while (qi != qe and gl[*qi].pos < *mut_it) {
+                qi++;
+            }
+            if (qi != qe and gl[*qi].pos == *mut_it) {
+                ll += entry_log_ratio(gl[*qi], *mut_it);
+            } else {
+                const Site_messages &s = site_pool[site_slot.at(*mut_it)];
+                Node *query = ro.lower_node;
+                int kd_o = bo.lower_node->flat_index, kd_n = bn.lower_node->flat_index;
+                double w_o = join(bo, ro.upper_node->time, query, s.nu, s.in[kd_o], s.above[kd_o]);
+                double w_n = join(bn, rn.upper_node->time, query, s.nu, s.in[kd_n], s.above[kd_n]);
+                ll += log((w_n - s.empty_term)/(w_o - s.empty_term));
+            }
+            rest -= 1;
+            ++mut_it;
+        }
+        ll += rest*ref_value;
+    }
+    return ll;
+}
+
+// the proposal reads the moved individual's genotype cells, which the ratio sums out, so they are redrawn on the proposed ARG before the decision and the reverse densities read the redrawn cells
 double Threader_smc::redrawn_acceptance_ratio(ARG &a, tuple<double, Branch, double> cut_point) {
     double jac = cut_ratio(a);
     double q_new = bsp.branch_log_q(new_joining_branches, start_index, a.coordinates);
@@ -224,8 +496,6 @@ double Threader_smc::redrawn_acceptance_ratio(ARG &a, tuple<double, Branch, doub
     a.resample_entries(query, start, end);
     redrawn_records.clear();
     redrawn_records.insert(a.recombinations.lower_bound(start), a.recombinations.upper_bound(end));
-    redrawn_mutations.clear();
-    redrawn_mutations.insert(a.mutation_branches.lower_bound(start), a.mutation_branches.lower_bound(end));
     a.clear_remove_info();
     a.cut_tree = a.get_tree_at(get<0>(cut_point));
     a.remove({get<0>(cut_point), prev(added_branches.upper_bound(get<0>(cut_point)))->second, cut_time});
@@ -233,6 +503,8 @@ double Threader_smc::redrawn_acceptance_ratio(ARG &a, tuple<double, Branch, doub
     a.removed_branches = old_rb;
     bsp.reset();
     tsp.reset();
+    site_slot.clear();
+    emit_trees = 0;
     set_check_points(a);
     a.set_collapsed(query, old_rb.begin()->first, old_rb.rbegin()->first);
     run_BSP(a);
@@ -298,6 +570,40 @@ void Threader_smc::set_check_points(ARG &a) {
     tsp.set_check_points(check_points);
 }
 
+void Threader_smc::set_emission_sites(ARG &a, Emission &e, bool &stale, int bin, vector<pair<double, int>> &mut_set, Node *query_node, const Tree *tree) {
+    double unit = a.penalty*a.thetas[bin]/(a.coordinates[bin + 1] - a.coordinates[bin]);
+    for (auto &m : mut_set) {
+        if (site_slot.count(m.first) == 0) {
+            if (stale) {
+                if (tree != nullptr) {
+                    emit_flat.assign(*tree);
+                }
+                emit_order.assign(emit_flat, a.root.get());
+                if (emit_trees == (int) emit_nodes.size()) {
+                    emit_nodes.emplace_back();
+                }
+                vector<Node *> &nodes = emit_nodes[emit_trees++];
+                nodes.clear();
+                for (auto &x : emit_flat.parents) {
+                    nodes.push_back(x.first);
+                }
+                stale = false;
+            }
+            int slot = (int) site_slot.size();
+            if (slot == (int) site_pool.size()) {
+                site_pool.emplace_back();
+            }
+            a.emission_site(emit_flat, emit_order, unit, m.first, query_node, emit_peel, site_pool[slot]);
+            site_pool[slot].tree = emit_trees - 1;
+            site_slot[m.first] = slot;
+        }
+    }
+    e.sites.clear();
+    for (auto &m : mut_set) {
+        e.sites.push_back(&site_pool[site_slot[m.first]]);
+    }
+}
+
 void Threader_smc::run_BSP(ARG &a) {
     bsp.reserve_memory(end_index - start_index);
     bsp.set_cutoff(cutoff);
@@ -316,9 +622,10 @@ void Threader_smc::run_BSP(ARG &a) {
     if (varying) {
         tree = a.start_tree;
     }
+    emit_flat.assign(a.start_tree);
+    bool stale = true;
     double curr_rho = a.thetas[start_index]/(a.coordinates[start_index + 1] - a.coordinates[start_index]);
-    double p_tree = branch_product(a.start_tree, pe->penalty, curr_rho, a.cut_node);
-    pe->any_missing = a.any_missing;
+    double p_tree = branch_product(a.start_tree, a.penalty, curr_rho, a.cut_node);
     for (int i = start_index; i < end_index; i++) {
         if (a.coordinates[i] == query_it->first) {
             query_node = query_it->second.lower_node;
@@ -328,11 +635,13 @@ void Threader_smc::run_BSP(ARG &a) {
             Recombination &r = recomb_it->second;
             recomb_it++;
             bsp.transfer(r);
+            emit_flat.forward_update(r);
+            stale = true;
             if (varying) {
                 tree.forward_update(r);
                 curr_rho = -1;
             } else {
-                p_tree = update_branch_product(p_tree, r, pe->penalty*curr_rho, a.cut_node);
+                p_tree = update_branch_product(p_tree, r, a.penalty*curr_rho, a.cut_node);
             }
         } else if (a.coordinates[i] != start) {
             bsp.forward(a.rhos[i - 1]);
@@ -340,17 +649,18 @@ void Threader_smc::run_BSP(ARG &a) {
         double w = a.coordinates[i + 1] - a.coordinates[i];
         double rho = a.thetas[i]/w;
         if (varying and rho != curr_rho) {
-            p_tree = branch_product(tree, pe->penalty, rho, a.cut_node);
+            p_tree = branch_product(tree, a.penalty, rho, a.cut_node);
             curr_rho = rho;
         }
-        pe->set_tree_product(pe->penalty, no_data ? 0.0 : rho, p_tree, called_width(query_node, a, i));
+        pe->set_tree_product(a.penalty, no_data ? 0.0 : rho, p_tree, called_width(query_node, a, i));
         mut_set.clear();
         while (mut_it->first < a.coordinates[i + 1]) {
             mut_set.push_back(*mut_it);
             mut_it++;
         }
         if (mut_set.size() > 0 and !no_data) {
-            bsp.mut_emit(a.thetas[i], w, mut_set, query_node);
+            set_emission_sites(a, *pe, stale, i, mut_set, query_node, nullptr);
+            bsp.mut_emit(query_node);
         } else {
             bsp.null_emit(a.thetas[i], query_node);
         }
@@ -449,9 +759,9 @@ void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb, bool resume) {
         tree = a.start_tree;
         set_sister_mass(start_branch);
         curr_rho = a.thetas[start_index]/(a.coordinates[start_index + 1] - a.coordinates[start_index]);
-        p_tree = branch_product(a.start_tree, be->penalty, curr_rho, a.cut_node);
+        p_tree = branch_product(a.start_tree, a.penalty, curr_rho, a.cut_node);
     }
-    be->any_missing = a.any_missing;
+    bool stale = true;
     for (int i = first; i < end_index; i++) {
         if (i == resume_index and !resume) {
             tsp.save_state(saved_tsp);
@@ -478,8 +788,9 @@ void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb, bool resume) {
             recomb_it++;
             tsp.transfer(r, prev_branch, next_branch);
             tree.forward_update(r);
+            stale = true;
             if (!varying) {
-                p_tree = update_branch_product(p_tree, r, be->penalty*curr_rho, a.cut_node);
+                p_tree = update_branch_product(p_tree, r, a.penalty*curr_rho, a.cut_node);
             } else {
                 curr_rho = -1;
             }
@@ -495,17 +806,23 @@ void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb, bool resume) {
         double w = a.coordinates[i+1] - a.coordinates[i];
         double rho = a.thetas[i]/w;
         if (varying and rho != curr_rho) {
-            p_tree = branch_product(tree, be->penalty, rho, a.cut_node);
+            p_tree = branch_product(tree, a.penalty, rho, a.cut_node);
             curr_rho = rho;
         }
-        be->set_tree_product(be->penalty, no_data ? 0.0 : rho, p_tree, called_width(query_node, a, i));
+        be->set_tree_product(a.penalty, no_data ? 0.0 : rho, p_tree, called_width(query_node, a, i));
         mut_set.clear();
         while (mut_it->first < a.coordinates[i+1]) {
             mut_set.push_back(*mut_it);
             mut_it++;
         }
         if (mut_set.size() > 0 and !no_data) {
-            tsp.mut_emit(a.thetas[i], w, mut_set, query_node);
+            set_emission_sites(a, *be, stale, i, mut_set, query_node, &tree);
+            if (stale) {
+                Node *n = next_branch.lower_node;
+                const vector<Node *> &nodes = emit_nodes[be->sites[0]->tree];
+                n->flat_index = (int) (lower_bound(nodes.begin(), nodes.end(), n, compare_node()) - nodes.begin());
+            }
+            tsp.mut_emit(query_node);
         } else {
             tsp.null_emit(a.thetas[i], query_node);
         }
@@ -609,7 +926,7 @@ double Threader_smc::exact_acceptance_ratio(ARG &a) {
         }
     }
     double h_old = tsp.eval_joining_nodes(a.joining_branches, a.removed_branches, start_index, a.coordinates);
-    double log_a = log_pi_ratio(a) + (q_old - q_new) + (h_old - h_new) + log(jac);
+    double log_a = log_pi_ratio(a) +(q_old - q_new) + (h_old - h_new) + log(jac);
     return isfinite(q_new) and isfinite(h_new) ? exp(log_a) : 0;
 }
 

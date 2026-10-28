@@ -118,7 +118,6 @@ void Sampler::set_entries(vector<Node *> &leaves) {
     arg.index_genotype_likelihoods();
     for (double x : data.entry_sites) {
         arg.mutation_sites.insert(x);
-        arg.mutation_branches[x];
     }
     arg.index_missing(leaves);
 }
@@ -132,18 +131,15 @@ void Sampler::iterative_start() {
     while (it != ordered_sample_nodes.end()) {
         random_engine.seed(random_seed);
         threader.reset();
-        threader.pe->penalty = penalty;
-        threader.be->penalty = penalty;
-        threader.pe->ancestral_prob = polar;
-        threader.be->ancestral_prob = polar;
         arg.penalty = penalty;
         arg.ancestral_prob = polar;
         Node_ptr n = *it;
         threader.thread(arg, n);
-        arg.check_incompatibility();
-        cout << "Number of flippings: " << arg.count_flipping() << endl;
         it++;
         random_seed = random_engine();
+        arg.draw_mutations();
+        arg.check_incompatibility();
+        cout << "Number of flippings: " << arg.count_flipping() << endl;
         write_iterative_start();
         int placed = (int) arg.sample_nodes.size();
         if ((placed & (placed - 1)) == 0 or it == ordered_sample_nodes.end()) {
@@ -151,6 +147,7 @@ void Sampler::iterative_start() {
         }
     }
     arg.resample_genotypes();
+    arg.draw_mutations();
     cout << "orignal ARG length: " << arg.get_arg_length() << endl;
     rescale();
     cout << "rescaled ARG length: " << arg.get_arg_length() << endl;
@@ -169,10 +166,6 @@ void Sampler::sweep_samples() {
     for (Node *n : nodes) {
         random_engine.seed(random_seed);
         threader.reset();
-        threader.pe->penalty = penalty;
-        threader.be->penalty = penalty;
-        threader.pe->ancestral_prob = polar;
-        threader.be->ancestral_prob = polar;
         threader.rethread_sample(arg, n);
         random_seed = random_engine();
     }
@@ -189,10 +182,6 @@ void Sampler::internal_sample(int num_iters, int spacing) {
         random_engine.seed(random_seed);
         while (moves < spacing) {
             threader.reset();
-            threader.pe->penalty = penalty;
-            threader.be->penalty = penalty;
-            threader.pe->ancestral_prob = polar;
-            threader.be->ancestral_prob = polar;
             arg.penalty = penalty;
             arg.ancestral_prob = polar;
             if (exact) {
@@ -207,6 +196,7 @@ void Sampler::internal_sample(int num_iters, int spacing) {
         }
         arg.resample_genotypes();
         arg.release_dead_nodes();
+        arg.draw_mutations();
         rescale();
         random_seed = random_engine();
         write_sample();
@@ -231,6 +221,9 @@ void Sampler::resume_internal_sample(int num_iters, int spacing) {
         random_seed = stoi(words[words.size() - 2]);
     }
     sample_index += 1;
+    arg.penalty = penalty;
+    arg.ancestral_prob = polar;
+    arg.draw_mutations();
     arg.check_incompatibility();
     cout << "Number of trees: " << arg.recombinations.size() << endl;
     cout << "Number of flippings: " << arg.count_flipping() << endl;

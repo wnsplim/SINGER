@@ -156,10 +156,10 @@ void Scaler::compute_new_grid(double theta) {
 
 void Scaler::map_mutations(ARG &a) {
     observed_arg_length.resize(num_windows);
-    for (auto &x : a.mutation_branches) {
+    for (auto &x : a.mutations) {
         if (x.first > 0 and x.first < a.sequence_length) {
             for (auto &y : x.second) {
-                add_mutation(1.0, y.lower_node->time, y.upper_node->time);
+                add_mutation(1.0, y.first.lower_node->time, y.first.upper_node->time);
             }
         }
     }

@@ -24,16 +24,15 @@ struct Genotype_likelihood {
     double L[4];
 };
 
-inline double joining_weight(int a, int m, int b, int su, const double *p, const double *w, const double *q) {
-    return w[m]*((a == m) ? 1.0 : p[0])*((su == m) ? 1.0 : p[1])*((b == m) ? 1.0 : p[2])*q[b];
-}
-
 struct Bin_gaps {
     bool built = false;
     vector<int> sample = {};
     vector<int> d = {};
     vector<double> before = {};
     double tail = 0;
+    bool uniform = false;
+    vector<int> full = {};
+    double count = 0;
 };
 
 struct Tree_order {
@@ -42,7 +41,7 @@ struct Tree_order {
     vector<int> up = {};
     vector<vector<int>> kids = {};
     int top = -1;
-    vector<int> runs = {}, next_runs = {};
+    vector<int> leaf = {};
 
     void assign(const Flat_tree &flat, Node *root_node);
 
@@ -52,11 +51,25 @@ struct Tree_order {
 struct Peel {
     vector<char> missing = {};
     vector<array<double, 2>> msg = {};
+    vector<array<double, 2>> empty = {};
     int count[2] = {0, 0};
     int leaf[2] = {-1, -1};
     vector<int> path = {};
     vector<char> in_path = {};
     vector<array<double, 2>> alt = {};
+    vector<array<double, 2>> outside = {};
+    vector<char> in_main = {};
+};
+
+struct Site_messages {
+    double unit = 0;
+    vector<array<double, 2>> in = {};
+    vector<array<double, 2>> above = {};
+    array<double, 2> nu = {1.0, 1.0};
+    int top = -1;
+    int tree = -1;
+    double empty_term = 0;
+    double scale = 1;
 };
 
 class ARG {
@@ -70,10 +83,10 @@ public:
     Node_ptr cut_node_owner = nullptr;
     double cut_time = 0;
     set<double> mutation_sites = {};
-    map<double, set<Branch>> mutation_branches = {};
+    map<double, vector<pair<Branch, int>>> mutations = {};
     map<double, Recombination> recombinations = {};
     int bin_num = 0;
-    double penalty = 0.1;
+    double penalty = 0.01;
     double ancestral_prob = 0.5;
     bool any_missing = false;
     vector<double> unassayed_sites = {};
@@ -151,8 +164,6 @@ public:
 
     void adjust_recombinations();
 
-    int count_flipping();
-
     void read_coordinates(string filename);
 
     void write_coordinates(string filename);
@@ -167,21 +178,11 @@ public:
 
     tuple<double, Branch, double> sample_uniform_cut();
 
-    void impute(map<double, Branch> &new_joining_branches, map<double, Branch> &added_branches);
-
-    void remap_mutations();
-
-    void map_mutation(double x, Branch joining_branch, Branch added_branch, const double *joining_state_prob, double unit_theta);
-
-    bool mutation_free(double x);
-
     vector<Genotype_likelihood> genotype_likelihoods = {};
 
     unordered_map<Node *, vector<int>> leaf_entries = {};
 
     const ARG *entry_owner = nullptr;
-
-    bool impute_skip = false;
 
     void index_genotype_likelihoods();
 
@@ -201,11 +202,19 @@ public:
 
     void peel_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p);
 
+    double root_value(const array<double, 2> &top, bool seen0, bool seen1) const;
+
+    double site_value(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p);
+
+    void emission_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s);
+
     void entry_weights(const Flat_tree &flat, const Tree_order &t, double unit, double pos, const Genotype_likelihood &g, Peel &p, double *w);
 
     void set_entry(const Flat_tree &flat, const Tree_order &t, double unit, double pos, const Genotype_likelihood &g, int c, Peel &p);
 
-    double collapsed_site_weight(const Flat_tree &flat, const Tree_order &t, double unit, double pos, const Genotype_likelihood &g, Peel &p);
+    double collapsed_site_value(const Flat_tree &flat, const Tree_order &t, double unit, double pos, const Genotype_likelihood &g, Peel &p);
+
+    void draw_states(const Flat_tree &flat, const Tree_order &t, double unit, const Peel &p, vector<int> &state);
 
     void resample_site(const Flat_tree &flat, const Tree_order &t, int bin, double pos, size_t e, size_t f, Node *only, Peel &p);
 
@@ -215,19 +224,11 @@ public:
 
     vector<tuple<Node *, double, double>> state_journal = {};
 
-    vector<tuple<Node *, double, double>> entry_states(Node *leaf, double x, double y);
-
-    vector<tuple<Node *, double, double>> lineage_states(const map<double, Branch> &lineage, double x, double y);
-
-    void restore_states(const vector<tuple<Node *, double, double>> &states, vector<double> &changed);
-
-    void undo_journal(vector<double> &changed);
-
-    void rebuild_mutations(vector<double> &sites);
+    void undo_journal();
 
     void resample_genotypes();
 
-    void joining_state_table(const Branch &joining_branch, const Branch &added_branch, double unit_theta, double *p);
+    void draw_mutations();
 
     vector<double> assayed = {};
     vector<pair<double, double>> masked = {};
@@ -238,6 +239,8 @@ public:
 
     void check_incompatibility();
 
+    int count_flipping();
+
     void clear_remove_info();
 
     double corrected_smc_prior(map<double, Branch> &lineage, int lo, int hi, double p, const Tree &tree_p);
@@ -246,23 +249,19 @@ public:
 
     Tree_order likelihood_order;
 
-    vector<int> likelihood_leaf = {}, likelihood_below = {}, likelihood_observed = {};
+    Peel likelihood_peel;
 
-    vector<double> likelihood_lg = {}, likelihood_lg_next = {};
+    vector<array<double, 2>> reference_msg = {}, pattern_msg = {};
 
-    vector<pair<Node *, Node *>> likelihood_lg_parents = {};
+    void reference_peel(const Flat_tree &flat, const Tree_order &t, double unit, vector<array<double, 2>> &msg) const;
+
+    void repeel_path(const Flat_tree &flat, const Tree_order &t, double unit, int k, vector<array<double, 2>> &msg) const;
 
     double mutation_log_likelihood(map<double, Branch> &lineage, double x, double y, double p, const Tree &tree_p);
-
-    double site_weight(const Flat_tree &tree, int bin, double pos, Node *summed);
-
-    void sample_counts(const Flat_tree &tree, const Tree_order &t, vector<int> &leaf, vector<int> &below);
 
     mutable vector<Bin_gaps> bin_gaps = {};
 
     const Bin_gaps &gaps_of(int bin) const;
-
-    double unassayed_correction(const Tree_order &t, const vector<int> &leaf, const vector<int> &below, const vector<double> &lg, int bin, vector<int> &observed);
 
     Branch lineage_branch_before(map<double, Branch> &lineage, double x);
 
