@@ -155,6 +155,9 @@ void Sampler::iterative_start() {
     arg.write_nodes(node_file);
     arg.write_branches(branch_file);
     arg.write_recombs(recomb_file);
+    if (!arg.genotype_likelihoods.empty()) {
+        arg.write_cells(output_prefix + "_start_cells_" + to_string(sample_index) + ".txt");
+    }
     string coord_file = output_prefix + "_coordinates.txt";
     arg.write_coordinates(coord_file);
     vector<double> rescaled = rescale(output_prefix + "_start_rescaled_nodes_" + to_string(sample_index) + ".txt");
@@ -205,6 +208,9 @@ void Sampler::internal_sample(int num_iters, int spacing) {
         arg.write_nodes(node_file);
         arg.write_branches(branch_file);
         arg.write_recombs(recomb_file);
+        if (!arg.genotype_likelihoods.empty()) {
+            arg.write_cells(output_prefix + "_cells_" + to_string(sample_index) + ".txt");
+        }
         vector<double> rescaled = rescale(rescaled_file);
         write_mapping(output_prefix, to_string(sample_index), counts_file, rescaled);
         random_seed = random_engine();
@@ -347,20 +353,27 @@ void Sampler::load_resume_arg() {
     node_file = output_prefix + "_nodes_" + to_string(sample_index) + ".txt";
     branch_file= output_prefix + "_branches_" + to_string(sample_index) + ".txt";
     recomb_file = output_prefix + "_recombs_" + to_string(sample_index) + ".txt";
-    mut_file = output_prefix + "_muts_" + to_string(sample_index) + ".txt";
-    if (!ifstream(mut_file).good()) {
-        mut_file = output_prefix + "_muts_1_" + to_string(sample_index) + ".txt";
-    }
     coord_file = output_prefix + "_coordinates.txt";
+    string cells_file = output_prefix + "_cells_" + to_string(sample_index) + ".txt";
     arg.num_samples = ploidy*(int) data.sample_names().size();
-    arg.read(node_file, branch_file, recomb_file, mut_file);
+    arg.read(node_file, branch_file, recomb_file);
     arg.read_coordinates(coord_file);
     vector<Node *> leaves(arg.sample_nodes.size());
     for (Node *n : arg.sample_nodes) {
         leaves[n->index] = n;
     }
     data.ploidy = ploidy;
-    data.read(start, end, false);
+    data.read(start, end, true);
+    for (int i = 0; i < (int) data.derived_sites.size(); i++) {
+        for (double x : data.derived_sites[i]) {
+            leaves[i]->add_mutation(x);
+        }
+    }
+    for (Node *n : leaves) {
+        for (auto &x : n->mutation_sites) {
+            arg.mutation_sites.insert(x.first);
+        }
+    }
     set_missing(leaves);
     arg.any_missing = data.any_missing;
     arg.unassayed_sites = data.unassayed_sites;
@@ -368,6 +381,18 @@ void Sampler::load_resume_arg() {
     arg.masked = data.masked;
     arg.compute_assayed();
     set_entries(leaves);
+    if (!arg.genotype_likelihoods.empty()) {
+        if (ifstream(cells_file).good()) {
+            arg.read_cells(cells_file);
+        } else {
+            mut_file = output_prefix + "_muts_" + to_string(sample_index) + ".txt";
+            if (!ifstream(mut_file).good()) {
+                mut_file = output_prefix + "_muts_1_" + to_string(sample_index) + ".txt";
+            }
+            cerr << "No " << cells_file << ": the cells are read from " << mut_file << " (a run written before the cells file)." << endl;
+            arg.read_muts(mut_file);
+        }
+    }
 }
 
 void Sampler::read_resume_point(string filename) {

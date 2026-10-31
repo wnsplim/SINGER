@@ -506,11 +506,46 @@ void ARG::write(string node_file, string branch_file, string recomb_file, string
     write_mutations(mutation_file);
 }
 
-void ARG::read(string node_file, string branch_file, string recomb_file, string mut_file) {
+void ARG::read(string node_file, string branch_file, string recomb_file) {
     read_nodes(node_file);
     read_branches(branch_file);
     read_recombs(recomb_file);
-    read_muts(mut_file);
+}
+
+void ARG::write_cells(string filename) {
+    ofstream file(filename);
+    file.precision(numeric_limits<double>::max_digits10);
+    for (auto &g : genotype_likelihoods) {
+        file << g.pos;
+        for (int h = 0; h < 2; h++) {
+            if (g.leaves[h] != nullptr) {
+                file << " " << g.leaves[h]->index << " " << (int) g.leaves[h]->get_state(g.pos);
+            }
+        }
+        file << "\n";
+    }
+}
+
+void ARG::read_cells(string filename) {
+    ifstream fin(filename);
+    if (!fin.good()) {
+        cerr << "cells file not found: " << filename << endl;
+        exit(1);
+    }
+    create_node_set();
+    vector<Node *> nodes = node_list;
+    string line;
+    while (getline(fin, line)) {
+        istringstream iss(line);
+        double pos;
+        int leaf, state;
+        if (!(iss >> pos)) {
+            continue;
+        }
+        while (iss >> leaf >> state) {
+            nodes[leaf]->write_state(pos, state);
+        }
+    }
 }
 
 void ARG::compute_assayed() {

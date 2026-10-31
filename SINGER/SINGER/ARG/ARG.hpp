@@ -171,7 +171,7 @@ public:
 
     void write(string node_file, string branch_file, string recomb_file, string mutation_file);
 
-    void read(string node_file, string branch_file, string recomb_file, string mut_file);
+    void read(string node_file, string branch_file, string recomb_file);
 
     double get_arg_length();
 
@@ -311,6 +311,10 @@ public:
     void read_recombs(string filename);
     
     void read_muts(string filename);
+
+    void write_cells(string filename);
+
+    void read_cells(string filename);
 
 };
 
