@@ -41,7 +41,7 @@ int main(int argc, const char * argv[]) {
     double start_pos = -1, end_pos = -1;
     string input_filename = "", output_prefix = "";
     string r_value = "", m_value = "";
-    double penalty = 0.01;
+    double penalty = 1;
     double polar = 0.5;
     double missing_thres = 0.5;
     int scaling_rep = -1;

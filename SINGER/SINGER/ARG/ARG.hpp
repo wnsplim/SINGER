@@ -86,7 +86,7 @@ public:
     map<double, vector<pair<Branch, int>>> mutations = {};
     map<double, Recombination> recombinations = {};
     int bin_num = 0;
-    double penalty = 0.01;
+    double penalty = 1;
     double ancestral_prob = 0.5;
     bool any_missing = false;
     vector<double> unassayed_sites = {};

@@ -41,7 +41,7 @@ public:
     double tsp_q = 0.05;
     int random_seed = 0;
     bool seed_given = false;
-    double penalty = 0.01;
+    double penalty = 1;
     double polar = 0.99;
     int scaling_rep = 5;
     int scaling_bin = 100;
