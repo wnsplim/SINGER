@@ -51,6 +51,7 @@ cp python_scripts/index_vcf.py "$VERSION_DIR/index_vcf.py"
 cp python_scripts/merge_ARG.py "$VERSION_DIR/merge_ARG.py"
 cp python_scripts/convert_long_ARG.py "$VERSION_DIR/convert_long_ARG.py"
 cp python_scripts/vcf_io.py "$VERSION_DIR/vcf_io.py"
+cp python_scripts/arg_io.py "$VERSION_DIR/arg_io.py"
 cp "$SRC_DIR/../../LICENSE" "$VERSION_DIR/LICENSE"
 cp "$VERSION_DIR/singer" singer.tmp && mv -f singer.tmp singer
 cp "$VERSION_DIR/singer_debug" singer_debug.tmp && mv -f singer_debug.tmp singer_debug

@@ -84,7 +84,7 @@ path_to_singer/convert_to_tskit.py -input prefix_of_arg_files -output prefix_of_
 -start start_index -end end_index -step step_size
 ```
 
-This tool will convert ARG sample with index from `start_index` to `end_index`, with interval size `step_size`. Add `-rescaled` to use the rescaled node times in place of the sampled ones; `convert_long_ARG.py` takes the same flag, and for `merge_ARG.py` list the `rescaled_nodes` files in the file table. 
+This tool converts the ARG samples with index from `start_index` to `end_index`, with interval size `step_size`, to `prefix_of_tskit_files_{i}.trees`. The node times are the rescaled ones when SINGER wrote them (`-scaling_rep` above 0), else the sampled ones. With `-mapping_rep` above 1 it writes one tree sequence for each draw, `prefix_of_tskit_files_{r}_{i}.trees`. Each tree sequence carries the mapping in its mutation table, with `informed` in each mutation's metadata, the expected number of mutations and the informed bases of each branch in its edge metadata (`expected_mutations`, `informed_bases`), and the flags of the run in its provenance record. tskit does not simplify a tree sequence whose edges carry metadata. Call `tables.edges.drop_metadata()` first when you need `simplify`. `convert_long_ARG.py` writes the same content for a chromosome run in blocks.
 
 ### Rate maps
 
@@ -179,6 +179,8 @@ prefix_of_output_file_i_nodes_1.txt prefix_of_output_file_i_branches_1.txt prefi
 prefix_of_output_file_i_nodes_2.txt prefix_of_output_file_i_branches_2.txt prefix_of_output_file_i_muts_2.txt 10000000
 ......
 ```
+
+A row may carry the counts file before the offset, for example `prefix_of_output_file_i_nodes_0.txt prefix_of_output_file_i_branches_0.txt prefix_of_output_file_i_muts_0.txt prefix_of_output_file_i_counts_0.txt 0`. The merged tree sequence then carries the edge metadata. List the `rescaled_nodes` files to merge the rescaled times.
 
 where ```i``` is the index of the ARG sample, and the index after that is the index of the genomic windows on which parallization is performed. Note that the genomic windows do not have to be all adjacent. For example, when there is a centromeric region in the middle of the chromosome, it can be skipped by only selecting windows in the left and right arms. This will be reflected in the last column of the ```sub_file_table_file```, which indicates the starting position of each genomic window. 
 
