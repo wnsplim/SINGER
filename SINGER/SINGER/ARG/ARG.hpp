@@ -17,6 +17,7 @@
 #include <array>
 #include <tuple>
 #include <unordered_map>
+#include <functional>
 
 struct Genotype_likelihood {
     double pos;
@@ -229,6 +230,26 @@ public:
     void resample_genotypes();
 
     void draw_mutations();
+
+    map<double, vector<char>> mutation_informed = {};
+
+    void set_lengths(Flat_tree &flat, const function<double(Node *)> *time_of);
+
+    void outside_messages(const Flat_tree &flat, const Tree_order &t, double unit, const Peel &p, vector<array<double, 2>> &above);
+
+    void site_counts(const Flat_tree &flat, const Tree_order &t, double unit, const Peel &p, const vector<array<double, 2>> &above, vector<double> &differs, vector<char> &informed_msg, vector<char> &informed_tip);
+
+    void draw_mutations(const function<double(Node *)> *time_of);
+
+    vector<tuple<int, int, double, double>> branch_rows();
+
+    void informed_edges(const function<void(Node *, Node *, double, double)> &add);
+
+    void expected_counts(const function<double(Node *)> *time_of, const function<void(Node *, Node *, double)> &add, vector<double> *expected, const vector<tuple<int, int, double, double>> *rows);
+
+    void write_counts(string filename, const vector<double> &expected, const vector<double> &informed_bases);
+
+    void mapping_counts(const function<double(Node *)> *time_of, vector<double> &expected, vector<double> &informed_bases);
 
     vector<double> assayed = {};
     vector<pair<double, double>> masked = {};

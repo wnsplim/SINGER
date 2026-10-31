@@ -327,6 +327,7 @@ def main():
     parser.add_argument('-chrom_p', type=str, help='Chromosome to read from the -mask_p file. Default: the -chrom chromosome.')
     parser.add_argument('-scaling_rep', type=int, help='Number of ARG rescaling rounds applied to a copy of each written sample, whose node times are written to <output>_rescaled_nodes_<i>.txt; the MCMC itself is never rescaled; 0 disables rescaling. Default: 1.')
     parser.add_argument('-scaling_bin', type=int, help='Number of time bins used for ARG rescaling. Default: 100.')
+    parser.add_argument('-mapping_rep', type=int, help='Number of stochastic mapping draws written for each sample. With 1 the draw is <output>_muts_<i>.txt; with more, draw r is <output>_muts_<r>_<i>.txt. Default: 1.')
     parser.add_argument('-max_attempts', type=int, default=100, help='Maximum number of automatic restarts (-debug) after a failed run; 0 disables them. Each failed command is appended to OUTPUT.attempts. Default: 100.')
 
     if len(sys.argv) == 1:
@@ -360,7 +361,7 @@ def main():
         parser.error("The mutation rate is set to 0")
     if args.Ne < 0:
         args.Ne = compute_Ne(args.input, args.start, args.end, m, ages, args.g, args.mask_n, args.mask_p, args.chrom, args.chrom_n, args.chrom_p)
-    scaling = (f" -scaling_rep {args.scaling_rep}" if args.scaling_rep is not None else "") + (f" -scaling_bin {args.scaling_bin}" if args.scaling_bin is not None else "")
+    scaling = (f" -scaling_rep {args.scaling_rep}" if args.scaling_rep is not None else "") + (f" -scaling_bin {args.scaling_bin}" if args.scaling_bin is not None else "") + (f" -mapping_rep {args.mapping_rep}" if args.mapping_rep is not None else "")
     run_singer(args.Ne, args.m, args.r, args.start, args.end, args.input, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips, args.max_attempts, args.resume, scaling)
 
 

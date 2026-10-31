@@ -6,6 +6,9 @@
 //
 
 #include <iostream>
+#include <fstream>
+#include <sstream>
+#include <set>
 #include "Sampler.hpp"
 
 static bool parse_rate(const string &value, double &rate) {
@@ -46,123 +49,172 @@ int main(int argc, const char * argv[]) {
     double missing_thres = 0.5;
     int scaling_rep = -1;
     int scaling_bin = 100;
+    int mapping_rep = 1;
     double epsilon_hmm = -1;
     double epsilon_psmc = 0.05;
     int ploidy = 2;
     int seed = 42;
     bool seed_given = false;
-    for (int i = 1; i < argc; ++i) {
-        string arg = argv[i];
+    vector<string> args(argv + 1, argv + argc);
+    vector<pair<string, string>> given;
+    for (int i = 0; i < (int) args.size(); i++) {
+        if (args[i][0] == '-') {
+            string value = i + 1 < (int) args.size() and args[i + 1][0] != '-' ? args[i + 1] : "";
+            given.push_back({args[i], value});
+        }
+    }
+    bool resume_given = false;
+    string ckp_prefix = "";
+    for (auto &g : given) {
+        if (g.first == "-resume") {
+            resume_given = true;
+        }
+        if (g.first == "-output") {
+            ckp_prefix = g.second;
+        }
+    }
+    set<string> ckp_skip = {"-resume", "-n", "-seed", "-debug", "-output"};
+    if (resume_given and !ckp_prefix.empty()) {
+        ifstream ckp(ckp_prefix + ".ckp");
+        string line;
+        while (getline(ckp, line)) {
+            istringstream iss(line);
+            string flag, value;
+            iss >> flag;
+            getline(iss, value);
+            size_t p = value.find_first_not_of(' ');
+            value = p == string::npos ? "" : value.substr(p);
+            bool found = false;
+            for (auto &g : given) {
+                if (g.first == flag) {
+                    found = true;
+                    if (g.second != value) {
+                        cerr << "Error: " << flag << " " << g.second << " differs from the checkpoint's " << flag << " " << value << ". " << endl;
+                        exit(1);
+                    }
+                }
+            }
+            if (!found) {
+                args.push_back(flag);
+                if (!value.empty()) {
+                    args.push_back(value);
+                }
+            }
+        }
+    }
+    int n_args = (int) args.size();
+    for (int i = 0; i < n_args; ++i) {
+        string arg = args[i];
         if (arg == "-resume") {
-            if (i + 1 < argc && argv[i+1][0] != '-') {
+            if (i + 1 < n_args && args[i+1][0] != '-') {
                 cerr << "Error: -resume flag doesn't take any value. " << endl;
                 exit(1);
             }
             resume = true;
         }
         else if (arg == "-no_data") {
-            if (i + 1 < argc && argv[i+1][0] != '-') {
+            if (i + 1 < n_args && args[i+1][0] != '-') {
                 cerr << "Error: -no_data flag doesn't take any value. " << endl;
                 exit(1);
             }
             no_data = true;
         }
         else if (arg == "-tip_ages") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -tip_ages flag cannot be empty. " << endl;
                 exit(1);
             }
-            tip_ages_file = argv[++i];
+            tip_ages_file = args[++i];
         }
         else if (arg == "-mask_n") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -mask_n flag cannot be empty. " << endl;
                 exit(1);
             }
-            mask_file = argv[++i];
+            mask_file = args[++i];
         }
         else if (arg == "-mask_p") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -mask_p flag cannot be empty. " << endl;
                 exit(1);
             }
-            mask_p_file = argv[++i];
+            mask_p_file = args[++i];
         }
         else if (arg == "-genotype_lik") {
-            if (i + 1 < argc && argv[i+1][0] != '-') {
+            if (i + 1 < n_args && args[i+1][0] != '-') {
                 cerr << "Error: -genotype_lik flag doesn't take any value. " << endl;
                 exit(1);
             }
             genotype_lik = true;
         }
         else if (arg == "-phase") {
-            if (i + 1 < argc && argv[i+1][0] != '-') {
+            if (i + 1 < n_args && args[i+1][0] != '-') {
                 cerr << "Error: -phase flag doesn't take any value. " << endl;
                 exit(1);
             }
             phase = true;
         }
         else if (arg == "-genotype_calls") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -genotype_calls flag cannot be empty. " << endl;
                 exit(1);
             }
-            calls_file = argv[++i];
+            calls_file = args[++i];
         }
         else if (arg == "-chrom") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -chrom flag cannot be empty. " << endl;
                 exit(1);
             }
-            chrom_name = argv[++i];
+            chrom_name = args[++i];
         }
         else if (arg == "-chrom_n") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -chrom_n flag cannot be empty. " << endl;
                 exit(1);
             }
-            chrom_n = argv[++i];
+            chrom_n = args[++i];
         }
         else if (arg == "-chrom_p") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -chrom_p flag cannot be empty. " << endl;
                 exit(1);
             }
-            chrom_p = argv[++i];
+            chrom_p = args[++i];
         }
         else if (arg == "-g") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -g flag cannot be empty. " << endl;
                 exit(1);
             }
             try {
-                g = stod(argv[++i]);
+                g = stod(args[++i]);
             } catch (const invalid_argument&) {
                 cerr << "Error: -g flag expects a number. " << endl;
                 exit(1);
             }
         }
         else if (arg == "--mode") {
-            if (i + 1 >= argc || (string(argv[i+1]) != "original" && string(argv[i+1]) != "exact")) {
+            if (i + 1 >= n_args || (args[i+1] != "original" && args[i+1] != "exact")) {
                 cerr << "Error: --mode flag expects original or exact. " << endl;
                 exit(1);
             }
-            mode = argv[++i];
+            mode = args[++i];
         }
         else if (arg == "-debug") {
-            if (i + 1 < argc && argv[i+1][0] != '-') {
+            if (i + 1 < n_args && args[i+1][0] != '-') {
                 cerr << "Error: -debug flag doesn't take any value. " << endl;
                 exit(1);
             }
             debug = true;
         }
         else if (arg == "-Ne") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -Ne flag cannot be empty. " << endl;
                 exit(1);
             }
             try {
-                Ne = stod(argv[++i]);
+                Ne = stod(args[++i]);
             } catch (const invalid_argument&) {
                 cerr << "Error: -Ne flag expects a number. " << endl;
                 exit(1);
@@ -170,26 +222,26 @@ int main(int argc, const char * argv[]) {
             Ne = 2*Ne;
         }
         else if (arg == "-r") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -r flag cannot be empty. " << endl;
                 exit(1);
             }
-            r_value = argv[++i];
+            r_value = args[++i];
         }
         else if (arg == "-m") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -m flag cannot be empty. " << endl;
                 exit(1);
             }
-            m_value = argv[++i];
+            m_value = args[++i];
         }
         else if (arg == "-penalty") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -penalty flag cannot be empty. " << endl;
                 exit(1);
             }
             try {
-                penalty = stod(argv[++i]);
+                penalty = stod(args[++i]);
             } catch (const invalid_argument&) {
                 cerr << "Error: -penalty flag expects a number. " << endl;
                 exit(1);
@@ -200,12 +252,12 @@ int main(int argc, const char * argv[]) {
             }
         }
         else if (arg == "-polar") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -polar flag cannot be empty. " << endl;
                 exit(1);
             }
             try {
-                polar = stod(argv[++i]);
+                polar = stod(args[++i]);
             } catch (const invalid_argument&) {
                 cerr << "Error: -polar flag expects a number. " << endl;
                 exit(1);
@@ -216,12 +268,12 @@ int main(int argc, const char * argv[]) {
             }
         }
         else if (arg == "-missing_thres") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -missing_thres flag cannot be empty. " << endl;
                 exit(1);
             }
             try {
-                missing_thres = stod(argv[++i]);
+                missing_thres = stod(args[++i]);
             } catch (const invalid_argument&) {
                 cerr << "Error: -missing_thres flag expects a number. " << endl;
                 exit(1);
@@ -232,122 +284,138 @@ int main(int argc, const char * argv[]) {
             }
         }
         else if (arg == "-scaling_rep") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -scaling_rep flag cannot be empty. " << endl;
                 exit(1);
             }
             try {
-                scaling_rep = stoi(argv[++i]);
+                scaling_rep = stoi(args[++i]);
             } catch (const invalid_argument&) {
                 cerr << "Error: -scaling_rep flag expects a number. " << endl;
                 exit(1);
             }
         }
+        else if (arg == "-mapping_rep") {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
+                cerr << "Error: -mapping_rep flag cannot be empty. " << endl;
+                exit(1);
+            }
+            try {
+                mapping_rep = stoi(args[++i]);
+            } catch (const invalid_argument&) {
+                cerr << "Error: -mapping_rep flag expects a number. " << endl;
+                exit(1);
+            }
+            if (mapping_rep < 1) {
+                cerr << "Error: -mapping_rep must be at least 1. " << endl;
+                exit(1);
+            }
+        }
         else if (arg == "-scaling_bin") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -scaling_bin flag cannot be empty. " << endl;
                 exit(1);
             }
             try {
-                scaling_bin = stoi(argv[++i]);
+                scaling_bin = stoi(args[++i]);
             } catch (const invalid_argument&) {
                 cerr << "Error: -scaling_bin flag expects a number. " << endl;
                 exit(1);
             }
         }
         else if (arg == "-hmm_epsilon") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -hmm_epsilon flag cannot be empty. " << endl;
                 exit(1);
             }
             try {
-                epsilon_hmm = stod(argv[++i]);
+                epsilon_hmm = stod(args[++i]);
             } catch (const invalid_argument&) {
                 cerr << "Error: -hmm_epsilon flag expects a number. " << endl;
                 exit(1);
             }
         }
         else if (arg == "-psmc_bins") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -psmc_epsilon flag cannot be empty. " << endl;
                 exit(1);
             }
             try {
-                epsilon_psmc = 1.0/stod(argv[++i]);
+                epsilon_psmc = 1.0/stod(args[++i]);
             } catch (const invalid_argument&) {
                 cerr << "Error: -p flag expects a number. " << endl;
                 exit(1);
             }
         }
         else if (arg == "-start") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -start flag cannot be empty. " << endl;
                 exit(1);
             }
             try {
-                start_pos = stod(argv[++i]);
+                start_pos = stod(args[++i]);
             } catch (const invalid_argument&) {
                 cerr << "Error: -start flag expects a number. " << endl;
                 exit(1);
             }
         }
         else if (arg == "-end") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -end flag cannot be empty. " << endl;
                 exit(1);
             }
             try {
-                end_pos = stod(argv[++i]);
+                end_pos = stod(args[++i]);
             } catch (const invalid_argument&) {
                 cerr << "Error: -end flag expects a number. " << endl;
                 exit(1);
             }
         }
         else if (arg == "-input") {
-            if (i + 1 > argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -input flag cannot be empty. " << endl;
                 exit(1);
             }
-            input_filename = argv[++i];
+            input_filename = args[++i];
         }
         else if (arg == "-output") {
-            if (i + 1 > argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -output flag cannot be empty. " << endl;
                 exit(1);
             }
-            output_prefix = argv[++i];
+            output_prefix = args[++i];
         }
         else if (arg == "-n") {
-            if (i + 1 > argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -n flag cannot be empty. " << endl;
                 exit(1);
             }
             try {
-                num_iters = stoi(argv[++i]);
+                num_iters = stoi(args[++i]);
             } catch (const invalid_argument&) {
                 cerr << "Error: -n flag expects a number. " << endl;
                 exit(1);
             }
         }
         else if (arg == "-thin") {
-            if (i + 1 > argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -thin flag cannot be empty. " << endl;
                 exit(1);
             }
             try {
-                spacing = stoi(argv[++i]);
+                spacing = stoi(args[++i]);
             } catch (const invalid_argument&) {
                 cerr << "Error: -thin flag expects a number. " << endl;
                 exit(1);
             }
         }
         else if (arg == "-seed") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -seed flag cannot be empty. " << endl;
                 exit(1);
             }
             try {
-                seed = stoi(argv[++i]);
+                seed = stoi(args[++i]);
                 seed_given = true;
             } catch (const invalid_argument&) {
                 cerr << "Error: -seed flag expects a number. " << endl;
@@ -355,13 +423,13 @@ int main(int argc, const char * argv[]) {
             }
         }
         else if (arg == "-ploidy") {
-            if (i + 1 >= argc || argv[i+1][0] == '-') {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -ploidy flag expects a value (1 or 2)." << endl;
                 exit(1);
             }
 
             try {
-                ploidy = stoi(argv[++i]);
+                ploidy = stoi(args[++i]);
             } catch (const invalid_argument&) {
                 cerr << "Error: -ploidy expects 1 or 2." << endl;
                 exit(1);
@@ -375,6 +443,14 @@ int main(int argc, const char * argv[]) {
         else {
             cerr << "Error: Unknown flag. " << arg << endl;
             exit(1);
+        }
+    }
+    if (!resume and !output_prefix.empty()) {
+        ofstream ckp(output_prefix + ".ckp");
+        for (auto &g : given) {
+            if (ckp_skip.count(g.first) == 0) {
+                ckp << g.first << " " << g.second << "\n";
+            }
         }
     }
     if (m_value.size() == 0) {
@@ -443,6 +519,7 @@ int main(int argc, const char * argv[]) {
     sampler.scaling_rep = scaling_rep;
     Threader_smc::no_data = no_data;
     sampler.scaling_bin = scaling_bin;
+    sampler.mapping_rep = mapping_rep;
     sampler.set_precision(epsilon_hmm, epsilon_psmc);
     sampler.set_input_file_prefix(input_filename);
     sampler.set_output_file_prefix(output_prefix);

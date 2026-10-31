@@ -7,6 +7,8 @@
 
 #include "ARG.hpp"
 #include "Data_reader.hpp"
+#include <fstream>
+#include <sstream>
 
 ARG::ARG() {}
 
@@ -971,11 +973,28 @@ void ARG::undo_journal() {
 }
 
 void ARG::draw_mutations() {
+    draw_mutations(nullptr);
+}
+
+void ARG::set_lengths(Flat_tree &flat, const function<double(Node *)> *time_of) {
+    if (time_of == nullptr) {
+        return;
+    }
+    for (int k = 0; k < (int) flat.parents.size(); k++) {
+        flat.lengths[k] = (*time_of)(flat.parents[k].second) - (*time_of)(flat.parents[k].first);
+    }
+}
+
+void ARG::draw_mutations(const function<double(Node *)> *time_of) {
     mutations.clear();
+    mutation_informed.clear();
     Flat_tree flat;
     Tree_order t;
     Peel p;
     vector<int> state;
+    vector<array<double, 2>> above;
+    vector<double> differs;
+    vector<char> informed_msg, informed_tip;
     auto r_it = recombinations.begin();
     bool stale = true;
     int bin = 0;
@@ -987,6 +1006,7 @@ void ARG::draw_mutations() {
             stale = true;
         }
         if (stale) {
+            set_lengths(flat, time_of);
             t.assign(flat, root.get());
             stale = false;
         }
@@ -996,11 +1016,291 @@ void ARG::draw_mutations() {
         double unit = penalty*thetas[bin]/(coordinates[bin + 1] - coordinates[bin]);
         peel_site(flat, t, unit, pos, p);
         draw_states(flat, t, unit, p, state);
+        outside_messages(flat, t, unit, p, above);
+        site_counts(flat, t, unit, p, above, differs, informed_msg, informed_tip);
         vector<pair<Branch, int>> &rows = mutations[pos];
+        vector<char> &flags = mutation_informed[pos];
         for (int k = 0; k < (int) flat.parents.size(); k++) {
-            int above = k == t.top ? 0 : state[t.up[k]];
-            if (!p.missing[k] and state[k] != above) {
+            int above_state = k == t.top ? 0 : state[t.up[k]];
+            if (!p.missing[k] and state[k] != above_state) {
                 rows.push_back({Branch(flat.parents[k].first, flat.parents[k].second), state[k]});
+                flags.push_back(k == t.top ? 1 : informed_msg[k]);
+            }
+        }
+    }
+}
+
+void ARG::outside_messages(const Flat_tree &flat, const Tree_order &t, double unit, const Peel &p, vector<array<double, 2>> &above) {
+    int nb = (int) flat.parents.size();
+    double prior[2] = {ancestral_prob, 1 - ancestral_prob};
+    above.assign(nb, {0.0, 0.0});
+    above[t.top] = {prior[0], prior[1]};
+    vector<array<double, 2>> outside(nb);
+    outside[t.top] = {prior[0], prior[1]};
+    for (int i = nb - 1; i >= 0; i--) {
+        int v = t.order[i];
+        if (v != t.top) {
+            double len = unit*flat.lengths[v];
+            outside[v] = {above[v][0] + len*above[v][1], above[v][1] + len*above[v][0]};
+        }
+        for (int c : t.kids[v]) {
+            array<double, 2> a = outside[v];
+            for (int d : t.kids[v]) {
+                if (d != c) {
+                    double len = unit*flat.lengths[d];
+                    a[0] *= p.msg[d][0] + len*p.msg[d][1];
+                    a[1] *= p.msg[d][1] + len*p.msg[d][0];
+                }
+            }
+            above[c] = a;
+        }
+    }
+}
+
+void ARG::site_counts(const Flat_tree &flat, const Tree_order &t, double unit, const Peel &p, const vector<array<double, 2>> &above, vector<double> &differs, vector<char> &informed_msg, vector<char> &informed_tip) {
+    int nb = (int) flat.parents.size();
+    double prior[2] = {ancestral_prob, 1 - ancestral_prob};
+    double Z = prior[0]*p.msg[t.top][0] + prior[1]*p.msg[t.top][1];
+    int total = p.count[0] + p.count[1];
+    int same = total == 0 ? -1 : p.count[1] == 0 ? 0 : p.count[0] == 0 ? 1 : -2;
+    double factor = same >= 0 ? Z/(Z - prior[same]*(1 - penalty)) : 1.0;
+    vector<int> below(nb, 0);
+    for (int k : t.order) {
+        Node *l = flat.parents[k].first;
+        if (l->is_sample and !p.missing[k]) {
+            below[k] += 1;
+        }
+        if (t.up[k] >= 0) {
+            below[t.up[k]] += below[k];
+        }
+    }
+    auto flat_msg = [](const array<double, 2> &m) { return fabs(m[0] - m[1]) <= 1e-12*(m[0] + m[1]); };
+    differs.assign(nb, 0.0);
+    informed_msg.assign(nb, 0);
+    informed_tip.assign(nb, 0);
+    for (int k = 0; k < nb; k++) {
+        if (k == t.top) {
+            continue;
+        }
+        double len = unit*flat.lengths[k];
+        double j01 = above[k][0]*len*p.msg[k][1];
+        double j10 = above[k][1]*len*p.msg[k][0];
+        differs[k] = factor*(j01 + j10)/Z;
+        informed_msg[k] = !(flat_msg(p.msg[k]) or flat_msg(above[k]));
+        informed_tip[k] = below[k] > 0 and below[k] < total;
+    }
+}
+
+static void merge_sorted(vector<pair<double, double>> &v) {
+    sort(v.begin(), v.end());
+    vector<pair<double, double>> out;
+    for (auto &iv : v) {
+        if (!out.empty() and iv.first <= out.back().second) {
+            out.back().second = max(out.back().second, iv.second);
+        } else {
+            out.push_back(iv);
+        }
+    }
+    v.swap(out);
+}
+
+static vector<pair<double, double>> intersect_sorted(const vector<pair<double, double>> &a, const vector<pair<double, double>> &b) {
+    vector<pair<double, double>> out;
+    size_t i = 0, j = 0;
+    while (i < a.size() and j < b.size()) {
+        double lo = max(a[i].first, b[j].first), hi = min(a[i].second, b[j].second);
+        if (lo < hi) {
+            out.push_back({lo, hi});
+        }
+        if (a[i].second < b[j].second) {
+            i++;
+        } else {
+            j++;
+        }
+    }
+    return out;
+}
+
+void ARG::informed_edges(const function<void(Node *, Node *, double, double)> &add) {
+    Flat_tree flat;
+    Tree_order t;
+    bool any_mask = any_missing or !masked.empty() or !unassayed_sites.empty();
+    vector<pair<double, double>> global;
+    for (auto &m : masked) {
+        global.push_back(m);
+    }
+    for (double x : unassayed_sites) {
+        global.push_back({x, x + 1});
+    }
+    merge_sorted(global);
+    auto r_it = recombinations.begin();
+    while (r_it != recombinations.end() and r_it->first < sequence_length) {
+        flat.forward_update(r_it->second);
+        double x0 = r_it->first;
+        r_it++;
+        double x1 = r_it == recombinations.end() ? sequence_length : min(sequence_length, r_it->first);
+        if (x1 <= x0) {
+            continue;
+        }
+        t.assign(flat, root.get());
+        int nb = (int) flat.parents.size();
+        if (!any_mask) {
+            for (int k = 0; k < nb; k++) {
+                if (k != t.top) {
+                    add(flat.parents[k].first, flat.parents[k].second, x0, x1);
+                }
+            }
+            continue;
+        }
+        auto clip = [&](const vector<pair<double, double>> &v, vector<pair<double, double>> &out) {
+            auto it = upper_bound(v.begin(), v.end(), make_pair(x0, numeric_limits<double>::infinity()));
+            if (it != v.begin()) {
+                --it;
+            }
+            for (; it != v.end() and it->first < x1; ++it) {
+                double a = max(it->first, x0), b = min(it->second, x1);
+                if (a < b) {
+                    out.push_back({a, b});
+                }
+            }
+        };
+        vector<vector<pair<double, double>>> all_masked(nb), all_out(nb);
+        for (int k : t.order) {
+            Node *l = flat.parents[k].first;
+            if (l->is_sample) {
+                vector<pair<double, double>> v;
+                clip(global, v);
+                clip(l->masked_intervals, v);
+                auto lo = lower_bound(l->missing_sites.begin(), l->missing_sites.end(), x0);
+                for (; lo != l->missing_sites.end() and *lo < x1; ++lo) {
+                    v.push_back({*lo, min(x1, *lo + 1)});
+                }
+                merge_sorted(v);
+                all_masked[k] = v;
+            } else {
+                bool first = true;
+                for (int c : t.kids[k]) {
+                    all_masked[k] = first ? all_masked[c] : intersect_sorted(all_masked[k], all_masked[c]);
+                    first = false;
+                }
+            }
+        }
+        all_out[t.top] = {{x0, x1}};
+        for (int i = nb - 1; i >= 0; i--) {
+            int v = t.order[i];
+            for (int c : t.kids[v]) {
+                vector<pair<double, double>> o = all_out[v];
+                for (int d : t.kids[v]) {
+                    if (d != c) {
+                        o = intersect_sorted(o, all_masked[d]);
+                    }
+                }
+                all_out[c] = o;
+            }
+        }
+        for (int k = 0; k < nb; k++) {
+            if (k == t.top) {
+                continue;
+            }
+            vector<pair<double, double>> u = all_masked[k];
+            u.insert(u.end(), all_out[k].begin(), all_out[k].end());
+            merge_sorted(u);
+            double a = x0;
+            for (auto &iv : u) {
+                if (iv.first > a) {
+                    add(flat.parents[k].first, flat.parents[k].second, a, iv.first);
+                }
+                a = max(a, iv.second);
+            }
+            if (a < x1) {
+                add(flat.parents[k].first, flat.parents[k].second, a, x1);
+            }
+        }
+    }
+}
+
+void ARG::mapping_counts(const function<double(Node *)> *time_of, vector<double> &expected, vector<double> &informed_bases) {
+    vector<tuple<int, int, double, double>> rows = branch_rows();
+    expected.assign(rows.size(), 0.0);
+    informed_bases.assign(rows.size(), 0.0);
+    map<pair<int, int>, vector<pair<double, int>>> row_index;
+    for (int i = 0; i < (int) rows.size(); i++) {
+        auto [k1, k2, x, l] = rows[i];
+        row_index[{k1, k2}].push_back({x, i});
+    }
+    informed_edges([&](Node *child, Node *parent, double x0, double x1) {
+        auto it = row_index.find({parent->index, child->index});
+        if (it == row_index.end()) {
+            return;
+        }
+        auto &v = it->second;
+        auto jt = upper_bound(v.begin(), v.end(), make_pair(x0, numeric_limits<int>::max()));
+        if (jt != v.begin()) {
+            informed_bases[(jt - 1)->second] += x1 - x0;
+        }
+    });
+    expected_counts(time_of, [](Node *, Node *, double) {}, &expected, &rows);
+}
+
+void ARG::expected_counts(const function<double(Node *)> *time_of, const function<void(Node *, Node *, double)> &add, vector<double> *expected, const vector<tuple<int, int, double, double>> *rows) {
+    map<pair<int, int>, vector<pair<double, int>>> row_index;
+    if (rows != nullptr) {
+        for (int i = 0; i < (int) rows->size(); i++) {
+            auto [k1, k2, x, l] = (*rows)[i];
+            row_index[{k1, k2}].push_back({x, i});
+        }
+    }
+    auto row_of = [&](Node *upper, Node *lower, double pos) {
+        auto it = row_index.find({upper->index, lower->index});
+        if (it == row_index.end()) {
+            return -1;
+        }
+        auto &v = it->second;
+        auto jt = upper_bound(v.begin(), v.end(), make_pair(pos, numeric_limits<int>::max()));
+        if (jt == v.begin()) {
+            return -1;
+        }
+        return (jt - 1)->second;
+    };
+    Flat_tree flat;
+    Tree_order t;
+    Peel p;
+    vector<array<double, 2>> above;
+    vector<double> differs;
+    vector<char> informed_msg, informed_tip;
+    auto r_it = recombinations.begin();
+    bool stale = true;
+    int bin = 0;
+    for (auto it = mutation_sites.lower_bound(0); it != mutation_sites.end() and *it < sequence_length; ++it) {
+        double pos = *it;
+        while (r_it != recombinations.end() and r_it->first <= pos) {
+            flat.forward_update(r_it->second);
+            r_it++;
+            stale = true;
+        }
+        if (stale) {
+            set_lengths(flat, time_of);
+            t.assign(flat, root.get());
+            stale = false;
+        }
+        while (coordinates[bin + 1] <= pos) {
+            bin++;
+        }
+        double unit = penalty*thetas[bin]/(coordinates[bin + 1] - coordinates[bin]);
+        peel_site(flat, t, unit, pos, p);
+        outside_messages(flat, t, unit, p, above);
+        site_counts(flat, t, unit, p, above, differs, informed_msg, informed_tip);
+        for (int k = 0; k < (int) flat.parents.size(); k++) {
+            if (k == t.top or !informed_tip[k]) {
+                continue;
+            }
+            Node *lower = flat.parents[k].first, *upper = flat.parents[k].second;
+            add(lower, upper, differs[k]);
+            if (expected != nullptr) {
+                int r = row_of(upper, lower, pos);
+                if (r >= 0) {
+                    (*expected)[r] += differs[k];
+                }
             }
         }
     }
@@ -1669,9 +1969,9 @@ void ARG::write_nodes(string filename) {
     node_set.clear();
 }
 
-void ARG::write_branches(string filename) {
+vector<tuple<int, int, double, double>> ARG::branch_rows() {
     map<Branch, double> branch_map;
-    vector<tuple<double, double, double, double>> branch_info;
+    vector<tuple<int, int, double, double>> branch_info;
     double pos;
     for (auto x : recombinations) {
         if (x.first < sequence_length) {
@@ -1695,12 +1995,27 @@ void ARG::write_branches(string filename) {
         branch_info.push_back({k1, k2, x.second, sequence_length});
     }
     sort(branch_info.begin(), branch_info.end(), compare_edge);
+    return branch_info;
+}
+
+void ARG::write_branches(string filename) {
+    vector<tuple<int, int, double, double>> branch_info = branch_rows();
     ofstream file;
     file.open(filename);
     file << std::setprecision(std::numeric_limits<double>::max_digits10) << std::fixed;
     for (int i = 0; i < branch_info.size(); i++) {
         auto [k1, k2, x, l] = branch_info[i];
-        file << x << " " << l << " " << k1 << " " << k2 << "\n";
+        file << x << " " << l << " " << (double) k1 << " " << (double) k2 << "\n";
+    }
+    file.close();
+}
+
+void ARG::write_counts(string filename, const vector<double> &expected, const vector<double> &informed_bases) {
+    ofstream file;
+    file.open(filename);
+    file.precision(numeric_limits<double>::max_digits10);
+    for (int i = 0; i < (int) expected.size(); i++) {
+        file << expected[i] << " " << informed_bases[i] << "\n";
     }
     file.close();
 }
@@ -1723,8 +2038,14 @@ void ARG::write_mutations(string filename) {
     file.open(filename);
     file.precision(numeric_limits<double>::max_digits10);
     for (auto &x : mutations) {
-        for (auto &y : x.second) {
-            file << x.first << " " << y.first.lower_node->index << " " << y.first.upper_node->index << " " << y.second << "\n";
+        auto f = mutation_informed.find(x.first);
+        for (int i = 0; i < (int) x.second.size(); i++) {
+            auto &y = x.second[i];
+            file << x.first << " " << y.first.lower_node->index << " " << y.first.upper_node->index << " " << y.second;
+            if (f != mutation_informed.end() and i < (int) f->second.size()) {
+                file << " " << (int) f->second[i];
+            }
+            file << "\n";
         }
     }
 }
@@ -1840,18 +2161,27 @@ void ARG::read_recombs(string filename) {
 }
 
 void ARG::read_muts(string filename) {
-    vector<double> v = Data_reader::read_numbers(filename, "input file not found");
+    ifstream fin(filename);
+    if (!fin.good()) {
+        cerr << "input file not found" << endl;
+        exit(1);
+    }
     create_node_set();
     vector<Node *> nodes = node_list;
     map<double, map<Node *, double>> marked;
-    for (int i = 0; i + 3 < (int) v.size(); i += 4) {
-        double pos = v[i];
+    string line;
+    while (getline(fin, line)) {
+        istringstream iss(line);
+        double pos, lower, upper, state;
+        if (!(iss >> pos >> lower >> upper >> state)) {
+            continue;
+        }
         if (pos <= sequence_length) {
             mutation_sites.insert(pos);
-            Node *ln = nodes[(int) v[i + 1]];
-            Node *un = v[i + 2] == -1 ? root.get() : nodes[(int) v[i + 2]];
-            marked[pos][ln] = v[i + 3];
-            marked[pos][un] = 1 - v[i + 3];
+            Node *ln = nodes[(int) lower];
+            Node *un = upper == -1 ? root.get() : nodes[(int) upper];
+            marked[pos][ln] = state;
+            marked[pos][un] = 1 - state;
         }
     }
     Tree tree = Tree();

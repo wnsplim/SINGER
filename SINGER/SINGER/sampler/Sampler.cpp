@@ -147,16 +147,18 @@ void Sampler::iterative_start() {
         }
     }
     arg.resample_genotypes();
-    arg.draw_mutations();
     cout << "orignal ARG length: " << arg.get_arg_length() << endl;
     string node_file = output_prefix + "_start_nodes_" + to_string(sample_index) + ".txt";
     string branch_file= output_prefix + "_start_branches_" + to_string(sample_index) + ".txt";
     string recomb_file = output_prefix + "_start_recombs_" + to_string(sample_index) + ".txt";
-    string mut_file = output_prefix + "_start_muts_" + to_string(sample_index) + ".txt";
-    arg.write(node_file, branch_file, recomb_file, mut_file);
+    string counts_file = output_prefix + "_start_counts_" + to_string(sample_index) + ".txt";
+    arg.write_nodes(node_file);
+    arg.write_branches(branch_file);
+    arg.write_recombs(recomb_file);
     string coord_file = output_prefix + "_coordinates.txt";
     arg.write_coordinates(coord_file);
-    rescale(output_prefix + "_start_rescaled_nodes_" + to_string(sample_index) + ".txt");
+    vector<double> rescaled = rescale(output_prefix + "_start_rescaled_nodes_" + to_string(sample_index) + ".txt");
+    write_mapping(output_prefix + "_start", to_string(sample_index), counts_file, rescaled);
 }
 
 void Sampler::sweep_samples() {
@@ -195,19 +197,21 @@ void Sampler::internal_sample(int num_iters, int spacing) {
         }
         arg.resample_genotypes();
         arg.release_dead_nodes();
-        arg.draw_mutations();
+        string node_file = output_prefix + "_nodes_" + to_string(sample_index) + ".txt";
+        string branch_file= output_prefix + "_branches_" + to_string(sample_index) + ".txt";
+        string recomb_file = output_prefix + "_recombs_" + to_string(sample_index) + ".txt";
+        string rescaled_file = output_prefix + "_rescaled_nodes_" + to_string(sample_index) + ".txt";
+        string counts_file = output_prefix + "_counts_" + to_string(sample_index) + ".txt";
+        arg.write_nodes(node_file);
+        arg.write_branches(branch_file);
+        arg.write_recombs(recomb_file);
+        vector<double> rescaled = rescale(rescaled_file);
+        write_mapping(output_prefix, to_string(sample_index), counts_file, rescaled);
         random_seed = random_engine();
         write_sample();
         arg.check_incompatibility();
         cout << "Start: " << arg.start << " , End: " << arg.end << endl;
-        string node_file = output_prefix + "_nodes_" + to_string(sample_index) + ".txt";
-        string branch_file= output_prefix + "_branches_" + to_string(sample_index) + ".txt";
-        string recomb_file = output_prefix + "_recombs_" + to_string(sample_index) + ".txt";
-        string mut_file = output_prefix + "_muts_" + to_string(sample_index) + ".txt";
-        string rescaled_file = output_prefix + "_rescaled_nodes_" + to_string(sample_index) + ".txt";
         sample_index += 1;
-        arg.write(node_file, branch_file, recomb_file, mut_file);
-        rescale(rescaled_file);
         cout << "Number of trees: " << arg.recombinations.size() << endl;
         cout << "Number of flippings: " << arg.count_flipping() << endl;
     }
@@ -248,9 +252,10 @@ void Sampler::debug_resume_internal_sample(int num_iters, int spacing) {
     }
 }
 
-void Sampler::rescale(string filename) {
+vector<double> Sampler::rescale(string filename) {
+    vector<double> times;
     if (scaling_rep == 0) {
-        return;
+        return times;
     }
     Scaler scaler = Scaler();
     scaler.num_windows = scaling_bin;
@@ -259,7 +264,7 @@ void Sampler::rescale(string filename) {
         scaler.reset();
         scaler.rescale(arg, mut_rate);
     }
-    vector<double> times(scaler.times.size());
+    times.resize(scaler.times.size());
     for (int i = 0; i < (int) times.size(); i++) {
         times[scaler.sorted_nodes[i]->index] = scaler.times[i];
     }
@@ -267,6 +272,19 @@ void Sampler::rescale(string filename) {
     for (double t : times) {
         file << setprecision(numeric_limits<double>::max_digits10) << (t + arg.time_offset)*arg.Ne << "\n";
     }
+    return times;
+}
+
+void Sampler::write_mapping(string base, string index, string counts_file, const vector<double> &rescaled) {
+    function<double(Node *)> time_of = [&](Node *n) { return n == arg.root.get() ? n->time : rescaled[n->index]; };
+    const function<double(Node *)> *tp = rescaled.empty() ? nullptr : &time_of;
+    for (int r = 1; r <= mapping_rep; r++) {
+        arg.draw_mutations(tp);
+        arg.write_mutations(base + "_muts_" + (mapping_rep > 1 ? to_string(r) + "_" : "") + index + ".txt");
+    }
+    vector<double> expected, informed_bases;
+    arg.mapping_counts(tp, expected, informed_bases);
+    arg.write_counts(counts_file, expected, informed_bases);
 }
 
 void Sampler::start_log() {
@@ -330,6 +348,9 @@ void Sampler::load_resume_arg() {
     branch_file= output_prefix + "_branches_" + to_string(sample_index) + ".txt";
     recomb_file = output_prefix + "_recombs_" + to_string(sample_index) + ".txt";
     mut_file = output_prefix + "_muts_" + to_string(sample_index) + ".txt";
+    if (!ifstream(mut_file).good()) {
+        mut_file = output_prefix + "_muts_1_" + to_string(sample_index) + ".txt";
+    }
     coord_file = output_prefix + "_coordinates.txt";
     arg.num_samples = ploidy*(int) data.sample_names().size();
     arg.read(node_file, branch_file, recomb_file, mut_file);

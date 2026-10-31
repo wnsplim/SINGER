@@ -23,69 +23,29 @@ void Scaler::compute_deltas(ARG &a, Rate_map &mm, double start, double m) {
     auto span_length = [&](double x, double y) {
         return mm.coordinates.empty() ? y - x : mm.segment_distance(start + x, start + y)/m;
     };
-    unordered_map<Node *, double> node_start = {};
-    map<Node *, double, compare_node> node_span = {};
-    for (const Branch &b : a.recombinations.begin()->second.inserted_branches) {
-        node_start[b.upper_node] = 0;
+    map<Node *, double, compare_node> delta;
+    a.create_node_set();
+    for (Node *n : a.node_set) {
+        delta[n] = 0;
     }
-    node_start.erase(a.root.get());
-    auto r_it = next(a.recombinations.begin());
-    while (next(r_it) != a.recombinations.end()) {
-        Recombination &r = r_it->second;
-        Node *dn = r.deleted_node;
-        Node *in = r.inserted_node;
-        assert(node_start.count(dn) > 0);
-        node_span[dn] += span_length(node_start[dn], r.pos);
-        node_start.erase(dn);
-        node_start[in] = r_it->first;
-        r_it++;
-    }
-    for (auto &x : node_start) {
-        Node *n = x.first;
-        node_span[n] += span_length(node_start[n], a.sequence_length);
-    }
-    unordered_map<Node *, double> root_start = {};
-    Branch prev_branch;
-    Branch next_branch;
-    Recombination &r = a.recombinations.begin()->second;
-    prev_branch = *(r.inserted_branches.rbegin());
-    root_start[prev_branch.lower_node] = 0;
-    r_it = next(a.recombinations.begin());
-    while (next(r_it) != a.recombinations.end()) {
-        Recombination &r = r_it->second;
-        prev_branch = *r.deleted_branches.rbegin();
-        next_branch = *r.inserted_branches.rbegin();
-        if (prev_branch.upper_node == a.root.get()) {
-            Node *dn = prev_branch.lower_node;
-            Node *in = next_branch.lower_node;
-            assert(dn != in);
-            assert(next_branch.upper_node == a.root.get());
-            assert(root_start.count(dn) > 0);
-            node_span[dn] += span_length(root_start[dn], r.pos);
-            root_start.erase(dn);
-            root_start[in] = r.pos;
-        } else {
-            assert(next_branch.upper_node != a.root.get());
-        }
-        r_it++;
-    }
-    for (auto &x : root_start) {
-        Node *n = x.first;
-        node_span[n] += span_length(x.second, a.sequence_length);
-    }
+    a.informed_edges([&](Node *child, Node *parent, double x0, double x1) {
+        double w = span_length(x0, x1);
+        delta[child] += w;
+        delta[parent] -= w;
+    });
     heterochronous = (*a.sample_nodes.rbegin())->time > 0;
     sorted_nodes.clear();
     node_deltas.clear();
     for (Node *n : a.sample_nodes) {
         sorted_nodes.push_back(n);
-        node_deltas.push_back(n->time > 0 ? span_length(0, a.sequence_length) : 0.0);
+        node_deltas.push_back(delta[n]);
     }
-    for (auto &x : node_span) {
-        sorted_nodes.push_back(x.first);
-        node_deltas.push_back(-x.second);
+    for (auto &x : delta) {
+        if (!x.first->is_sample) {
+            sorted_nodes.push_back(x.first);
+            node_deltas.push_back(x.second);
+        }
     }
-    double total_rate = accumulate(node_deltas.begin() + 1, node_deltas.end(), 0.0);
-    node_deltas[0] = -total_rate;
     children.clear();
     if (heterochronous) {
         vector<int> order(sorted_nodes.size());
@@ -161,21 +121,9 @@ void Scaler::compute_new_grid(double theta) {
 }
 
 void Scaler::map_mutations(ARG &a) {
-    observed_arg_length.resize(num_windows);
-    auto time_of = [&](Node *n) { return n == a.root.get() ? n->time : times[position.at(n)]; };
-    for (auto &x : a.mutations) {
-        if (x.first > 0) {
-            for (auto &y : x.second) {
-                add_mutation(1.0, time_of(y.first.lower_node), time_of(y.first.upper_node));
-            }
-        }
-    }
-    double num_sites = a.mutation_sites.size() - 2;
-    double num_muts = accumulate(observed_arg_length.begin(), observed_arg_length.end(), 0.0);
-    double r = num_sites/num_muts;
-    for (auto &x : observed_arg_length) {
-        x *= r;
-    }
+    observed_arg_length.assign(num_windows, 0.0);
+    function<double(Node *)> time_of = [&](Node *n) { return n == a.root.get() ? n->time : times[position.at(n)]; };
+    a.expected_counts(&time_of, [&](Node *lower, Node *upper, double e) { add_mutation(e, time_of(lower), time_of(upper)); }, nullptr, nullptr);
 }
 
 void Scaler::add_mutation(double w, double lb, double ub) {

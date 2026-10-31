@@ -58,6 +58,7 @@ The optional flags include:
 |**-polar**|optional|the probability of correct polarization, default at 0.5 for unpolarized data, please use 0.99 for polarized data|
 |**-scaling_rep**|optional|the number of ARG rescaling rounds applied to a copy of each written posterior sample, default at 1. The rescaled node times are written to `prefix_of_output_files_rescaled_nodes_{i}.txt`; the MCMC itself is never rescaled, and the other output files are the sampled ARG. Set to 0 to disable rescaling|
 |**-scaling_bin**|optional|the number of time bins used for ARG rescaling, default at 100|
+|**-mapping_rep**|optional|the number of stochastic mapping draws written for each posterior sample, default at 1. With 1 the draw is `prefix_of_output_files_muts_{i}.txt`. With more, draw `r` is `prefix_of_output_files_muts_{r}_{i}.txt`|
 |**-tip_ages**|optional|file with the sampling ages in calendar years before present, see [Heterochronous samples](#heterochronous-samples-ancient-dna)|
 |**-g**|optional|generation time in years, required with `-tip_ages`|
 |**-mask_n**|optional|Negative mask. A BED file of the regions to mask. A row without a sample name masks its region for all samples, and SINGER ignores the VCF records in that region. A row with a VCF sample name in a fourth column masks the region for that sample only, and SINGER treats both of its haplotypes as missing data there.|
@@ -76,7 +77,7 @@ The output files will be:
 prefix_of_output_files_nodes_{i}.txt, prefix_of_output_files_branches_{i}.txt, prefix_of_output_files_muts_{i}.txt, prefix_of_output_files_recombs_{i}.txt
 ```
 
-with `i` from `0` to `num_samples - 1`, and `prefix_of_output_files_rescaled_nodes_{i}.txt` when `-scaling_rep` is above 0. We recommend converting these files to tree sequence format in tskit, with this function:
+with `i` from `0` to `num_samples - 1`, and `prefix_of_output_files_rescaled_nodes_{i}.txt` when `-scaling_rep` is above 0. SINGER also writes `prefix_of_output_files_counts_{i}.txt`, with one row for each row of the branches file: the expected number of mutations on the branch, and the number of its bases at which the data can see a mutation on it (a base where at least one sample below the branch and one sample outside it have data). The muts file has a fifth column, 1 when the data can see the branch of the mutation at that site and 0 when the draw placed it on a branch that they cannot. When `-scaling_rep` is above 0, the muts and counts files are drawn at the rescaled node times. `prefix_of_output_files.ckp` holds the flags of the run. `-resume` reads the flags it is not given from this file and stops when a given flag differs. We recommend converting these files to tree sequence format in tskit, with this function:
 
 ```
 path_to_singer/convert_to_tskit.py -input prefix_of_arg_files -output prefix_of_tskit_files
@@ -101,7 +102,7 @@ With a recombination map, the bin width follows the local recombination rate, so
 
 SINGER stops with an error if the mutation rate is 0 everywhere between `-start` and `-end`, or if the VCF has a variant where the mutation rate is 0. If the recombination rate is 0 everywhere between `-start` and `-end`, SINGER prints a warning and infers an ARG without recombination.
 
-With a mutation rate map, the ARG rescaling (`-scaling_rep`) weights the length of each branch by the mutation rate along its span.
+With a mutation rate map, the ARG rescaling (`-scaling_rep`) weights the length of each branch by the mutation rate along its span. Under missing data, both sides of the rescaling ratio use only the bases of a branch at which the data can see a mutation on it.
 
 ### Heterochronous samples (ancient DNA)
 

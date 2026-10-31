@@ -45,6 +45,7 @@ public:
     double polar = 0.99;
     int scaling_rep = 5;
     int scaling_bin = 100;
+    int mapping_rep = 1;
     int sample_index = 0;
     set<Node_ptr, compare_node> sample_nodes = {};
     vector<Node_ptr> ordered_sample_nodes = {};
@@ -84,7 +85,9 @@ public:
 
     void debug_resume_internal_sample(int num_iters, int spacing);
 
-    void rescale(string filename);
+    vector<double> rescale(string filename);
+
+    void write_mapping(string base, string index, string counts_file, const vector<double> &rescaled);
 
     void start_log();
 
