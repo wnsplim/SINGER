@@ -355,8 +355,8 @@ double Threader_smc::data_log_ratio(ARG &a) {
         for (int b = 0; b < 4; b++) {
             double w_o, w_n;
             pattern_w(set, b, w_o, w_n);
-            sum_o += prior[b]*w_o;
-            sum_n += prior[b]*w_n;
+            sum_o += w_o;
+            sum_n += w_n;
         }
         return log(sum_n/sum_o);
     };

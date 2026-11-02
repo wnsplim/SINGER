@@ -1543,7 +1543,7 @@ void ARG::expected_counts(const function<double(Node *)> *time_of, const functio
                         peel_site(flat2, t2, unit*model.rates[k], 0.0, p2, base, &forced);
                         v += root_value(p2.msg[t2.top], p2.count[0] > 0, p2.count[1] > 0);
                     }
-                    weight[base] = model.pi[base]*v;
+                    weight[base] = v;
                     total += weight[base];
                 }
                 for (int base = 0; base < 4; base++) {
@@ -2045,7 +2045,7 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
                     v += root_value(pattern_msg[b*K + k][t.top], observed > 0, false);
                 }
                 log_pattern[b] = log(v/K);
-                mix += model.pi[b]*v;
+                mix += v;
             }
             if (unknown) {
                 log_pattern_u = log(mix/K);
@@ -2103,7 +2103,7 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
                     v += root_value(reference_msg[b*K + k][t.top], true, false);
                 }
                 log_ref[b] = log(v/K);
-                mix += model.pi[b]*v;
+                mix += v;
             }
             if (unknown) {
                 log_ref_u = log(mix/K);

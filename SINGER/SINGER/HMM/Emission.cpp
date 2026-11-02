@@ -81,10 +81,10 @@ static double total_z(const Site_messages &s) {
     return z;
 }
 
-static double mixture_unknown(int S, const array<const Site_messages *, 4> &set, int k, const Edge_matrices *cached, const double *pi) {
+static double mixture_unknown(int S, const array<const Site_messages *, 4> &set, int k, const Edge_matrices *cached) {
     double with = 0, without = 0;
     for (int b = 0; b < 4; b++) {
-        double z = pi[b]*total_z(*set[b]);
+        double z = total_z(*set[b]);
         with += z*mixture_with(S, *set[b], k, cached);
         without += z;
     }
@@ -115,7 +115,7 @@ double Emission::mut_emit(Branch &branch, double norm, const Edge_matrices *cach
         emit *= pow(mixture_with(S, *groups[i], k, cached), group_weights[i]);
     }
     for (auto &u : unknown_groups) {
-        emit *= pow(mixture_unknown(S, u.first, k, cached, model->pi.data()), u.second);
+        emit *= pow(mixture_unknown(S, u.first, k, cached), u.second);
     }
     return emit;
 }
@@ -141,6 +141,6 @@ void Emission::null_logs_base(Branch &branch, const Edge_matrices *cached, doubl
     out[4] = 0;
     if (unknown_count > 0) {
         array<const Site_messages *, 4> set = {base_groups[0], base_groups[1], base_groups[2], base_groups[3]};
-        out[4] = -log(mixture_unknown(S, set, k, cached, model->pi.data()));
+        out[4] = -log(mixture_unknown(S, set, k, cached));
     }
 }
