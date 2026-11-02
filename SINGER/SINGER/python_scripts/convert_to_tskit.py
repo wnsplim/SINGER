@@ -38,9 +38,9 @@ def read_ts(node_file, edge_file, counts_file):
             print(edge_span[i, :])
     return tables
 
-def read_ARG(node_file, branch_file, mutation_file, counts_file=None):
+def read_ARG(node_file, branch_file, mutation_file, counts_file=None, bases=False):
     tables = read_ts(node_file, branch_file, counts_file)
-    arg_io.add_mutations(tables, mutation_file, tables.sequence_length, 0.0, lambda n: n)
+    arg_io.add_mutations(tables, mutation_file, tables.sequence_length, 0.0, lambda n: n, bases)
     tables.sort()
     tables.build_index()
     tables.compute_mutation_parents()
@@ -49,17 +49,16 @@ def read_ARG(node_file, branch_file, mutation_file, counts_file=None):
 
 
 def write_trees(input_prefix, output_prefix, start, end, step, vcf_file=None):
+    bases = arg_io.uses_bases(input_prefix)
     for i in range(start, end, step):
         node_file, rescaled = arg_io.nodes_file(input_prefix, i)
         branch_file = f"{input_prefix}_branches_{i}.txt"
         counts_file = f"{input_prefix}_counts_{i}.txt"
         if not os.path.exists(node_file):
             sys.exit(f"No MCMC sample {i}: {node_file} not found. -start and -end are MCMC sample indices, -end exclusive.")
-        draws = arg_io.muts_files(input_prefix, i)
-        if not draws:
-            sys.exit(f"No mapping of MCMC sample {i}: {input_prefix}_muts_{i}.txt not found.")
+        draws = arg_io.muts_files(input_prefix, i) or [(None, None)]
         for draw, mutation_file in draws:
-            tables = read_ARG(node_file, branch_file, mutation_file, counts_file)
+            tables = read_ARG(node_file, branch_file, mutation_file, counts_file, bases)
             arg_io.add_provenance(tables, 'convert_to_tskit.py', [input_prefix], i, draw, rescaled)
             ts = tables.tree_sequence()
             if vcf_file is not None:

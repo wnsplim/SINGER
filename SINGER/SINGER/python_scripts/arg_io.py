@@ -80,21 +80,41 @@ def add_edges(tables, edge_span, parent, child, offset, counts_file, keep):
                                 metadata=metadata, metadata_offset=metadata_offset)
 
 
-def add_mutations(tables, mutation_file, length, offset, node_map):
+BASES = 'ACGT'
+
+
+def add_mutations(tables, mutation_file, length, offset, node_map, bases=False):
     """The muts rows below length as sites and mutations; the fifth column, when present, as the mutation's informed
-    flag."""
+    flag. Without a file, no site. With bases (a run under a four-state model), the row whose upper node is the root
+    gives the site's ancestral base and the states of the other rows are bases."""
     tables.mutations.metadata_schema = MUTATION_SCHEMA
+    if mutation_file is None:
+        return
     mutations = np.loadtxt(mutation_file, ndmin=2)
-    site_ids = {}
+    by_site = {}
     for row in mutations:
-        pos = row[0]
-        if pos >= length:
-            continue
-        if pos not in site_ids:
-            tables.sites.add_row(position=pos + offset, ancestral_state='0')
-            site_ids[pos] = tables.sites.num_rows - 1
-        meta = {'informed': int(row[4])} if len(row) >= 5 else {}
-        tables.mutations.add_row(site=site_ids[pos], node=node_map(int(row[1])), derived_state=str(int(row[3])), metadata=meta)
+        if row[0] < length:
+            by_site.setdefault(row[0], []).append(row)
+    for pos in sorted(by_site):
+        rows = by_site[pos]
+        ancestral = '0'
+        if bases:
+            ancestral = 'A'
+            for row in rows:
+                if int(row[2]) == -1:
+                    ancestral = BASES[int(row[3])]
+            rows = [row for row in rows if int(row[2]) != -1]
+        tables.sites.add_row(position=pos + offset, ancestral_state=ancestral)
+        site = tables.sites.num_rows - 1
+        for row in rows:
+            meta = {'informed': int(row[4])} if len(row) >= 5 else {}
+            state = BASES[int(row[3])] if bases else str(int(row[3]))
+            tables.mutations.add_row(site=site, node=node_map(int(row[1])), derived_state=state, metadata=meta)
+
+
+def uses_bases(prefix):
+    """Whether the run at prefix used a four-state model (its .ckp names -model other than CFN)."""
+    return read_ckp(prefix).get('-model', 'CFN') != 'CFN'
 
 
 def read_ckp(prefix):

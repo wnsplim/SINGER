@@ -5,7 +5,7 @@ import tskit
 import vcf_io
 import arg_io
 
-def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, counts_files=None):
+def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, counts_files=None, bases=False):
     if len(node_files) != len(branch_files):
         raise ValueError("Lengths of node_files and branch_files must be the same.")
 
@@ -45,7 +45,7 @@ def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, c
 
         arg_io.add_edges(tables, edge_span, parent_indices, child_indices, block_coordinates[node_file_index], counts_file, keep)
         arg_io.add_mutations(tables, mutation_file, length, block_coordinates[node_file_index],
-                             lambda n, s=sample_num, k=node_num: n + k if n >= s else n)
+                             lambda n, s=sample_num, k=node_num: n + k if n >= s else n, bases)
 
     tables.sort()
     tables.build_index()
@@ -61,14 +61,17 @@ def block_prefixes(vcf_prefix, output_prefix):
     prefixes = [f"{output_prefix}_{i}_{i+1}" for i in range(len(block_coordinates))]
     return prefixes, block_coordinates
 
-def generate_file_lists(prefixes, MCMC_iteration, draw):
+def generate_file_lists(prefixes, MCMC_iteration, draw, with_muts=True):
     nodes = [arg_io.nodes_file(p, MCMC_iteration) for p in prefixes]
     node_files = [n[0] for n in nodes]
     rescaled = all(n[1] for n in nodes)
     if any(n[1] for n in nodes) and not rescaled:
         raise SystemExit("Some blocks have rescaled node times and some do not: " + ", ".join(f for f, _ in nodes))
     branch_files = [f"{p}_branches_{MCMC_iteration}.txt" for p in prefixes]
-    mutation_files = [f"{p}_muts_{MCMC_iteration}.txt" if draw is None else f"{p}_muts_{draw}_{MCMC_iteration}.txt" for p in prefixes]
+    if not with_muts:
+        mutation_files = [None for p in prefixes]
+    else:
+        mutation_files = [f"{p}_muts_{MCMC_iteration}.txt" if draw is None else f"{p}_muts_{draw}_{MCMC_iteration}.txt" for p in prefixes]
     counts_files = [f"{p}_counts_{MCMC_iteration}.txt" for p in prefixes]
     return node_files, branch_files, mutation_files, counts_files, rescaled
 
@@ -85,11 +88,11 @@ def main():
 
     prefixes, block_coordinates = block_prefixes(args.vcf, args.output)
     draws = arg_io.muts_files(prefixes[0], args.iteration)
-    if not draws:
-        raise SystemExit(f"No mapping of MCMC iteration {args.iteration}: {prefixes[0]}_muts_{args.iteration}.txt not found.")
-    for draw, _ in draws:
-        node_files, branch_files, mutation_files, counts_files, rescaled = generate_file_lists(prefixes, args.iteration, draw)
-        tables = read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, counts_files)
+    with_muts = bool(draws)
+    bases = arg_io.uses_bases(prefixes[0])
+    for draw, _ in draws or [(None, None)]:
+        node_files, branch_files, mutation_files, counts_files, rescaled = generate_file_lists(prefixes, args.iteration, draw, with_muts)
+        tables = read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, counts_files, bases)
         arg_io.add_provenance(tables, 'convert_long_ARG.py', prefixes, args.iteration, draw, rescaled)
         ts = tables.tree_sequence()
         ts = vcf_io.add_individuals_from_vcf(ts, args.vcf)
