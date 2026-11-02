@@ -86,6 +86,7 @@ struct Bin_gaps {
     array<double, 4> tail_bases = {0, 0, 0, 0};
     array<double, 4> all_bases = {0, 0, 0, 0};
     array<double, 4> count_bases = {0, 0, 0, 0};
+    double all_count = 0;
 };
 
 struct Tree_order {

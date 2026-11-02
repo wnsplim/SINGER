@@ -30,9 +30,11 @@ public:
     double unit = 0;
     double base_counts[4] = {0, 0, 0, 0};
     const Site_messages *base_groups[4] = {nullptr, nullptr, nullptr, nullptr};
+    double unknown_count = 0;
     vector<const Site_messages *> sites = {};
     vector<const Site_messages *> groups = {};
     vector<double> group_weights = {};
+    vector<pair<array<const Site_messages *, 4>, double>> unknown_groups = {};
     vector<Edge_matrices> edge = {};
 
     double mut_emit(Branch &branch, double time, Node *node, double norm);

@@ -213,8 +213,10 @@ void Sampler::load_states(vector<Node *> &leaves) {
         for (double x : data.derived_sites[i]) {
             leaves[i]->add_mutation(x);
         }
-        for (auto &q : data.site_states[i]) {
-            leaves[i]->set_site(q.first, q.second);
+        if (model.states != 2) {
+            for (auto &q : data.site_states[i]) {
+                leaves[i]->set_site(q.first, q.second);
+            }
         }
     }
 }

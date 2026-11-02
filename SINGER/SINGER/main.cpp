@@ -564,16 +564,12 @@ int main(int argc, const char * argv[]) {
         cerr << "Error: an alignment input needs -model JC, K80, F81, HKY or GTR. " << endl;
         exit(1);
     }
-    if (!alignment and model_name != "CFN") {
-        cerr << "Error: -model " << model_name << " needs an alignment input (FASTA, PHYLIP or NEXUS). " << endl;
-        exit(1);
+    bool ploidy_given = false, polar_given = false;
+    for (auto &g : given) {
+        ploidy_given = ploidy_given or g.first == "-ploidy";
+        polar_given = polar_given or g.first == "-polar";
     }
     if (alignment) {
-        bool ploidy_given = false, polar_given = false;
-        for (auto &g : given) {
-            ploidy_given = ploidy_given or g.first == "-ploidy";
-            polar_given = polar_given or g.first == "-polar";
-        }
         if (!ploidy_given) {
             ploidy = 1;
         }
@@ -583,6 +579,12 @@ int main(int argc, const char * argv[]) {
         }
         if (genotype_lik or phase) {
             cerr << "Error: -genotype_lik and -phase apply to VCF input only. " << endl;
+            exit(1);
+        }
+    }
+    if (model_name != "CFN") {
+        if (genotype_lik or phase) {
+            cerr << "Error: -genotype_lik and -phase apply to the CFN model only. " << endl;
             exit(1);
         }
         if (polar_given) {

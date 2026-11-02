@@ -400,14 +400,15 @@ def main():
     parser.add_argument('-m', type=str, required=True, help='Mutation rate per base per generation: a number, or a rate map file with lines "left right rate".')
     parser.add_argument('-r', type=str, help='Recombination rate per base per generation: a number, or a rate map file. Default: the -m value when -m is a number.')
     parser.add_argument('-input', type=str, help='Input file: .vcf, .vcf.gz or .bcf; or an alignment in FASTA, PHYLIP or NEXUS format, which needs -model.')
-    parser.add_argument('-model', type=str, help='Substitution model for an alignment input: JC, K80, F81, HKY or GTR; the chain samples its parameters. VCF input runs the two-state model.')
-    parser.add_argument('-gamma', type=int, help='Number of discrete gamma rate categories across columns; the chain samples the shape. Default: 1.')
+    parser.add_argument('-model', type=str, default='CFN', choices=['CFN', 'JC', 'K80', 'F81', 'HKY', 'GTR'], help='Substitution model: CFN (two states, VCF input only), or JC, K80, F81, HKY, GTR (four states, VCF or alignment input; the chain samples their parameters). Default: CFN.')
+    parser.add_argument('-gamma', type=int, default=1, help='Number of discrete gamma rate categories across columns under a four-state model; the chain samples the shape. Default: 1.')
+    parser.add_argument('-augment', action='store_true', help='Under a four-state model, sample the internal nodes\' bases with the ARG (the state-augmented rethread).')
     parser.add_argument('-output', type=str, required=True, help='Output file prefix.')
     parser.add_argument('-start', type=float, required=True, help='Start position.')
     parser.add_argument('-end', type=float, required=True, help='End position. SINGER reads the records with start <= POS < end.')
     parser.add_argument('-n', type=int, default=100, help='Number of MCMC samples. Default: 100.')
     parser.add_argument('-thin', type=int, default=200, help='Number of MCMC iterations between adjacent samples. Default: 200.')
-    parser.add_argument('-polar', type=float, help='Site flip probability under the two-state model. Default: 0.5.')
+    parser.add_argument('-polar', type=float, help='Probability of correct polarization under CFN: 0.5 for unpolarized data, 0.99 for polarized data. Default: 0.5.')
     parser.add_argument('-resume', action='store_true', help='Resume MCMC with this flag.')
     parser.add_argument('-ploidy', type=int, help="Ploidy of the vcf file (1 or 2). Default: 2 for a VCF, 1 for an alignment.")
     parser.add_argument('-seed', type=int, default=42, help='Random seed for reproducibility. Default: 42.')
@@ -437,20 +438,28 @@ def main():
     if args.tip_ages and not args.g:
         parser.error("You must provide -g with -tip_ages")
     alignment = is_alignment(args.input)
-    if alignment and not args.model:
-        parser.error("An alignment input needs -model JC, K80, F81, HKY or GTR")
-    if args.model and not alignment:
-        parser.error("-model needs an alignment input (FASTA, PHYLIP or NEXUS)")
+    four_state = args.model != 'CFN'
+    if alignment and not four_state:
+        parser.error("An alignment input needs a four-state model: -model JC, K80, F81, HKY or GTR")
+    if args.gamma < 1:
+        parser.error("-gamma must be at least 1")
+    if args.gamma > 1 and not four_state:
+        parser.error("-gamma needs a four-state model")
+    if args.augment and not four_state:
+        parser.error("-augment needs a four-state model")
+    if args.polar is not None and four_state:
+        parser.error("-polar applies to CFN only; the root prior of a four-state model is its stationary distribution")
     if alignment and args.chrom:
         parser.error("-chrom applies to VCF input only; name the chromosome of a mask file with -chrom_n or -chrom_p")
     if args.ploidy is None:
         args.ploidy = 1 if alignment else 2
-    polar = (0.5 if args.polar is None else args.polar) if not alignment else None
+    polar = (0.5 if args.polar is None else args.polar) if not four_state else None
     tips = tip_flags(args.tip_ages, args.g)
-    for flag in ('model', 'gamma'):
-        value = getattr(args, flag)
-        if value is not None:
-            tips += f" -{flag} {value}"
+    tips += f" -model {args.model}"
+    if args.gamma > 1:
+        tips += f" -gamma {args.gamma}"
+    if args.augment:
+        tips += " -augment"
     if args.mask_n:
         tips += f" -mask_n {args.mask_n}"
     if args.mask_p:

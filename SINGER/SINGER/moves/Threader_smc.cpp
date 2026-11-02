@@ -242,6 +242,8 @@ double Threader_smc::data_log_ratio(ARG &a) {
     double unit = -1, p_common = 1;
     bool order_stale = true, ref_valid = false, pattern_valid = false, pattern_value_valid = false, z_valid = false;
     array<double, 4> ref_value = {0, 0, 0, 0}, pattern_value = {0, 0, 0, 0};
+    double ref_value_u = 0, pattern_value_u = 0;
+    bool unknown = S != 2 and a.column_base.empty();
     double z_diff = 0;
 
     auto above = [&](const vector<Msg> &msg, int d, double u) {
@@ -328,12 +330,10 @@ double Threader_smc::data_log_ratio(ARG &a) {
         }
         return log1p((p - 1)/pen);
     };
-    auto pattern_log_ratio = [&](const vector<vector<Msg>> &set, int b) {
+    auto pattern_w = [&](const vector<vector<Msg>> &set, int b, double &w_o, double &w_n) {
         Node *query = ro.lower_node;
         int kq = query->flat_index, kd_o = bo.lower_node->flat_index, kd_n = bn.lower_node->flat_index;
-        double e1 = observed_main == 0 and observed_sub == 0 ? 1.0 : 0.0;
-        double c = S == 2 ? (1 - pen)*(prior[0] + prior[1]*e1) : 0.0;
-        double w_o = 0, w_n = 0;
+        w_o = w_n = 0;
         for (int k = 0; k < K; k++) {
             const vector<Msg> &msg = set[b*K + k];
             double u = unit*model.rates[k];
@@ -342,7 +342,23 @@ double Threader_smc::data_log_ratio(ARG &a) {
             w_o += join(bo, ro.upper_node->time, query, msg[kq], msg[kd_o], up_o, u);
             w_n += join(bn, rn.upper_node->time, query, msg[kq], msg[kd_n], up_n, u);
         }
+    };
+    auto pattern_log_ratio = [&](const vector<vector<Msg>> &set, int b) {
+        double e1 = observed_main == 0 and observed_sub == 0 ? 1.0 : 0.0;
+        double c = S == 2 ? (1 - pen)*(prior[0] + prior[1]*e1) : 0.0;
+        double w_o, w_n;
+        pattern_w(set, b, w_o, w_n);
         return log((w_n - c)/(w_o - c));
+    };
+    auto pattern_log_ratio_unknown = [&](const vector<vector<Msg>> &set) {
+        double sum_o = 0, sum_n = 0;
+        for (int b = 0; b < 4; b++) {
+            double w_o, w_n;
+            pattern_w(set, b, w_o, w_n);
+            sum_o += prior[b]*w_o;
+            sum_n += prior[b]*w_n;
+        }
+        return log(sum_n/sum_o);
     };
     auto apply_pattern = [&]() {
         if (!pattern_valid) {
@@ -372,6 +388,9 @@ double Threader_smc::data_log_ratio(ARG &a) {
         if (!pattern_value_valid) {
             for (int b = 0; b < nbase; b++) {
                 pattern_value[b] = pattern_log_ratio(pat, b);
+            }
+            if (unknown) {
+                pattern_value_u = pattern_log_ratio_unknown(pat);
             }
             pattern_value_valid = true;
         }
@@ -492,6 +511,9 @@ double Threader_smc::data_log_ratio(ARG &a) {
             for (int b = 0; b < nbase; b++) {
                 ref_value[b] = pattern_log_ratio(ref, b);
             }
+            if (unknown) {
+                ref_value_u = pattern_log_ratio_unknown(ref);
+            }
             swap(observed_main, all_main);
             swap(observed_sub, all_sub);
             ref_valid = true;
@@ -506,6 +528,9 @@ double Threader_smc::data_log_ratio(ARG &a) {
             apply_pattern();
             if (S == 2) {
                 ll += count*pattern_value[0];
+                rest -= count;
+            } else if (unknown) {
+                ll += count*pattern_value_u;
                 rest -= count;
             } else {
                 for (int b = 0; b < 4; b++) {
@@ -577,6 +602,8 @@ double Threader_smc::data_log_ratio(ARG &a) {
         }
         if (S == 2) {
             ll += rest*ref_value[0];
+        } else if (unknown) {
+            ll += rest*ref_value_u;
         } else {
             for (int b = 0; b < 4; b++) {
                 ll += rest_b[b]*ref_value[b];
@@ -723,11 +750,19 @@ void Threader_smc::set_emission_groups(ARG &a, Emission &e, bool &stale, int bin
     for (int b = 0; b < 4; b++) {
         e.base_groups[b] = &base_pool[b];
     }
+    bool unknown = a.column_base.empty();
     array<double, 4> rest = g.all_bases;
+    double rest_unknown = unknown ? g.all_count : 0.0;
     size_t used = 0;
-    auto add_group = [&](const array<double, 4> &n) {
+    vector<size_t> unknown_slots;
+    vector<double> unknown_weights;
+    auto add_group = [&](const array<double, 4> &n, double count) {
+        if (unknown) {
+            unknown_slots.push_back(used);
+            unknown_weights.push_back(count);
+        }
         for (int b = 0; b < 4; b++) {
-            if (n[b] <= 0) {
+            if (!unknown and n[b] <= 0) {
                 continue;
             }
             if (used == group_pool.size()) {
@@ -735,30 +770,43 @@ void Threader_smc::set_emission_groups(ARG &a, Emission &e, bool &stale, int bin
             }
             a.emission_site(emit_flat, emit_order, unit, 0.0, query_node, emit_peel, group_pool[used], b, &group_missing);
             group_pool[used].tree = emit_trees - 1;
-            e.group_weights.push_back(n[b]);
+            if (!unknown) {
+                e.group_weights.push_back(n[b]);
+            }
             used++;
         }
     };
     for (size_t j = 0; j < g.sample.size(); j++) {
         if (g.before[j] > 0) {
-            add_group(g.bases[j]);
+            add_group(g.bases[j], g.before[j]);
             for (int b = 0; b < 4; b++) {
                 rest[b] -= g.bases[j][b];
             }
+            rest_unknown -= g.before[j];
         }
         group_missing[g.sample[j]] = g.d[j] < 0;
     }
     if (g.tail > 0) {
-        add_group(g.tail_bases);
+        add_group(g.tail_bases, g.tail);
         for (int b = 0; b < 4; b++) {
             rest[b] -= g.tail_bases[b];
         }
+        rest_unknown -= g.tail;
     }
     for (int b = 0; b < 4; b++) {
         e.base_counts[b] = rest[b];
     }
-    for (size_t i = 0; i < used; i++) {
-        e.groups.push_back(&group_pool[i]);
+    e.unknown_count = unknown ? max(0.0, rest_unknown) : 0.0;
+    e.unknown_groups.clear();
+    if (unknown) {
+        for (size_t i = 0; i < unknown_slots.size(); i++) {
+            size_t s = unknown_slots[i];
+            e.unknown_groups.push_back({{&group_pool[s], &group_pool[s + 1], &group_pool[s + 2], &group_pool[s + 3]}, unknown_weights[i]});
+        }
+    } else {
+        for (size_t i = 0; i < used; i++) {
+            e.groups.push_back(&group_pool[i]);
+        }
     }
 }
 
@@ -850,7 +898,7 @@ void Threader_smc::run_BSP(ARG &a) {
         } else {
             pe->sites.clear();
         }
-        if ((mut_set.size() > 0 or !pe->groups.empty()) and !no_data) {
+        if ((mut_set.size() > 0 or !pe->groups.empty() or !pe->unknown_groups.empty()) and !no_data) {
             bsp.mut_emit(query_node);
         } else {
             bsp.null_emit(a.thetas[i], query_node);
@@ -1021,7 +1069,7 @@ void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb, bool resume) {
         } else {
             be->sites.clear();
         }
-        if ((mut_set.size() > 0 or !be->groups.empty()) and !no_data) {
+        if ((mut_set.size() > 0 or !be->groups.empty() or !be->unknown_groups.empty()) and !no_data) {
             tsp.mut_emit(query_node);
         } else {
             tsp.null_emit(a.thetas[i], query_node);

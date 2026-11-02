@@ -1515,47 +1515,76 @@ void ARG::expected_counts(const function<double(Node *)> *time_of, const functio
         }
         const Bin_gaps &g = gaps_of(b2);
         double unit = penalty*thetas[b2]/(coordinates[b2 + 1] - coordinates[b2]);
-        auto score = [&](const array<double, 4> &n) {
+        bool unknown = column_base.empty();
+        int K = (int) model.rates.size();
+        auto add_counts = [&](double weight) {
+            for (int k = 0; k < (int) flat2.parents.size(); k++) {
+                if (k == t2.top or !informed_tip2[k]) {
+                    continue;
+                }
+                Node *lower = flat2.parents[k].first, *upper = flat2.parents[k].second;
+                double v = weight*differs2[k];
+                add(lower, upper, v);
+                if (expected != nullptr) {
+                    int r = row_of(upper, lower, x0);
+                    if (r >= 0) {
+                        (*expected)[r] += v;
+                    }
+                }
+            }
+        };
+        auto score = [&](const array<double, 4> &n, double count) {
+            if (unknown) {
+                if (count <= 0) {
+                    return;
+                }
+                array<double, 4> weight = {0, 0, 0, 0};
+                double total = 0;
+                for (int base = 0; base < 4; base++) {
+                    double v = 0;
+                    for (int k = 0; k < K; k++) {
+                        peel_site(flat2, t2, unit*model.rates[k], 0.0, p2, base, &forced);
+                        v += root_value(p2.msg[t2.top], p2.count[0] > 0, p2.count[1] > 0);
+                    }
+                    weight[base] = model.pi[base]*v;
+                    total += weight[base];
+                }
+                for (int base = 0; base < 4; base++) {
+                    mixture_counts(flat2, t2, unit, 0.0, p2, above2, differs2, informed_msg2, informed_tip2, base, &forced);
+                    add_counts(count*weight[base]/total);
+                }
+                return;
+            }
             for (int base = 0; base < 4; base++) {
                 if (n[base] <= 0) {
                     continue;
                 }
                 mixture_counts(flat2, t2, unit, 0.0, p2, above2, differs2, informed_msg2, informed_tip2, base, &forced);
-                for (int k = 0; k < (int) flat2.parents.size(); k++) {
-                    if (k == t2.top or !informed_tip2[k]) {
-                        continue;
-                    }
-                    Node *lower = flat2.parents[k].first, *upper = flat2.parents[k].second;
-                    double v = n[base]*differs2[k];
-                    add(lower, upper, v);
-                    if (expected != nullptr) {
-                        int r = row_of(upper, lower, x0);
-                        if (r >= 0) {
-                            (*expected)[r] += v;
-                        }
-                    }
-                }
+                add_counts(n[base]);
             }
         };
         fill(forced.begin(), forced.end(), 0);
         array<double, 4> rest = g.all_bases;
+        double rest_unknown = g.all_count;
         for (size_t j = 0; j < g.sample.size(); j++) {
             if (g.before[j] > 0) {
-                score(g.bases[j]);
+                score(g.bases[j], g.before[j]);
                 for (int base = 0; base < 4; base++) {
                     rest[base] -= g.bases[j][base];
                 }
+                rest_unknown -= g.before[j];
             }
             forced[g.sample[j]] = g.d[j] < 0;
         }
         if (g.tail > 0) {
-            score(g.tail_bases);
+            score(g.tail_bases, g.tail);
             for (int base = 0; base < 4; base++) {
                 rest[base] -= g.tail_bases[base];
             }
+            rest_unknown -= g.tail;
         }
         fill(forced.begin(), forced.end(), 0);
-        score(rest);
+        score(rest, rest_unknown);
     }
 }
 
@@ -1971,6 +2000,8 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
     pattern_msg.resize(nbase*K);
     double ref_unit = -1;
     array<double, 4> log_ref = {0, 0, 0, 0};
+    double log_ref_u = 0, log_pattern_u = 0;
+    bool unknown = S != 2 and column_base.empty();
     double ll = 0;
     double crho = -1;
     double p = 1.0;
@@ -2011,12 +2042,17 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
             }
         }
         if (changed) {
+            double mix = 0;
             for (int b = 0; b < nbase; b++) {
                 double v = 0;
                 for (int k = 0; k < K; k++) {
                     v += root_value(pattern_msg[b*K + k][t.top], observed > 0, false);
                 }
                 log_pattern[b] = log(v/K);
+                mix += model.pi[b]*v;
+            }
+            if (unknown) {
+                log_pattern_u = log(mix/K);
             }
         }
     };
@@ -2063,6 +2099,7 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
             ref_unit = -1;
         }
         if (c != ref_unit) {
+            double mix = 0;
             for (int b = 0; b < nbase; b++) {
                 double v = 0;
                 for (int k = 0; k < K; k++) {
@@ -2070,6 +2107,10 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
                     v += root_value(reference_msg[b*K + k][t.top], true, false);
                 }
                 log_ref[b] = log(v/K);
+                mix += model.pi[b]*v;
+            }
+            if (unknown) {
+                log_ref_u = log(mix/K);
             }
             ref_unit = c;
             pattern_valid = false;
@@ -2092,6 +2133,9 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
                     apply_pattern(c);
                     if (S == 2) {
                         ll += count*log_pattern[0];
+                        rest -= count;
+                    } else if (unknown) {
+                        ll += count*log_pattern_u;
                         rest -= count;
                     } else {
                         for (int b = 0; b < 4; b++) {
@@ -2134,6 +2178,8 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
         }
         if (S == 2) {
             ll += rest*log_ref[0];
+        } else if (unknown) {
+            ll += rest*log_ref_u;
         } else {
             for (int b = 0; b < 4; b++) {
                 ll += rest_b[b]*log_ref[b];
@@ -2156,6 +2202,16 @@ const Bin_gaps &ARG::gaps_of(int bin) const {
     if (!column_base.empty()) {
         base_counts(x0, x1, g.all_bases);
     }
+    auto invariant_in = [&](double s, double t) {
+        double count = t - s - (double) distance(mutation_sites.lower_bound(s), mutation_sites.lower_bound(t));
+        count -= (double) (lower_bound(unassayed_sites.begin(), unassayed_sites.end(), t) - lower_bound(unassayed_sites.begin(), unassayed_sites.end(), s));
+        auto m = upper_bound(masked.begin(), masked.end(), s, [](double x, const pair<double, double> &v) { return x < v.second; });
+        for (; m != masked.end() and m->first < t; ++m) {
+            count -= max(0.0, min(m->second, t) - max(m->first, s));
+        }
+        return count > 0 ? count : 0.0;
+    };
+    g.all_count = invariant_in(x0, x1);
     vector<tuple<double, int, Node *>> events;
     for (Node *s : sample_nodes) {
         vector<pair<double, double>> segs;
@@ -2201,16 +2257,10 @@ const Bin_gaps &ARG::gaps_of(int bin) const {
         if (gaps == 0) {
             return 0.0;
         }
-        double count = t - s - (double) distance(mutation_sites.lower_bound(s), mutation_sites.lower_bound(t));
-        count -= (double) (lower_bound(unassayed_sites.begin(), unassayed_sites.end(), t) - lower_bound(unassayed_sites.begin(), unassayed_sites.end(), s));
-        auto m = upper_bound(masked.begin(), masked.end(), s, [](double x, const pair<double, double> &v) { return x < v.second; });
-        for (; m != masked.end() and m->first < t; ++m) {
-            count -= max(0.0, min(m->second, t) - max(m->first, s));
-        }
         if (!column_base.empty()) {
             base_counts(s, t, bases);
         }
-        return count > 0 ? count : 0.0;
+        return invariant_in(s, t);
     };
     for (auto &e : events) {
         double x = get<0>(e);

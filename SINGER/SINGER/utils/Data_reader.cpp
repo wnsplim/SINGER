@@ -1424,6 +1424,7 @@ void Data_reader::naive_read_sites(double start_pos, double end_pos) {
     int valid_mutation = 0;
     int removed_mutation = 0;
     vector<double> genotypes = {};
+    vector<int> calls = {};
     while (file.next(line)) {
         if (line.substr(0, 6) == "#CHROM") {
             istringstream iss(line);
@@ -1434,7 +1435,9 @@ void Data_reader::naive_read_sites(double start_pos, double end_pos) {
             }
             num_individuals = (int) fields.size() - 9;
             derived_sites.assign(ploidy*num_individuals, {});
+            site_states.assign(ploidy*num_individuals, {});
             genotypes.resize(ploidy*num_individuals);
+            calls.assign(ploidy*num_individuals, -1);
             continue;
         } else if (line[0] == '#') {
             continue;
@@ -1469,15 +1472,20 @@ void Data_reader::naive_read_sites(double start_pos, double end_pos) {
             Genotype_read g = read_genotype(genotype, individual_index, pos - start_pos, pos, genotype_lik ? &r : nullptr);
             for (int k = 0; k < ploidy; k++) {
                 genotypes[ploidy*individual_index + k] = (k < g.n and g.calls[k] == 1) ? 1 : 0;
+                calls[ploidy*individual_index + k] = k < g.n ? g.calls[k] : -1;
             }
             individual_index += 1;
         }
         int genotype_sum = accumulate(genotypes.begin(), genotypes.end(), 0.0);
         if (genotype_sum >= 1 and genotype_sum < genotypes.size()) {
             valid_mutation += 1;
+            int masks[2] = {base_mask(ref[0]), base_mask(alt[0])};
             for (int i = 0; i < genotypes.size(); i++) {
                 if (genotypes[i] == 1) {
                     derived_sites[i].push_back(pos - start_pos);
+                }
+                if (calls[i] >= 0) {
+                    site_states[i].push_back({pos - start_pos, masks[calls[i] == 1]});
                 }
             }
         }
@@ -1519,6 +1527,7 @@ void Data_reader::guide_read_sites(double start, double end) {
     int valid_mutation = 0;
     int removed_mutation = 0;
     vector<double> genotypes = {};
+    vector<int> calls = {};
     while (vcf_stream.next(line)) {
         istringstream iss(line);
         string chrom, id, ref, alt, qual, filter, info, format, genotype;
@@ -1548,10 +1557,12 @@ void Data_reader::guide_read_sites(double start, double end) {
         while (iss >> genotype) {
             if (genotypes.size() < 2*individual_index + 2) {
                 genotypes.resize(2*individual_index + 2);
+                calls.resize(2*individual_index + 2, -1);
             }
             Genotype_read g = read_genotype(genotype, individual_index, pos - start, pos, genotype_lik ? &r : nullptr);
             for (int k = 0; k < 2; k++) {
                 genotypes[2*individual_index + k] = (k < g.n and g.calls[k] == 1) ? 1 : 0;
+                calls[2*individual_index + k] = k < g.n ? g.calls[k] : -1;
             }
             individual_index += 1;
         }
@@ -1560,12 +1571,19 @@ void Data_reader::guide_read_sites(double start, double end) {
         } else {
             assert(derived_sites.size() == genotypes.size());
         }
+        if (site_states.size() != genotypes.size()) {
+            site_states.assign(genotypes.size(), {});
+        }
         int genotype_sum = accumulate(genotypes.begin(), genotypes.end(), 0.0);
         if (genotype_sum >= 1 and genotype_sum < genotypes.size()) {
             valid_mutation += 1;
+            int masks[2] = {base_mask(ref[0]), base_mask(alt[0])};
             for (int i = 0; i < genotypes.size(); i++) {
                 if (genotypes[i] == 1) {
                     derived_sites[i].push_back(pos - start);
+                }
+                if (calls[i] >= 0) {
+                    site_states[i].push_back({pos - start, masks[calls[i] == 1]});
                 }
             }
         }
@@ -1596,7 +1614,6 @@ void Data_reader::scan_missing(double start_pos, double end_pos) {
                 }
                 missing_sites.assign(ploidy*names.size(), {});
                 masked_intervals.assign(ploidy*names.size(), {});
-                site_states.assign(ploidy*names.size(), {});
             }
             continue;
         }

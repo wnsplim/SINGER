@@ -553,11 +553,11 @@ void approx_BSP::update_norms(Node *query_node) {
     if (eh->model->states != 2) {
         if (!(null_logs_valid and query_node == log_node and eh->unit == log_unit)) {
             int K = (int) eh->model->rates.size();
-            null_logs.resize(4*dim);
+            null_logs.resize(5*dim);
             edge_cache.resize(K*dim);
             for (int i = 0; i < dim; i++) {
                 eh->edge_matrices(curr_intervals[i]->branch, time_points[i], query_node, &edge_cache[K*i]);
-                eh->null_logs_base(curr_intervals[i]->branch, &edge_cache[K*i], &null_logs[4*i]);
+                eh->null_logs_base(curr_intervals[i]->branch, &edge_cache[K*i], &null_logs[5*i]);
             }
             null_logs_valid = true;
             log_node = query_node;
@@ -565,9 +565,10 @@ void approx_BSP::update_norms(Node *query_node) {
         }
         norms.resize(dim);
         const double *c = eh->base_counts;
+        double u = eh->unknown_count;
         for (int i = 0; i < dim; i++) {
-            const double *l = &null_logs[4*i];
-            norms[i] = exp(-(c[0]*l[0] + c[1]*l[1] + c[2]*l[2] + c[3]*l[3]));
+            const double *l = &null_logs[5*i];
+            norms[i] = exp(-(c[0]*l[0] + c[1]*l[1] + c[2]*l[2] + c[3]*l[3] + u*l[4]));
         }
         return;
     }
