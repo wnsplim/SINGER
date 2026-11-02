@@ -348,8 +348,6 @@ void Sampler::sweep_samples() {
 
 void Sampler::internal_sample(int num_iters, int spacing) {
     Threader_smc threader = Threader_smc(bsp_c, tsp_q);
-    const char *redraw_env = getenv("SINGER_AUGMENT_REDRAW");
-    int redraw_every = redraw_env == nullptr ? 1 : max(1, atoi(redraw_env));
     while (sample_index < num_iters) {
         cout << get_time() << " Iteration: " << to_string(sample_index) << endl;
         int moves = 0;
@@ -368,7 +366,7 @@ void Sampler::internal_sample(int num_iters, int spacing) {
             }
             moves += 1;
             arg.clear_remove_info();
-            if (arg.augment and moves % redraw_every == 0) {
+            if (arg.augment) {
                 arg.redraw_node_states();
             }
         }

@@ -87,7 +87,8 @@ void Site_model::decompose(const vector<double> &Q) {
             B[n*i + j] = sqrt(pi[i])*Q[n*i + j]/sqrt(pi[j]);
         }
     }
-    for (int sweep = 0; sweep < 100; sweep++) {
+    int sweep = 0;
+    for (; sweep < 100; sweep++) {
         double off = 0;
         for (int p = 0; p < n; p++) {
             for (int q = p + 1; q < n; q++) {
@@ -122,6 +123,10 @@ void Site_model::decompose(const vector<double> &Q) {
                 }
             }
         }
+    }
+    if (sweep == 100) {
+        cerr << "Error: the eigen-decomposition of the " << name << " rate matrix did not converge." << endl;
+        exit(1);
     }
     eigenvalues.resize(n);
     left.resize(n*n);
@@ -227,35 +232,36 @@ double Site_model::regularized_gamma(double a, double x) {
             term *= x/(a + k);
             sum += term;
             if (fabs(term) < fabs(sum)*1e-17) {
-                break;
+                return sum*exp(-x + a*log(x) - lg);
             }
         }
-        return sum*exp(-x + a*log(x) - lg);
-    }
-    double tiny = numeric_limits<double>::min();
-    double b = x + 1 - a, c = 1/tiny, d = 1/b, h = d;
-    for (int k = 1; k < 10000; k++) {
-        double an = -k*(k - a);
-        b += 2;
-        d = an*d + b;
-        if (fabs(d) < tiny) d = tiny;
-        c = b + an/c;
-        if (fabs(c) < tiny) c = tiny;
-        d = 1/d;
-        double delta = d*c;
-        h *= delta;
-        if (fabs(delta - 1) < 1e-16) {
-            break;
+    } else {
+        double tiny = numeric_limits<double>::min();
+        double b = x + 1 - a, c = 1/tiny, d = 1/b, h = d;
+        for (int k = 1; k < 10000; k++) {
+            double an = -k*(k - a);
+            b += 2;
+            d = an*d + b;
+            if (fabs(d) < tiny) d = tiny;
+            c = b + an/c;
+            if (fabs(c) < tiny) c = tiny;
+            d = 1/d;
+            double delta = d*c;
+            h *= delta;
+            if (fabs(delta - 1) < 1e-16) {
+                return 1 - exp(-x + a*log(x) - lg)*h;
+            }
         }
     }
-    return 1 - exp(-x + a*log(x) - lg)*h;
+    cerr << "Error: the incomplete gamma function did not converge at shape " << a << "." << endl;
+    exit(1);
 }
 
 void Site_model::set_gamma(int k, double shape) {
     alpha = shape;
-    categories = max(k, 1);
+    categories = k;
     rates.assign(1, 1.0);
-    if (k <= 1 or shape <= 0) {
+    if (k == 1) {
         return;
     }
     vector<double> cuts(k + 1, 0.0);

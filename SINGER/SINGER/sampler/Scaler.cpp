@@ -165,7 +165,6 @@ void Scaler::rescale(ARG &a, double theta) {
         old_t = new_t;
     }
     if (heterochronous) {
-        double last = 0;
         for (int i = 0; i < sorted_nodes.size(); i++) {
             if (sorted_nodes[i]->is_sample) {
                 continue;
@@ -175,8 +174,7 @@ void Scaler::rescale(ARG &a, double theta) {
                 lb = max(lb, times[position.at(c)]);
             }
             if (times[i] <= lb) {
-                times[i] = max(lb, last) + 1e-6;
-                last = times[i];
+                times[i] = lb + 1e-6;
             }
         }
     }

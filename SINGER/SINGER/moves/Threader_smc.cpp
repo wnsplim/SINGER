@@ -6,10 +6,15 @@
 //
 
 #include "Threader_smc.hpp"
-#include <cstdlib>
-#include <iomanip>
 
 bool Threader_smc::no_data = false;
+
+static void check_drawn_density(double q_new, double h_new) {
+    if (!(isfinite(q_new) and isfinite(h_new))) {
+        cerr << "Error: the proposal density of the drawn path is not finite (branch " << q_new << ", time " << h_new << ")." << endl;
+        exit(1);
+    }
+}
 
 Threader_smc::Threader_smc(double c, double q) {
     cutoff = c;
@@ -203,12 +208,7 @@ double Threader_smc::log_pi_ratio(ARG &a) {
     if (no_data) {
         return pi_new - pi_old;
     }
-    double ratio = data_log_ratio(a);
-    if (getenv("SINGER_RATIO_CHECK") != nullptr) {
-        double full = new_arg.mutation_log_likelihood(added_branches, start, end, pos_lo, tree_lo) - old_arg.mutation_log_likelihood(a.removed_branches, start, end, pos_lo, tree_lo);
-        cerr << "RATIO " << setprecision(17) << ratio << " " << full << " " << ratio - full << " " << start << " " << end << endl;
-    }
-    return pi_new - pi_old + ratio;
+    return pi_new - pi_old + data_log_ratio(a);
 }
 
 double Threader_smc::data_log_ratio(ARG &a) {
@@ -618,9 +618,7 @@ double Threader_smc::redrawn_acceptance_ratio(ARG &a, tuple<double, Branch, doub
     double jac = cut_ratio(a);
     double q_new = bsp.branch_log_q(new_joining_branches, start_index, a.coordinates);
     double h_new = tsp.sel_log_q + tsp.time_log_q;
-    if (!(isfinite(q_new) and isfinite(h_new))) {
-        return 0;
-    }
+    check_drawn_density(q_new, h_new);
     double log_pi = log_pi_ratio(a);
     map<double, Branch> old_jb = a.joining_branches, old_rb = a.removed_branches;
     Node *query = old_rb.begin()->second.lower_node;
@@ -796,7 +794,7 @@ void Threader_smc::set_emission_groups(ARG &a, Emission &e, bool &stale, int bin
     for (int b = 0; b < 4; b++) {
         e.base_counts[b] = rest[b];
     }
-    e.unknown_count = unknown ? max(0.0, rest_unknown) : 0.0;
+    e.unknown_count = unknown ? rest_unknown : 0.0;
     e.unknown_groups.clear();
     if (unknown) {
         for (size_t i = 0; i < unknown_slots.size(); i++) {
@@ -1232,8 +1230,8 @@ double Threader_smc::exact_acceptance_ratio(ARG &a) {
         }
     }
     double h_old = tsp.eval_joining_nodes(a.joining_branches, a.removed_branches, start_index, a.coordinates);
-    double log_a = log_pi_ratio(a) +(q_old - q_new) + (h_old - h_new) + log(jac);
-    return isfinite(q_new) and isfinite(h_new) ? exp(log_a) : 0;
+    check_drawn_density(q_new, h_new);
+    return exp(log_pi_ratio(a) + (q_old - q_new) + (h_old - h_new) + log(jac));
 }
 
 double Threader_smc::random() {

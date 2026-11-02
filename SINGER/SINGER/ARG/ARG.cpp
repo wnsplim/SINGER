@@ -567,9 +567,6 @@ void ARG::compute_assayed() {
             assayed[i] -= min(hi, coordinates[i+1]) - max(lo, coordinates[i]);
         }
     }
-    for (double &a : assayed) {
-        a = max(0.0, a);
-    }
 }
 
 int ARG::num_unmapped() {
@@ -633,7 +630,7 @@ static double searched_width(Node *n, double w, double x0, double x1) {
     for (; it != v.end() and it->first < x1; ++it) {
         w -= max(0.0, min(it->second, x1) - max(it->first, x0));
     }
-    return max(0.0, w);
+    return w;
 }
 
 vector<pair<double, int>>::iterator ARG::site_at(double x) {
@@ -1238,14 +1235,14 @@ void ARG::site_counts(const Flat_tree &flat, const Tree_order &t, double unit, c
         }
     }
     int total = below[t.top];
-    auto flat_msg = [S](const Msg &m) {
-        double lo = m[0], hi = m[0], sum = m[0];
+    double flat_tol = 2*(S + 1)*nb*numeric_limits<double>::epsilon();
+    auto flat_msg = [S, flat_tol](const Msg &m) {
+        double lo = m[0], hi = m[0];
         for (int s = 1; s < S; s++) {
             lo = min(lo, m[s]);
             hi = max(hi, m[s]);
-            sum += m[s];
         }
-        return hi - lo <= 1e-12*sum;
+        return hi - lo <= flat_tol*hi;
     };
     double T[16];
     differs.assign(nb, 0.0);
@@ -1643,8 +1640,7 @@ int ARG::category_at(double pos) const {
     if (model.rates.size() == 1) {
         return 0;
     }
-    auto it = site_category.find(pos);
-    return it == site_category.end() ? 0 : it->second;
+    return site_category.at(pos);
 }
 
 void ARG::emission_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s) {
