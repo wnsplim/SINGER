@@ -284,7 +284,464 @@ static string first_chrom(const string &prefix) {
     return "";
 }
 
+static int base_mask(char c) {
+    static const string seq_nt16_str = "=ACMGRSVTWYHKDBN";
+    char u = toupper((unsigned char) c);
+    if (u == 'U') {
+        return 8;
+    }
+    size_t mask = seq_nt16_str.find(u);
+    return mask == string::npos or mask == 0 ? 15 : (int) mask;
+}
+
+static string take_label(const string &s, size_t &pos) {
+    while (pos < s.size() and isspace((unsigned char) s[pos])) {
+        pos++;
+    }
+    string label;
+    if (pos < s.size() and s[pos] == '\'') {
+        pos++;
+        while (pos < s.size()) {
+            if (s[pos] == '\'') {
+                if (pos + 1 < s.size() and s[pos + 1] == '\'') {
+                    label += '\'';
+                    pos += 2;
+                } else {
+                    pos++;
+                    break;
+                }
+            } else {
+                label += s[pos++];
+            }
+        }
+    } else {
+        while (pos < s.size() and !isspace((unsigned char) s[pos])) {
+            label += s[pos++];
+        }
+    }
+    return label;
+}
+
+static void append_sequence(string &dest, const string &s, size_t from) {
+    for (size_t i = from; i < s.size(); i++) {
+        if (!isspace((unsigned char) s[i])) {
+            dest += s[i];
+        }
+    }
+}
+
+bool Data_reader::is_alignment() {
+    if (!alignment_checked) {
+        alignment_checked = true;
+        ifstream f(input, ios::binary);
+        char c = 0;
+        while (f.get(c) and isspace((unsigned char) c)) {}
+        if (c == '#') {
+            string word;
+            for (int k = 0; k < 5 and f.get(c); k++) {
+                word += toupper((unsigned char) c);
+            }
+            alignment_input = word == "NEXUS";
+        } else {
+            alignment_input = c == '>' or isdigit((unsigned char) c);
+        }
+    }
+    return alignment_input;
+}
+
+void Data_reader::load_alignment() {
+    if (!taxa.empty()) {
+        return;
+    }
+    ifstream f(input);
+    if (!f.good()) {
+        Vcf_reader::fail("file " + input + " not found");
+    }
+    int c = f.peek();
+    while (c == ' ' or c == '\t' or c == '\n' or c == '\r') {
+        f.get();
+        c = f.peek();
+    }
+    if (c == '>') {
+        read_fasta(f);
+    } else if (c == '#') {
+        read_nexus(f);
+    } else {
+        read_phylip(f);
+    }
+    if (taxa.empty()) {
+        Vcf_reader::fail("no sequences in " + input);
+    }
+    for (const string &s : sequences) {
+        if (s.size() != sequences[0].size()) {
+            Vcf_reader::fail("the sequences in " + input + " have unequal lengths");
+        }
+    }
+}
+
+void Data_reader::read_fasta(istream &f) {
+    string line, name, seq;
+    auto flush = [&]() {
+        if (!name.empty()) {
+            taxa.push_back(name);
+            sequences.push_back(seq);
+            seq.clear();
+        }
+    };
+    while (getline(f, line)) {
+        if (line.empty()) {
+            continue;
+        }
+        if (line[0] == '>') {
+            flush();
+            name = line.substr(1);
+            size_t sp = name.find_first_of(" \t\r");
+            if (sp != string::npos) {
+                name = name.substr(0, sp);
+            }
+        } else {
+            append_sequence(seq, line, 0);
+        }
+    }
+    flush();
+}
+
+void Data_reader::read_phylip(istream &f) {
+    int ntax = 0, nsite = 0;
+    string line;
+    while (getline(f, line)) {
+        stringstream hs(line);
+        if (hs >> ntax >> nsite) {
+            break;
+        }
+        for (char c : line) {
+            if (!isspace((unsigned char) c)) {
+                Vcf_reader::fail("invalid PHYLIP header in " + input + ", expected '<ntax> <nsite>'");
+            }
+        }
+    }
+    if (ntax <= 0 or nsite <= 0) {
+        Vcf_reader::fail("invalid PHYLIP header in " + input + ", expected '<ntax> <nsite>'");
+    }
+    vector<string> lines;
+    while (getline(f, line)) {
+        size_t p = 0;
+        while (p < line.size() and isspace((unsigned char) line[p])) {
+            p++;
+        }
+        if (p < line.size()) {
+            lines.push_back(line);
+        }
+    }
+    bool sequential = (int) lines.size() == ntax;
+    if (!sequential) {
+        bool block = (int) lines.size() >= ntax and (int) lines.size() % ntax == 0;
+        bool uniform = true;
+        int frag0 = -1;
+        if (block) {
+            for (int i = 0; i < ntax; i++) {
+                size_t pos = 0;
+                take_label(lines[i], pos);
+                int len = 0;
+                for (size_t k = pos; k < lines[i].size(); k++) {
+                    len += !isspace((unsigned char) lines[i][k]);
+                }
+                if (i == 0) {
+                    frag0 = len;
+                } else if (len != frag0) {
+                    uniform = false;
+                    break;
+                }
+            }
+        }
+        sequential = !(block and uniform and frag0 < nsite);
+    }
+    taxa.assign(ntax, "");
+    sequences.assign(ntax, "");
+    if (sequential) {
+        int id = 0;
+        for (const string &l : lines) {
+            if (id >= ntax) {
+                Vcf_reader::fail("the PHYLIP file " + input + " has more sequence data than " + to_string(ntax) + " taxa");
+            }
+            size_t pos = 0;
+            if (sequences[id].empty()) {
+                taxa[id] = take_label(l, pos);
+            }
+            append_sequence(sequences[id], l, pos);
+            if ((int) sequences[id].size() >= nsite) {
+                id++;
+            }
+        }
+    } else {
+        int nblock = (int) lines.size()/ntax;
+        for (int b = 0; b < nblock; b++) {
+            for (int i = 0; i < ntax; i++) {
+                const string &l = lines[b*ntax + i];
+                size_t pos = 0;
+                if (b == 0) {
+                    taxa[i] = take_label(l, pos);
+                }
+                append_sequence(sequences[i], l, pos);
+            }
+        }
+    }
+    for (int i = 0; i < ntax; i++) {
+        if ((int) sequences[i].size() != nsite) {
+            Vcf_reader::fail("the PHYLIP sequence " + taxa[i] + " has length " + to_string(sequences[i].size()) + ", expected " + to_string(nsite));
+        }
+    }
+}
+
+void Data_reader::read_nexus(istream &f) {
+    stringstream ss;
+    ss << f.rdbuf();
+    string text = ss.str(), clean;
+    clean.reserve(text.size());
+    int depth = 0;
+    for (char c : text) {
+        if (c == '[') {
+            depth++;
+        } else if (c == ']') {
+            depth -= depth > 0;
+        } else if (depth == 0) {
+            clean += c;
+        }
+    }
+    string low = clean;
+    for (char &c : low) {
+        c = tolower((unsigned char) c);
+    }
+    int nchar = 0;
+    size_t dpos = low.find("nchar");
+    if (dpos != string::npos) {
+        size_t eq = clean.find('=', dpos);
+        if (eq != string::npos) {
+            nchar = atoi(clean.c_str() + eq + 1);
+        }
+    }
+    char match_char = 0;
+    bool interleave = false;
+    size_t fpos = low.find("format");
+    if (fpos != string::npos) {
+        size_t fend = low.find(';', fpos);
+        string fseg = clean.substr(fpos, (fend == string::npos ? clean.size() : fend) - fpos);
+        string flow = fseg;
+        for (char &c : flow) {
+            c = tolower((unsigned char) c);
+        }
+        size_t mc = flow.find("matchchar");
+        if (mc != string::npos) {
+            size_t eq = fseg.find('=', mc);
+            if (eq != string::npos) {
+                size_t p = eq + 1;
+                while (p < fseg.size() and isspace((unsigned char) fseg[p])) {
+                    p++;
+                }
+                if (p < fseg.size()) {
+                    match_char = (fseg[p] == '\'' and p + 1 < fseg.size()) ? fseg[p + 1] : fseg[p];
+                }
+            }
+        }
+        size_t ip = flow.find("interleave");
+        if (ip != string::npos) {
+            interleave = true;
+            size_t eq = flow.find('=', ip);
+            if (eq != string::npos) {
+                size_t p = eq + 1;
+                while (p < flow.size() and isspace((unsigned char) flow[p])) {
+                    p++;
+                }
+                if (flow.compare(p, 2, "no") == 0) {
+                    interleave = false;
+                }
+            }
+        }
+    }
+    size_t mpos = low.find("matrix");
+    if (mpos == string::npos) {
+        Vcf_reader::fail("the NEXUS file " + input + " has no matrix block");
+    }
+    size_t mstart = mpos + 6;
+    size_t mend = clean.find(';', mstart);
+    if (mend == string::npos) {
+        Vcf_reader::fail("the matrix block of " + input + " is not terminated");
+    }
+    string block = clean.substr(mstart, mend - mstart);
+    map<string, string> seqs;
+    vector<string> order;
+    if (!interleave and nchar > 0) {
+        size_t pos = 0;
+        while (true) {
+            string name = take_label(block, pos);
+            if (name.empty()) {
+                break;
+            }
+            string chunk;
+            while ((int) chunk.size() < nchar and pos < block.size()) {
+                if (!isspace((unsigned char) block[pos])) {
+                    chunk += block[pos];
+                }
+                pos++;
+            }
+            order.push_back(name);
+            seqs[name] = chunk;
+        }
+    } else {
+        stringstream bs(block);
+        string line;
+        while (getline(bs, line)) {
+            size_t pos = 0;
+            string name = take_label(line, pos);
+            if (name.empty()) {
+                continue;
+            }
+            string chunk;
+            append_sequence(chunk, line, pos);
+            if (chunk.empty()) {
+                continue;
+            }
+            if (seqs.find(name) == seqs.end()) {
+                order.push_back(name);
+            }
+            seqs[name] += chunk;
+        }
+    }
+    if (match_char != 0 and !order.empty()) {
+        const string first = seqs[order[0]];
+        for (size_t k = 1; k < order.size(); k++) {
+            string &s = seqs[order[k]];
+            for (size_t j = 0; j < s.size() and j < first.size(); j++) {
+                if (s[j] == match_char) {
+                    s[j] = first[j];
+                }
+            }
+        }
+    }
+    for (const string &nm : order) {
+        taxa.push_back(nm);
+        sequences.push_back(seqs[nm]);
+    }
+}
+
+void Data_reader::read_alignment(double start_pos, double end_pos) {
+    load_alignment();
+    if (ploidy != 1) {
+        Vcf_reader::fail("an alignment needs -ploidy 1, one sequence per sample");
+    }
+    int n = (int) taxa.size();
+    long long length = (long long) sequences[0].size();
+    if (start_pos < 0 or end_pos > length or start_pos >= end_pos) {
+        Vcf_reader::fail("-start and -end must lie within the " + to_string(length) + " columns of " + input);
+    }
+    derived_sites.assign(n, {});
+    missing_sites.assign(n, {});
+    masked_intervals.assign(n, {});
+    site_states.assign(n, {});
+    unassayed_sites.clear();
+    column_base.assign((size_t) (end_pos - start_pos), -1);
+    for (auto &sm : sample_masks) {
+        auto it = find(taxa.begin(), taxa.end(), sm.first);
+        if (it == taxa.end()) {
+            Vcf_reader::fail("the mask file names sample " + sm.first + ", which is not in " + input);
+        }
+        string &s = sequences[it - taxa.begin()];
+        for (auto &v : sm.second) {
+            long long lo = (long long) (max(0.0, v.first) + start_pos);
+            long long hi = (long long) (min(end_pos - start_pos, v.second) + start_pos);
+            for (long long c = lo; c < hi; c++) {
+                s[c] = 'N';
+            }
+        }
+    }
+    vector<double> run_start(n, -1);
+    vector<int> m(n);
+    int variable = 0, invariant = 0, no_data = 0, dropped = 0, multiple = 0, ambiguous = 0, masked_columns = 0;
+    for (long long c = (long long) start_pos; c < (long long) end_pos; c++) {
+        double x = c - start_pos;
+        int n_missing = 0, bases = 0, partial = 0;
+        for (int i = 0; i < n; i++) {
+            m[i] = base_mask(sequences[i][c]);
+            if (m[i] == 15) {
+                n_missing++;
+                if (run_start[i] < 0) {
+                    run_start[i] = x;
+                }
+                continue;
+            }
+            if (run_start[i] >= 0) {
+                masked_intervals[i].push_back({run_start[i], x});
+                run_start[i] = -1;
+            }
+            if ((m[i] & (m[i] - 1)) == 0) {
+                bases |= m[i];
+                base_totals[__builtin_ctz(m[i])] += 1;
+            } else {
+                partial++;
+            }
+        }
+        if (in_mask(x)) {
+            masked_columns++;
+            continue;
+        }
+        if (n_missing == n) {
+            no_data++;
+            unassayed_sites.push_back(x);
+            continue;
+        }
+        int n_bases = __builtin_popcount(bases);
+        if (n_bases == 1 and partial == 0) {
+            column_base[(size_t) x] = (char) __builtin_ctz(bases);
+            invariant++;
+            continue;
+        }
+        if (n_missing > missing_thres*n) {
+            dropped++;
+            unassayed_sites.push_back(x);
+            continue;
+        }
+        variable++;
+        multiple += n_bases > 2;
+        ambiguous += partial > 0;
+        for (int i = 0; i < n; i++) {
+            if (m[i] != 15) {
+                site_states[i].push_back({x, m[i]});
+            }
+        }
+    }
+    for (int i = 0; i < n; i++) {
+        if (run_start[i] >= 0) {
+            masked_intervals[i].push_back({run_start[i], end_pos - start_pos});
+        }
+    }
+    for (int i = 0; i < n; i++) {
+        any_missing = any_missing or !masked_intervals[i].empty();
+    }
+    cout << "alignment: " << n << " sequences, " << length << " columns, " << variable << " variable columns, " << invariant
+         << " invariant columns, " << masked_columns << " columns in the mask, " << no_data << " columns without data, " << dropped
+         << " variable columns dropped above -missing_thres " << missing_thres << ", " << multiple
+         << " columns with more than two bases, " << ambiguous << " columns with ambiguity codes" << endl;
+}
+
+vector<double> Data_reader::base_frequencies() {
+    double total = 0;
+    for (long long n : base_totals) {
+        total += n;
+    }
+    vector<double> f(4, 0.25);
+    if (total > 0) {
+        for (int b = 0; b < 4; b++) {
+            f[b] = base_totals[b]/total;
+        }
+    }
+    return f;
+}
+
 vector<string> Data_reader::sample_names() {
+    if (is_alignment()) {
+        load_alignment();
+        return taxa;
+    }
     Vcf_reader file(input);
     string line;
     vector<string> names;
@@ -417,6 +874,9 @@ vector<string> Data_reader::read_last_line(const string &filename) {
 }
 
 string Data_reader::selected_chrom() {
+    if (is_alignment()) {
+        Vcf_reader::fail("a mask with an alignment needs -chrom_n or -chrom_p to name the chromosome in the mask file");
+    }
     if (chrom_name.empty()) {
         chrom_name = first_chrom(input);
     }
@@ -690,7 +1150,7 @@ void Data_reader::read_mask(string filename, double start) {
     }
     string line, chrom, name;
     string mask_name = chrom_n.empty() ? selected_chrom() : chrom_n;
-    double lo, hi;
+    double lo, hi, shift = is_alignment() ? 0 : 1;
     bool found = false;
     while (getline(fin, line)) {
         istringstream iss(line);
@@ -699,9 +1159,9 @@ void Data_reader::read_mask(string filename, double start) {
         }
         found = true;
         if (iss >> name) {
-            sample_masks[name].push_back({lo + 1 - start, hi + 1 - start});
+            sample_masks[name].push_back({lo + shift - start, hi + shift - start});
         } else {
-            masked.push_back({lo + 1 - start, hi + 1 - start});
+            masked.push_back({lo + shift - start, hi + shift - start});
         }
     }
     if (!found) {
@@ -721,12 +1181,12 @@ void Data_reader::read_positive_mask(string filename, double start, double end) 
         exit(1);
     }
     string line, chrom, mask_name = chrom_p.empty() ? selected_chrom() : chrom_p;
-    double lo, hi;
+    double lo, hi, shift = is_alignment() ? 0 : 1;
     vector<pair<double, double>> accessible;
     while (getline(fin, line)) {
         istringstream iss(line);
         if ((iss >> chrom) and chrom == mask_name and (iss >> lo >> hi)) {
-            accessible.push_back({lo + 1 - start, hi + 1 - start});
+            accessible.push_back({lo + shift - start, hi + shift - start});
         }
     }
     if (accessible.empty()) {
@@ -755,6 +1215,10 @@ bool Data_reader::in_mask(double x) {
 void Data_reader::read(double start_pos, double end_pos, bool with_sites) {
     entries.clear();
     entry_sites.clear();
+    if (is_alignment()) {
+        read_alignment(start_pos, end_pos);
+        return;
+    }
     likelihood_genotypes = het_entries = call_likelihoods = swapped_records = calls_absent = sites_without_likelihood = call_sites = 0;
     mask_of_sample.clear();
     for (const string &s : sample_names()) {
@@ -1132,6 +1596,7 @@ void Data_reader::scan_missing(double start_pos, double end_pos) {
                 }
                 missing_sites.assign(ploidy*names.size(), {});
                 masked_intervals.assign(ploidy*names.size(), {});
+                site_states.assign(ploidy*names.size(), {});
             }
             continue;
         }

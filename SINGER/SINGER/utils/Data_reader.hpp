@@ -6,6 +6,8 @@
 #ifndef Data_reader_hpp
 #define Data_reader_hpp
 
+#include <array>
+#include <istream>
 #include <map>
 #include <string>
 #include <utility>
@@ -42,6 +44,13 @@ public:
     bool any_missing = false;
     int unphased_masked = 0;
     int multiallelic_skipped = 0;
+    std::vector<char> column_base = {};
+    std::vector<std::vector<std::pair<double, int>>> site_states = {};
+    std::array<long long, 4> base_totals = {0, 0, 0, 0};
+
+    bool is_alignment();
+
+    std::vector<double> base_frequencies();
 
     std::vector<std::string> sample_names();
 
@@ -135,6 +144,21 @@ private:
     void guide_read_sites(double start, double end);
 
     void scan_missing(double start_pos, double end_pos);
+
+    bool alignment_checked = false;
+    bool alignment_input = false;
+    std::vector<std::string> taxa = {};
+    std::vector<std::string> sequences = {};
+
+    void load_alignment();
+
+    void read_fasta(std::istream &f);
+
+    void read_phylip(std::istream &f);
+
+    void read_nexus(std::istream &f);
+
+    void read_alignment(double start_pos, double end_pos);
 };
 
 #endif

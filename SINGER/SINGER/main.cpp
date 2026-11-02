@@ -523,6 +523,10 @@ int main(int argc, const char * argv[]) {
     sampler.set_precision(epsilon_hmm, epsilon_psmc);
     sampler.set_input_file_prefix(input_filename);
     sampler.set_output_file_prefix(output_prefix);
+    if (sampler.data.is_alignment()) {
+        cerr << "Error: this build runs on VCF input; an alignment (FASTA, PHYLIP or NEXUS) needs the four-state substitution models. " << endl;
+        exit(1);
+    }
     sampler.ploidy = ploidy;
     if (tip_ages_file.size() > 0) {
         sampler.read_tip_ages(tip_ages_file, g);
