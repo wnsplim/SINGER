@@ -336,11 +336,29 @@ def read_tip_ages(tip_ages_file, vcf_prefix, ploidy):
         ages.append(by_name[names[i//ploidy]])
     return ages
 
-def compute_Ne(vcf_prefix, start, end, m, ages=None, g=None, mask_n=None, mask_p=None, chrom=None, chrom_n=None, chrom_p=None):
-    if is_alignment(vcf_prefix):
-        diversity = calculate_diversity_alignment(read_alignment(vcf_prefix)[1], start, end, mask_n, mask_p, chrom_n, chrom_p)
+def compute_Ne(vcf_prefix, start, end, m, ages=None, g=None, mask_n=None, mask_p=None, chrom=None, chrom_n=None, chrom_p=None, four_state=False):
+    """Ne from the nucleotide diversity, pi / (4 m) less the tip-age term. Under a four-state model the mean pairwise
+    difference per site is first corrected for multiple hits with the F81 distance -B ln(1 - pi / B), B = 1 - sum_b
+    f_b^2 over the alignment's base composition (3/4 for a VCF, whose invariant bases are unknown); the correction is
+    1 + pi / (2B) + ... and vanishes where pi is small."""
+    alignment = is_alignment(vcf_prefix)
+    if alignment:
+        seqs = read_alignment(vcf_prefix)[1]
+        diversity = calculate_diversity_alignment(seqs, start, end, mask_n, mask_p, chrom_n, chrom_p)
     else:
         diversity = calculate_diversity(vcf_prefix, start, end, mask_n, mask_p, chrom, chrom_n, chrom_p)
+    if four_state:
+        B = 0.75
+        if alignment:
+            counts = np.zeros(4)
+            for s in seqs:
+                for b, c in enumerate('ACGT'):
+                    counts[b] += s[int(start):int(end)].upper().count(c)
+            if counts.sum() > 0:
+                B = 1 - np.sum((counts/counts.sum())**2)
+        if diversity >= B:
+            sys.exit(f"Error: the mean pairwise difference per site ({diversity:.4f}) reaches the saturation level {B:.4f} of the base composition; no finite distance, give -Ne.")
+        diversity = -B*np.log(1 - diversity/B)
     mean_abs_diff = 0.0
     if ages:
         gens = [a/g for a in ages]
@@ -476,7 +494,7 @@ def main():
     if m == 0:
         parser.error("The mutation rate is set to 0")
     if args.Ne < 0:
-        args.Ne = compute_Ne(args.input, args.start, args.end, m, ages, args.g, args.mask_n, args.mask_p, args.chrom, args.chrom_n, args.chrom_p)
+        args.Ne = compute_Ne(args.input, args.start, args.end, m, ages, args.g, args.mask_n, args.mask_p, args.chrom, args.chrom_n, args.chrom_p, four_state)
     scaling = (f" -scaling_rep {args.scaling_rep}" if args.scaling_rep is not None else "") + (f" -scaling_bin {args.scaling_bin}" if args.scaling_bin is not None else "") + (f" -mapping_rep {args.mapping_rep}" if args.mapping_rep is not None else "")
     run_singer(args.Ne, args.m, args.r, args.start, args.end, args.input, args.output, args.n, args.thin, polar, args.ploidy, args.seed, tips, args.max_attempts, args.resume, scaling)
 
