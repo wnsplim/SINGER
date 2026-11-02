@@ -1674,14 +1674,15 @@ void Data_reader::scan_missing(double start_pos, double end_pos) {
             }
             individual += 1;
         }
-        if (!found.empty() and variant_site(alt_count, ploidy*individual, alleles)) {
+        bool entry_site = !found.empty() and variant_site(alt_count, ploidy*individual, alleles);
+        if (entry_site) {
             entries.insert(entries.end(), found.begin(), found.end());
             entry_sites.push_back(x);
             likelihood_genotypes += with_likelihood;
             het_entries += hets;
         }
         sites_without_likelihood += use_likelihood and !any_likelihood and missing_haplotypes.size() < missing_sites.size();
-        if (missing_haplotypes.size() == missing_sites.size()) {
+        if (missing_haplotypes.size() == missing_sites.size() and !entry_site) {
             unassayed_sites.push_back(x);
         } else if (missing_haplotypes.size() > 0) {
             any_missing = true;

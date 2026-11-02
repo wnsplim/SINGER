@@ -252,8 +252,8 @@ void Sampler::build_singleton_arg() {
     arg.compute_rhos_thetas(recomb_rate, mut_rate, recomb_map, mut_map, start);
     for (const Node_ptr &s : sample_nodes) {
         for (auto &x : s->mutation_sites) {
-            if (x.second == 1 and x.first < sequence_length and arg.thetas[arg.get_index(x.first)] == 0) {
-                cerr << "Error: the VCF has a variant at position " << (long long) (start + x.first) << ", where the mutation rate is 0. " << endl;
+            if (x.first < sequence_length and arg.thetas[arg.get_index(x.first)] == 0) {
+                cerr << "Error: the input has a variable site at position " << (long long) (start + x.first) << ", where the mutation rate is 0. " << endl;
                 exit(1);
             }
         }

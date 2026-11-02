@@ -120,6 +120,7 @@ void ARG::add_sample(const Node_ptr &n) {
     for (auto &x : n->mutation_sites) {
         mutation_sites.insert(x.first);
     }
+    bin_gaps.clear();
     removed_branches.clear();
     removed_branches[0] = Branch(n, root);
     removed_branches[sequence_length] = Branch();
@@ -1532,7 +1533,7 @@ void ARG::expected_counts(const function<double(Node *)> *time_of, const functio
         };
         auto score = [&](const array<double, 4> &n, double count) {
             if (unknown) {
-                if (count <= 0) {
+                if (count == 0) {
                     return;
                 }
                 array<double, 4> weight = {0, 0, 0, 0};
@@ -1553,7 +1554,7 @@ void ARG::expected_counts(const function<double(Node *)> *time_of, const functio
                 return;
             }
             for (int base = 0; base < 4; base++) {
-                if (n[base] <= 0) {
+                if (n[base] == 0) {
                     continue;
                 }
                 mixture_counts(flat2, t2, unit, 0.0, p2, above2, differs2, informed_msg2, informed_tip2, base, &forced);
@@ -2205,7 +2206,7 @@ const Bin_gaps &ARG::gaps_of(int bin) const {
         for (; m != masked.end() and m->first < t; ++m) {
             count -= max(0.0, min(m->second, t) - max(m->first, s));
         }
-        return count > 0 ? count : 0.0;
+        return count;
     };
     g.all_count = invariant_in(x0, x1);
     vector<tuple<double, int, Node *>> events;
