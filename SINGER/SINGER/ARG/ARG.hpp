@@ -101,6 +101,16 @@ struct Tree_order {
     int index_of(const Flat_tree &flat, Node *n) const;
 };
 
+inline double masked_sum(const double *row, unsigned mask) {
+    double v = 0;
+    for (int a = 0; a < 4; a++) {
+        if (mask >> a & 1) {
+            v += row[a];
+        }
+    }
+    return v;
+}
+
 struct Edge_transitions {
     int stamp = -1;
     int model = -1;
@@ -134,6 +144,11 @@ struct Site_messages {
     double scale = 1;
     double z = 0;
     vector<Site_messages> parts = {};
+    bool augmented = false;
+    int category = 0;
+    vector<unsigned char> lower_mask = {};
+    vector<signed char> upper_state = {};
+    vector<double> old_factor = {};
 };
 
 class ARG {
@@ -153,6 +168,8 @@ public:
     double penalty = 1;
     double ancestral_prob = 0.5;
     Site_model model;
+    bool augment = false;
+    map<double, int> site_category = {};
     vector<char> column_base = {};
     bool any_missing = false;
     vector<double> unassayed_sites = {};
@@ -281,6 +298,16 @@ public:
     void emission_single(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s, int base, const vector<char> *forced_missing);
 
     void draw_site_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<int> &state);
+
+    void draw_site_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<int> &state, int &category);
+
+    int category_at(double pos) const;
+
+    void emission_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s);
+
+    double augmented_site_value(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p);
+
+    void redraw_node_states();
 
     void mixture_counts(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<Msg> &above, vector<double> &differs, vector<char> &informed_msg, vector<char> &informed_tip, int base = -1, const vector<char> *forced_missing = nullptr);
 

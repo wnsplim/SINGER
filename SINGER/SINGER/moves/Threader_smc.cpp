@@ -72,6 +72,9 @@ void Threader_smc::thread(ARG &a, Node_ptr n) {
     cut_time = n->time;
     a.cut_time = cut_time;
     a.add_sample(n);
+    if (a.augment) {
+        a.redraw_node_states();
+    }
     get_boundary(a);
     set_check_points(a);
     cout << get_time() << " : begin BSP" << endl;
@@ -85,6 +88,7 @@ void Threader_smc::thread(ARG &a, Node_ptr n) {
     sample_joining_points(a);
     cout << get_time() << " : begin adding" << endl;
     a.add(new_joining_branches, added_branches);
+    draw_added_states(a);
     cout << get_time() << " : begin sampling recombination" << endl;
     a.approx_sample_recombinations();
     a.clear_remove_info();
@@ -104,6 +108,7 @@ void Threader_smc::rethread_sample(ARG &a, Node *n) {
     run_TSP(a);
     sample_joining_points(a);
     a.add(new_joining_branches, added_branches);
+    draw_added_states(a);
     a.approx_sample_recombinations();
     a.clear_remove_info();
 }
@@ -121,6 +126,7 @@ void Threader_smc::internal_rethread(ARG &a, tuple<double, Branch, double> cut_p
     double q = random();
     if (q < ar) {
         a.add(new_joining_branches, added_branches);
+        draw_added_states(a);
     } else {
         a.add(a.joining_branches, a.removed_branches);
     }
@@ -158,10 +164,12 @@ void Threader_smc::exact_internal_rethread(ARG &a, tuple<double, Branch, double>
     double q = random();
     if (q < ar and entries) {
         a.add(new_joining_branches, added_branches);
+        draw_added_states(a);
         a.recombinations.erase(a.recombinations.lower_bound(start), a.recombinations.upper_bound(end));
         a.recombinations.insert(redrawn_records.begin(), redrawn_records.end());
     } else if (q < ar) {
         a.add(new_joining_branches, added_branches);
+        draw_added_states(a);
         a.smc_sample_recombinations(added_branches);
     } else {
         a.undo_journal();
@@ -283,6 +291,33 @@ double Threader_smc::data_log_ratio(ARG &a) {
             w += up[q]*v[q];
         }
         return w;
+    };
+    auto state_mask = [&](Node *n, double pos) {
+        bool miss = a.any_missing and n->is_sample and n->has_missing() and n->missing_at(Node::site_index(pos), pos);
+        return miss ? 15u : (unsigned) n->get_state(pos);
+    };
+    auto state_join = [&](const Branch &b, double time, Node *query, double pos) {
+        double u = unit*model.rates[a.category_at(pos)];
+        unsigned ml = state_mask(b.lower_node, pos), mq = state_mask(query, pos);
+        double Tl[16], Tq[16], Tu[16], Tb[16];
+        model.transition(u*(time - b.lower_node->time), Tl);
+        model.transition(u*(time - query->time), Tq);
+        bool top = b.upper_node == a.root.get();
+        int x = 0;
+        double old;
+        if (top) {
+            old = masked_sum(prior, ml);
+        } else {
+            x = __builtin_ctz((unsigned) b.upper_node->get_state(pos));
+            model.transition(u*(b.upper_node->time - time), Tu);
+            model.transition(u*(b.upper_node->time - b.lower_node->time), Tb);
+            old = masked_sum(Tb + 4*x, ml);
+        }
+        double w = 0;
+        for (int q = 0; q < 4; q++) {
+            w += (top ? prior[q] : Tu[4*x + q])*masked_sum(Tl + 4*q, ml)*masked_sum(Tq + 4*q, mq);
+        }
+        return w/old;
     };
     auto log_z = [&](const Branch &b, double time, Node *query) {
         double l2 = unit*(time - b.lower_node->time), l3 = unit*(time - query->time);
@@ -520,6 +555,8 @@ double Threader_smc::data_log_ratio(ARG &a) {
             }
             if (qi != qe and gl[*qi].pos == *mut_it) {
                 ll += entry_log_ratio(gl[*qi], *mut_it);
+            } else if (a.augment) {
+                ll += log(state_join(bn, rn.upper_node->time, ro.lower_node, *mut_it)/state_join(bo, ro.upper_node->time, ro.lower_node, *mut_it));
             } else {
                 const Site_messages &s = site_pool[site_slot.at(*mut_it)];
                 Node *query = ro.lower_node;
@@ -734,7 +771,11 @@ void Threader_smc::set_emission_sites(ARG &a, Emission &e, bool &stale, int bin,
             if (slot == (int) site_pool.size()) {
                 site_pool.emplace_back();
             }
-            a.emission_site(emit_flat, emit_order, unit, m.first, query_node, emit_peel, site_pool[slot]);
+            if (a.augment) {
+                a.emission_states(emit_flat, emit_order, unit, m.first, query_node, emit_peel, site_pool[slot]);
+            } else {
+                a.emission_site(emit_flat, emit_order, unit, m.first, query_node, emit_peel, site_pool[slot]);
+            }
             site_pool[slot].tree = emit_trees - 1;
             site_slot[m.first] = slot;
         }
@@ -1011,6 +1052,64 @@ void Threader_smc::sample_joining_points(ARG &a) {
         query_node = a.get_query_node_at(x);
         added_branches[x] = Branch(query_node, added_node);
         add_it++;
+    }
+}
+
+void Threader_smc::draw_added_states(ARG &a) {
+    if (!a.augment) {
+        return;
+    }
+    const Site_model &model = a.model;
+    double prior[4] = {0, 0, 0, 0};
+    a.root_prior(prior);
+    auto state_mask = [&](Node *n, double pos) {
+        bool miss = a.any_missing and n->is_sample and n->has_missing() and n->missing_at(Node::site_index(pos), pos);
+        return miss ? 15u : (unsigned) n->get_state(pos);
+    };
+    auto join_it = new_joining_branches.begin();
+    Branch b;
+    int bin = 0;
+    for (auto add_it = added_branches.begin(); add_it != added_branches.end() and add_it->first < end; ++add_it) {
+        double x = add_it->first;
+        auto next_it = next(add_it);
+        double y = next_it == added_branches.end() ? end : min(end, next_it->first);
+        while (join_it != new_joining_branches.end() and join_it->first <= x) {
+            b = join_it->second;
+            ++join_it;
+        }
+        Node *n = add_it->second.upper_node, *d = add_it->second.lower_node;
+        if (n == nullptr or d == nullptr) {
+            continue;
+        }
+        bool top = b.upper_node == a.root.get();
+        for (auto it = a.mutation_sites.lower_bound(x); it != a.mutation_sites.end() and *it < y; ++it) {
+            double pos = *it;
+            while (a.coordinates[bin + 1] <= pos) {
+                bin++;
+            }
+            double u = a.penalty*a.thetas[bin]/(a.coordinates[bin + 1] - a.coordinates[bin])*model.rates[a.category_at(pos)];
+            unsigned ml = state_mask(b.lower_node, pos), md = state_mask(d, pos);
+            double Tl[16], Td[16], Tu[16], w[4];
+            model.transition(u*(n->time - b.lower_node->time), Tl);
+            model.transition(u*(n->time - d->time), Td);
+            int xu = 0;
+            if (!top) {
+                xu = __builtin_ctz((unsigned) b.upper_node->get_state(pos));
+                model.transition(u*(b.upper_node->time - n->time), Tu);
+            }
+            double total = 0;
+            for (int q = 0; q < 4; q++) {
+                w[q] = (top ? prior[q] : Tu[4*xu + q])*masked_sum(Tl + 4*q, ml)*masked_sum(Td + 4*q, md);
+                total += w[q];
+            }
+            double r = uniform_random()*total;
+            int s = 0;
+            while (s < 3 and r >= w[s]) {
+                r -= w[s];
+                s++;
+            }
+            n->set_site(pos, (double) (1 << s));
+        }
     }
 }
 

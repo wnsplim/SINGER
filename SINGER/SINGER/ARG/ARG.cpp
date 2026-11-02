@@ -1586,6 +1586,11 @@ void ARG::mixture_counts(const Flat_tree &flat, const Tree_order &t, double unit
 }
 
 void ARG::draw_site_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<int> &state) {
+    int category = 0;
+    draw_site_states(flat, t, unit, pos, p, state, category);
+}
+
+void ARG::draw_site_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<int> &state, int &category) {
     int K = (int) model.rates.size();
     vector<double> z(K);
     double total = 0;
@@ -1602,6 +1607,100 @@ void ARG::draw_site_states(const Flat_tree &flat, const Tree_order &t, double un
     }
     peel_site(flat, t, unit*model.rates[k], pos, p);
     draw_states(flat, t, unit*model.rates[k], p, state);
+    category = k;
+}
+
+int ARG::category_at(double pos) const {
+    if (model.rates.size() == 1) {
+        return 0;
+    }
+    auto it = site_category.find(pos);
+    return it == site_category.end() ? 0 : it->second;
+}
+
+void ARG::emission_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s) {
+    int nb = (int) flat.parents.size();
+    s.parts.clear();
+    s.augmented = true;
+    s.unit = unit;
+    s.top = t.top;
+    s.category = category_at(pos);
+    const double *P = edge_transitions(model, flat, unit*model.rates[s.category], p);
+    site_missing(flat, pos, p.missing);
+    s.lower_mask.resize(nb);
+    s.upper_state.resize(nb);
+    s.old_factor.resize(nb);
+    for (int k = 0; k < nb; k++) {
+        unsigned mask = p.missing[k] ? 15u : (unsigned) flat.parents[k].first->get_state(pos);
+        s.lower_mask[k] = (unsigned char) mask;
+        if (k == t.top) {
+            s.upper_state[k] = -1;
+            s.old_factor[k] = masked_sum(model.pi.data(), mask);
+        } else if (t.up[k] < 0) {
+            s.upper_state[k] = -2;
+            s.old_factor[k] = 1;
+        } else {
+            int x = __builtin_ctz((unsigned) flat.parents[k].second->get_state(pos));
+            s.upper_state[k] = (signed char) x;
+            s.old_factor[k] = masked_sum(P + 16*k + 4*x, mask);
+        }
+    }
+    bool missing = any_missing and query->is_sample and query->has_missing() and query->missing_at(Node::site_index(pos), pos);
+    s.nu = missing ? Msg{1.0, 1.0, 1.0, 1.0} : leaf_message((int) query->get_state(pos));
+}
+
+double ARG::augmented_site_value(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p) {
+    int K = (int) model.rates.size();
+    const double *P = edge_transitions(model, flat, unit*model.rates[category_at(pos)], p);
+    site_missing(flat, pos, p.missing);
+    double v = 1.0/K;
+    for (int k = 0; k < (int) flat.parents.size(); k++) {
+        unsigned mask = p.missing[k] ? 15u : (unsigned) flat.parents[k].first->get_state(pos);
+        if (k == t.top) {
+            v *= masked_sum(model.pi.data(), mask);
+        } else if (t.up[k] >= 0) {
+            int x = __builtin_ctz((unsigned) flat.parents[k].second->get_state(pos));
+            v *= masked_sum(P + 16*k + 4*x, mask);
+        }
+    }
+    return v;
+}
+
+void ARG::redraw_node_states() {
+    Flat_tree flat;
+    Tree_order t;
+    Peel p;
+    vector<int> state;
+    auto r_it = recombinations.begin();
+    bool stale = true;
+    int bin = 0;
+    for (auto it = mutation_sites.lower_bound(0); it != mutation_sites.end() and *it < sequence_length; ++it) {
+        double pos = *it;
+        while (r_it != recombinations.end() and r_it->first <= pos) {
+            flat.forward_update(r_it->second);
+            r_it++;
+            stale = true;
+        }
+        if (stale) {
+            t.assign(flat, root.get());
+            stale = false;
+        }
+        while (coordinates[bin + 1] <= pos) {
+            bin++;
+        }
+        double unit = penalty*thetas[bin]/(coordinates[bin + 1] - coordinates[bin]);
+        int category = 0;
+        draw_site_states(flat, t, unit, pos, p, state, category);
+        for (int k = 0; k < (int) flat.parents.size(); k++) {
+            Node *n = flat.parents[k].first;
+            if (!n->is_sample) {
+                n->set_site(pos, (double) (1 << state[k]));
+            }
+        }
+        if (model.rates.size() > 1) {
+            site_category[pos] = category;
+        }
+    }
 }
 
 void ARG::draw_states(const Flat_tree &flat, const Tree_order &t, double unit, const Peel &p, vector<int> &state) {
@@ -2029,7 +2128,7 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
                 qi++;
             }
             const Genotype_likelihood *g = qi != qe and gl[*qi].pos == *mut_it ? &gl[*qi] : nullptr;
-            ll += log(g == nullptr ? site_value(tree, t, c, *mut_it, peel) : collapsed_site_value(tree, t, c, *mut_it, *g, peel));
+            ll += log(g != nullptr ? collapsed_site_value(tree, t, c, *mut_it, *g, peel) : augment ? augmented_site_value(tree, t, c, *mut_it, peel) : site_value(tree, t, c, *mut_it, peel));
             rest -= 1;
             mut_it++;
         }

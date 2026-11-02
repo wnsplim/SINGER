@@ -236,6 +236,7 @@ void Sampler::build_singleton_arg() {
     Node_ptr n = *ordered_sample_nodes.begin();
     arg = ARG(Ne, sequence_length);
     arg.model = model;
+    arg.augment = augment;
     arg.column_base = data.column_base;
     arg.time_offset = tip_offset;
     arg.any_missing = data.any_missing;
@@ -294,6 +295,9 @@ void Sampler::iterative_start() {
         arg.ancestral_prob = polar;
         Node_ptr n = *it;
         threader.thread(arg, n);
+        if (arg.augment) {
+            arg.redraw_node_states();
+        }
         it++;
         random_seed = random_engine();
         arg.draw_mutations();
@@ -330,6 +334,9 @@ void Sampler::sweep_samples() {
         random_engine.seed(random_seed);
         threader.reset();
         threader.rethread_sample(arg, n);
+        if (arg.augment) {
+            arg.redraw_node_states();
+        }
         random_seed = random_engine();
     }
     arg.release_dead_nodes();
@@ -339,6 +346,8 @@ void Sampler::sweep_samples() {
 
 void Sampler::internal_sample(int num_iters, int spacing) {
     Threader_smc threader = Threader_smc(bsp_c, tsp_q);
+    const char *redraw_env = getenv("SINGER_AUGMENT_REDRAW");
+    int redraw_every = redraw_env == nullptr ? 1 : max(1, atoi(redraw_env));
     while (sample_index < num_iters) {
         cout << get_time() << " Iteration: " << to_string(sample_index) << endl;
         int moves = 0;
@@ -357,6 +366,9 @@ void Sampler::internal_sample(int num_iters, int spacing) {
             }
             moves += 1;
             arg.clear_remove_info();
+            if (arg.augment and moves % redraw_every == 0) {
+                arg.redraw_node_states();
+            }
         }
         arg.resample_genotypes();
         arg.release_dead_nodes();
@@ -529,6 +541,7 @@ void Sampler::load_resume_arg() {
     set_model();
     read_model();
     arg.model = model;
+    arg.augment = augment;
     arg.column_base = data.column_base;
     load_states(leaves);
     for (Node *n : leaves) {
@@ -554,6 +567,9 @@ void Sampler::load_resume_arg() {
             cerr << "No " << cells_file << ": the cells are read from " << mut_file << " (a run written before the cells file)." << endl;
             arg.read_muts(mut_file);
         }
+    }
+    if (arg.augment) {
+        arg.redraw_node_states();
     }
 }
 

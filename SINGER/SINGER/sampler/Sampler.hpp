@@ -34,6 +34,7 @@ public:
     double sequence_length = 0;
     ARG arg;
     bool exact = false;
+    bool augment = false;
     int ploidy = 2;
     vector<double> tip_times = {};
     double tip_offset = 0;

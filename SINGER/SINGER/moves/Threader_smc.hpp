@@ -96,6 +96,8 @@ public:
     void sample_joining_branches(ARG &a);
 
     void sample_joining_points(ARG &a);
+
+    void draw_added_states(ARG &a);
     
     double acceptance_ratio(ARG &a);
 

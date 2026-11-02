@@ -48,6 +48,7 @@ int main(int argc, const char * argv[]) {
     double polar = 0.5;
     string model_name = "CFN";
     int gamma_k = 1;
+    bool augment = false;
     double missing_thres = 0.5;
     int scaling_rep = -1;
     int scaling_bin = 100;
@@ -407,6 +408,9 @@ int main(int argc, const char * argv[]) {
                 exit(1);
             }
         }
+        else if (arg == "-augment") {
+            augment = true;
+        }
         else if (arg == "-output") {
             if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -output flag cannot be empty. " << endl;
@@ -593,6 +597,10 @@ int main(int argc, const char * argv[]) {
         cerr << "Error: -gamma applies to the four-state models only. " << endl;
         exit(1);
     }
+    if (augment and model_name == "CFN") {
+        cerr << "Error: -augment applies to the four-state models only. " << endl;
+        exit(1);
+    }
     sampler.model_name = model_name;
     sampler.gamma_k = gamma_k;
     sampler.ploidy = ploidy;
@@ -600,6 +608,7 @@ int main(int argc, const char * argv[]) {
         sampler.read_tip_ages(tip_ages_file, g);
     }
     sampler.exact = exact;
+    sampler.augment = augment;
     sampler.random_seed = seed;
     sampler.seed_given = seed_given;
     sampler.start = start_pos;
