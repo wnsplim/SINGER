@@ -100,6 +100,94 @@ def calculate_diversity_with_filter(vcf_file, start, end):
     return nucleotide_diversity
 '''
 
+def is_alignment(path):
+    with open(path, 'rb') as f:
+        head = f.read(64).lstrip()
+    return len(head) > 0 and (head[:1] == b'>' or head[:1].isdigit() or head[:6].upper() == b'#NEXUS')
+
+
+def read_alignment(path):
+    """The sequences of a FASTA, PHYLIP (sequential or interleaved) or NEXUS file as (names, sequences)."""
+    with open(path) as f:
+        text = f.read()
+    stripped = text.lstrip()
+    names, seqs = [], []
+    if stripped.startswith('>'):
+        for block in stripped.split('>')[1:]:
+            lines = block.split('\n')
+            names.append(lines[0].split()[0])
+            seqs.append(''.join(l.strip() for l in lines[1:]))
+        return names, seqs
+    if stripped.upper().startswith('#NEXUS'):
+        clean = ''
+        depth = 0
+        for c in text:
+            if c == '[':
+                depth += 1
+            elif c == ']':
+                depth = max(0, depth - 1)
+            elif depth == 0:
+                clean += c
+        low = clean.lower()
+        block = clean[low.find('matrix') + 6:]
+        block = block[:block.find(';')]
+        order, parts = [], {}
+        for line in block.split('\n'):
+            w = line.split()
+            if len(w) < 2:
+                continue
+            name = w[0]
+            if name not in parts:
+                order.append(name)
+                parts[name] = ''
+            parts[name] += ''.join(w[1:])
+        return order, [parts[n] for n in order]
+    lines = [l for l in stripped.split('\n') if l.strip()]
+    ntax, nsite = int(lines[0].split()[0]), int(lines[0].split()[1])
+    body = lines[1:]
+    if len(body) == ntax:
+        for l in body:
+            w = l.split()
+            names.append(w[0])
+            seqs.append(''.join(w[1:]))
+        return names, seqs
+    seqs = [''] * ntax
+    for b in range(len(body)//ntax):
+        for i in range(ntax):
+            w = body[b*ntax + i].split()
+            if b == 0:
+                names.append(w[0])
+                seqs[i] += ''.join(w[1:])
+            else:
+                seqs[i] += ''.join(w)
+    return names, seqs
+
+
+def calculate_diversity_alignment(seqs, start, end, mask_n=None, mask_p=None, chrom_n=None, chrom_p=None):
+    """Mean pairwise differences per column over the observed bases A, C, G, T (every other character is missing),
+    divided by the number of unmasked columns in [start, end); mask rows are 0-based columns as in a BED file."""
+    start, end = int(start), int(end)
+    masked = []
+    if mask_n or mask_p:
+        if (mask_n and not chrom_n) or (mask_p and not chrom_p):
+            sys.exit("Error: a mask with an alignment needs -chrom_n or -chrom_p to name the chromosome in the mask file.")
+        masked = [(lo - 1, hi - 1) for lo, hi in read_masks(mask_n, mask_p, chrom_n, chrom_p, start, end)]
+    masked_columns = sum(hi - lo + 1 for lo, hi in masked)
+    total = 0.0
+    index = {'A': 0, 'C': 1, 'G': 2, 'T': 3, 'U': 3}
+    columns = np.array([[index.get(c.upper(), -1) for c in s[start:end]] for s in seqs], dtype=np.int8)
+    for lo, hi in masked:
+        columns[:, lo - start:hi - start + 1] = -1
+    k = np.sum(columns >= 0, axis=0).astype(float)
+    het = np.zeros(columns.shape[1])
+    for b in range(4):
+        f = np.sum(columns == b, axis=0)/np.maximum(k, 1)
+        het += f*(1 - f)
+    ok = k >= 2
+    total = float(np.sum(het[ok]*k[ok]/(k[ok] - 1)))
+    return total/(end - start - masked_columns)
+
+
 def read_mask_intervals(mask_file, chrom, start, end):
     intervals = []
     found = False
@@ -218,7 +306,7 @@ def calculate_diversity(vcf_prefix, start, end, mask_n=None, mask_p=None, chrom=
     return nucleotide_diversity
 
 def read_tip_ages(tip_ages_file, vcf_prefix, ploidy):
-    names = vcf_io.sample_names(vcf_prefix)
+    names = read_alignment(vcf_prefix)[0] if is_alignment(vcf_prefix) else vcf_io.sample_names(vcf_prefix)
     n = ploidy*len(names)
     rows = []
     ncol = None
@@ -249,7 +337,10 @@ def read_tip_ages(tip_ages_file, vcf_prefix, ploidy):
     return ages
 
 def compute_Ne(vcf_prefix, start, end, m, ages=None, g=None, mask_n=None, mask_p=None, chrom=None, chrom_n=None, chrom_p=None):
-    diversity = calculate_diversity(vcf_prefix, start, end, mask_n, mask_p, chrom, chrom_n, chrom_p)
+    if is_alignment(vcf_prefix):
+        diversity = calculate_diversity_alignment(read_alignment(vcf_prefix)[1], start, end, mask_n, mask_p, chrom_n, chrom_p)
+    else:
+        diversity = calculate_diversity(vcf_prefix, start, end, mask_n, mask_p, chrom, chrom_n, chrom_p)
     mean_abs_diff = 0.0
     if ages:
         gens = [a/g for a in ages]
@@ -297,7 +388,7 @@ def is_number(value):
     return True
 
 def run_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips, max_attempts, resume, scaling=""):
-    common = f"{singer_path()} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end} -polar {polar} -n {num_iters} -thin {thin}"
+    common = f"{singer_path()} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end}" + (f" -polar {polar}" if polar is not None else "") + f" -n {num_iters} -thin {thin}"
     first = common + (" -resume" if resume else "") + f" -ploidy {ploidy}" + tips + scaling
     run_with_auto_debug(first, common + f" -debug -ploidy {ploidy}" + tips + scaling, seed, max_attempts, output_prefix)
 
@@ -308,15 +399,17 @@ def main():
     parser.add_argument('-Ne', type=float, default=-1, help='Effective population size.')
     parser.add_argument('-m', type=str, required=True, help='Mutation rate per base per generation: a number, or a rate map file with lines "left right rate".')
     parser.add_argument('-r', type=str, help='Recombination rate per base per generation: a number, or a rate map file. Default: the -m value when -m is a number.')
-    parser.add_argument('-input', type=str, help='Input file: .vcf, .vcf.gz or .bcf.')
+    parser.add_argument('-input', type=str, help='Input file: .vcf, .vcf.gz or .bcf; or an alignment in FASTA, PHYLIP or NEXUS format, which needs -model.')
+    parser.add_argument('-model', type=str, help='Substitution model for an alignment input: JC, K80, F81, HKY or GTR; the chain samples its parameters. VCF input runs the two-state model.')
+    parser.add_argument('-gamma', type=int, help='Number of discrete gamma rate categories across columns; the chain samples the shape. Default: 1.')
     parser.add_argument('-output', type=str, required=True, help='Output file prefix.')
     parser.add_argument('-start', type=float, required=True, help='Start position.')
     parser.add_argument('-end', type=float, required=True, help='End position. SINGER reads the records with start <= POS < end.')
     parser.add_argument('-n', type=int, default=100, help='Number of MCMC samples. Default: 100.')
     parser.add_argument('-thin', type=int, default=200, help='Number of MCMC iterations between adjacent samples. Default: 200.')
-    parser.add_argument('-polar', type=float, default=0.5, help='Site flip probability. Default: 0.5.')
+    parser.add_argument('-polar', type=float, help='Site flip probability under the two-state model. Default: 0.5.')
     parser.add_argument('-resume', action='store_true', help='Resume MCMC with this flag.')
-    parser.add_argument('-ploidy', type=int, default=2, help="Ploidy of the vcf file (1 or 2). Default: 2.")
+    parser.add_argument('-ploidy', type=int, help="Ploidy of the vcf file (1 or 2). Default: 2 for a VCF, 1 for an alignment.")
     parser.add_argument('-seed', type=int, default=42, help='Random seed for reproducibility. Default: 42.')
     parser.add_argument('-tip_ages', type=str, help='File with the sample ages in years before present: one row per sample column of the VCF in VCF order, or two columns "name age"; the two haplotypes of a diploid sample share the age. Requires -g.')
     parser.add_argument('-g', type=float, help='Generation time in years, used with -tip_ages.')
@@ -343,7 +436,21 @@ def main():
 
     if args.tip_ages and not args.g:
         parser.error("You must provide -g with -tip_ages")
+    alignment = is_alignment(args.input)
+    if alignment and not args.model:
+        parser.error("An alignment input needs -model JC, K80, F81, HKY or GTR")
+    if args.model and not alignment:
+        parser.error("-model needs an alignment input (FASTA, PHYLIP or NEXUS)")
+    if alignment and args.chrom:
+        parser.error("-chrom applies to VCF input only; name the chromosome of a mask file with -chrom_n or -chrom_p")
+    if args.ploidy is None:
+        args.ploidy = 1 if alignment else 2
+    polar = (0.5 if args.polar is None else args.polar) if not alignment else None
     tips = tip_flags(args.tip_ages, args.g)
+    for flag in ('model', 'gamma'):
+        value = getattr(args, flag)
+        if value is not None:
+            tips += f" -{flag} {value}"
     if args.mask_n:
         tips += f" -mask_n {args.mask_n}"
     if args.mask_p:
@@ -362,7 +469,7 @@ def main():
     if args.Ne < 0:
         args.Ne = compute_Ne(args.input, args.start, args.end, m, ages, args.g, args.mask_n, args.mask_p, args.chrom, args.chrom_n, args.chrom_p)
     scaling = (f" -scaling_rep {args.scaling_rep}" if args.scaling_rep is not None else "") + (f" -scaling_bin {args.scaling_bin}" if args.scaling_bin is not None else "") + (f" -mapping_rep {args.mapping_rep}" if args.mapping_rep is not None else "")
-    run_singer(args.Ne, args.m, args.r, args.start, args.end, args.input, args.output, args.n, args.thin, args.polar, args.ploidy, args.seed, tips, args.max_attempts, args.resume, scaling)
+    run_singer(args.Ne, args.m, args.r, args.start, args.end, args.input, args.output, args.n, args.thin, polar, args.ploidy, args.seed, tips, args.max_attempts, args.resume, scaling)
 
 
 if __name__ == "__main__":

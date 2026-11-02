@@ -6,6 +6,8 @@
 //
 
 #include "Threader_smc.hpp"
+#include <cstdlib>
+#include <iomanip>
 
 bool Threader_smc::no_data = false;
 
@@ -193,16 +195,28 @@ double Threader_smc::log_pi_ratio(ARG &a) {
     if (no_data) {
         return pi_new - pi_old;
     }
-    return pi_new - pi_old + data_log_ratio(a);
+    double ratio = data_log_ratio(a);
+    if (getenv("SINGER_RATIO_CHECK") != nullptr) {
+        double full = new_arg.mutation_log_likelihood(added_branches, start, end, pos_lo, tree_lo) - old_arg.mutation_log_likelihood(a.removed_branches, start, end, pos_lo, tree_lo);
+        cerr << "RATIO " << setprecision(17) << ratio << " " << full << " " << ratio - full << " " << start << " " << end << endl;
+    }
+    return pi_new - pi_old + ratio;
 }
 
 double Threader_smc::data_log_ratio(ARG &a) {
     Flat_tree &flat = ratio_flat;
     Tree_order &t = ratio_order;
-    vector<array<double, 2>> &ref = ratio_ref, &pat = ratio_pattern;
+    vector<vector<Msg>> &ref = ratio_ref, &pat = ratio_pattern;
     flat.assign(a.start_tree);
-    double prior[2] = {a.ancestral_prob, 1 - a.ancestral_prob};
+    const Site_model &model = a.model;
+    int S = model.states, nbase = S == 2 ? 1 : 4, K = (int) model.rates.size();
+    ref.resize(nbase*K);
+    pat.resize(nbase*K);
+    double prior[4] = {0, 0, 0, 0};
+    a.root_prior(prior);
     double pen = a.penalty;
+    double T[16];
+    Msg ones = {1.0, 1.0, 1.0, 1.0}, zero = {0.0, 0.0, 0.0, 0.0};
     const ARG *owner = a.entry_owner == nullptr ? &a : a.entry_owner;
     auto [qi, qe] = a.entries_in(a.removed_branches.begin()->second.lower_node, start, end);
     const vector<Genotype_likelihood> &gl = a.entries();
@@ -219,42 +233,56 @@ double Threader_smc::data_log_ratio(ARG &a) {
     int observed_main = 0, observed_sub = 0;
     double unit = -1, p_common = 1;
     bool order_stale = true, ref_valid = false, pattern_valid = false, pattern_value_valid = false, z_valid = false;
-    double ref_value = 0, pattern_value = 0, z_diff = 0;
+    array<double, 4> ref_value = {0, 0, 0, 0}, pattern_value = {0, 0, 0, 0};
+    double z_diff = 0;
 
-    auto above = [&](const vector<array<double, 2>> &msg, int d) {
+    auto above = [&](const vector<Msg> &msg, int d, double u) {
         path.clear();
         for (int k = d; k != t.top; k = t.up[k]) {
             path.push_back(k);
         }
-        array<double, 2> A = {prior[0], prior[1]};
+        Msg A = {prior[0], prior[1], prior[2], prior[3]};
         int v = t.top;
         for (int j = (int) path.size() - 1; j >= 0; j--) {
             int c = path[j];
-            array<double, 2> B = A;
+            Msg B = A;
             for (int sib : t.kids[v]) {
                 if (sib != c) {
-                    double len = unit*flat.lengths[sib];
-                    B[0] *= msg[sib][0] + len*msg[sib][1];
-                    B[1] *= msg[sib][1] + len*msg[sib][0];
+                    model.transition(u*flat.lengths[sib], T);
+                    push_up(T, S, msg[sib], B);
                 }
             }
             if (j == 0) {
                 return B;
             }
-            double len = unit*flat.lengths[c];
-            A = {B[0] + len*B[1], B[1] + len*B[0]};
+            model.transition(u*flat.lengths[c], T);
+            transmit_up(T, S, B, A);
             v = c;
         }
         return A;
     };
-    auto join = [&](const Branch &b, double time, Node *query, const array<double, 2> &nu, const array<double, 2> &m_d, const array<double, 2> &up) {
-        double l2 = unit*(time - b.lower_node->time), l3 = unit*(time - query->time);
-        double m0 = (m_d[0] + l2*m_d[1])*(nu[0] + l3*nu[1]), m1 = (m_d[1] + l2*m_d[0])*(nu[1] + l3*nu[0]);
-        if (b.upper_node == a.root.get()) {
-            return prior[0]*m0 + prior[1]*m1;
+    auto join = [&](const Branch &b, double time, Node *query, const Msg &nu, const Msg &m_d, const Msg &up, double u) {
+        Msg d, n, m, v;
+        model.transition(u*(time - b.lower_node->time), T);
+        transmit(T, S, m_d, d);
+        model.transition(u*(time - query->time), T);
+        transmit(T, S, nu, n);
+        for (int q = 0; q < S; q++) {
+            m[q] = d[q]*n[q];
         }
-        double l1 = unit*(b.upper_node->time - time);
-        return up[0]*(m0 + l1*m1) + up[1]*(m1 + l1*m0);
+        double w = 0;
+        if (b.upper_node == a.root.get()) {
+            for (int q = 0; q < S; q++) {
+                w += prior[q]*m[q];
+            }
+            return w;
+        }
+        model.transition(u*(b.upper_node->time - time), T);
+        transmit(T, S, m, v);
+        for (int q = 0; q < S; q++) {
+            w += up[q]*v[q];
+        }
+        return w;
     };
     auto log_z = [&](const Branch &b, double time, Node *query) {
         double l2 = unit*(time - b.lower_node->time), l3 = unit*(time - query->time);
@@ -265,24 +293,31 @@ double Threader_smc::data_log_ratio(ARG &a) {
         }
         return log1p((p - 1)/pen);
     };
-    auto pattern_log_ratio = [&](const vector<array<double, 2>> &msg) {
+    auto pattern_log_ratio = [&](const vector<vector<Msg>> &set, int b) {
         Node *query = ro.lower_node;
         int kq = query->flat_index, kd_o = bo.lower_node->flat_index, kd_n = bn.lower_node->flat_index;
         double e1 = observed_main == 0 and observed_sub == 0 ? 1.0 : 0.0;
-        double c = (1 - pen)*(prior[0] + prior[1]*e1);
-        array<double, 2> up_o = bo.upper_node == a.root.get() ? array<double, 2>{0, 0} : above(msg, kd_o);
-        array<double, 2> up_n = bn.upper_node == a.root.get() ? array<double, 2>{0, 0} : above(msg, kd_n);
-        double w_o = join(bo, ro.upper_node->time, query, msg[kq], msg[kd_o], up_o);
-        double w_n = join(bn, rn.upper_node->time, query, msg[kq], msg[kd_n], up_n);
+        double c = S == 2 ? (1 - pen)*(prior[0] + prior[1]*e1) : 0.0;
+        double w_o = 0, w_n = 0;
+        for (int k = 0; k < K; k++) {
+            const vector<Msg> &msg = set[b*K + k];
+            double u = unit*model.rates[k];
+            Msg up_o = bo.upper_node == a.root.get() ? zero : above(msg, kd_o, u);
+            Msg up_n = bn.upper_node == a.root.get() ? zero : above(msg, kd_n, u);
+            w_o += join(bo, ro.upper_node->time, query, msg[kq], msg[kd_o], up_o, u);
+            w_n += join(bn, rn.upper_node->time, query, msg[kq], msg[kd_n], up_n, u);
+        }
         return log((w_n - c)/(w_o - c));
     };
     auto apply_pattern = [&]() {
         if (!pattern_valid) {
-            pat = ref;
-            for (int s : missing_list) {
-                int k = t.leaf[s];
-                pat[k] = {1.0, 1.0};
-                a.repeel_path(flat, t, unit, k, pat);
+            for (int i = 0; i < nbase*K; i++) {
+                pat[i] = ref[i];
+                for (int s : missing_list) {
+                    int k = t.leaf[s];
+                    pat[i][k] = ones;
+                    a.repeel_path(flat, t, unit*model.rates[i % K], k, pat[i]);
+                }
             }
             pattern_valid = true;
             pattern_value_valid = false;
@@ -291,21 +326,25 @@ double Threader_smc::data_log_ratio(ARG &a) {
             if (target[s] != missing[s]) {
                 missing[s] = target[s];
                 int k = t.leaf[s];
-                pat[k] = missing[s] ? array<double, 2>{1.0, 1.0} : array<double, 2>{1.0, 0.0};
+                for (int i = 0; i < nbase*K; i++) {
+                    pat[i][k] = missing[s] ? ones : a.leaf_message(S == 2 ? 0 : 1 << (i/K));
+                    a.repeel_path(flat, t, unit*model.rates[i % K], k, pat[i]);
+                }
                 (main[k] ? observed_main : observed_sub) += missing[s] ? -1 : 1;
-                a.repeel_path(flat, t, unit, k, pat);
                 pattern_value_valid = false;
             }
         }
         if (!pattern_value_valid) {
-            pattern_value = pattern_log_ratio(pat);
+            for (int b = 0; b < nbase; b++) {
+                pattern_value[b] = pattern_log_ratio(pat, b);
+            }
             pattern_value_valid = true;
         }
     };
     auto entry_log_ratio = [&](const Genotype_likelihood &g, double pos) {
         Node *query = ro.lower_node;
         Peel &p = ratio_peel;
-        vector<array<double, 2>> &msg = ratio_cell;
+        vector<Msg> &msg = ratio_cell;
         a.peel_site(flat, t, unit, pos, p);
         int nc = g.leaves[1] == nullptr ? 2 : 4;
         int kl[2] = {t.index_of(flat, g.leaves[0]), g.leaves[1] == nullptr ? -1 : t.index_of(flat, g.leaves[1])};
@@ -322,15 +361,15 @@ double Threader_smc::data_log_ratio(ARG &a) {
                     int h = j == 0 ? (c & 1) : (c >> 1);
                     count[(int) g.leaves[j]->get_state(pos)] -= 1;
                     count[h] += 1;
-                    msg[kl[j]] = {h == 0 ? 1.0 : 0.0, h == 1 ? 1.0 : 0.0};
+                    msg[kl[j]] = a.leaf_message(h);
                     a.repeel_path(flat, t, unit, kl[j], msg);
                 }
             }
             double empty = (1 - pen)*(prior[0]*(count[1] == 0) + prior[1]*(count[0] == 0));
-            array<double, 2> up_o = bo.upper_node == a.root.get() ? array<double, 2>{0, 0} : above(msg, kd_o);
-            array<double, 2> up_n = bn.upper_node == a.root.get() ? array<double, 2>{0, 0} : above(msg, kd_n);
-            w_o += g.L[c]*(join(bo, ro.upper_node->time, query, msg[kq], msg[kd_o], up_o) - empty);
-            w_n += g.L[c]*(join(bn, rn.upper_node->time, query, msg[kq], msg[kd_n], up_n) - empty);
+            Msg up_o = bo.upper_node == a.root.get() ? zero : above(msg, kd_o, unit);
+            Msg up_n = bn.upper_node == a.root.get() ? zero : above(msg, kd_n, unit);
+            w_o += g.L[c]*(join(bo, ro.upper_node->time, query, msg[kq], msg[kd_o], up_o, unit) - empty);
+            w_n += g.L[c]*(join(bn, rn.upper_node->time, query, msg[kq], msg[kd_n], up_n, unit) - empty);
         }
         return log(w_n/w_o);
     };
@@ -379,7 +418,11 @@ double Threader_smc::data_log_ratio(ARG &a) {
                 order_stale = false;
             }
             unit = c;
-            a.reference_peel(flat, t, unit, ref);
+            for (int b = 0; b < nbase; b++) {
+                for (int k = 0; k < K; k++) {
+                    a.reference_peel(flat, t, unit*model.rates[k], ref[b*K + k], b);
+                }
+            }
             p_common = 1;
             observed_main = observed_sub = 0;
             for (int k = 0; k < (int) flat.parents.size(); k++) {
@@ -400,7 +443,7 @@ double Threader_smc::data_log_ratio(ARG &a) {
             ref_valid = pattern_value_valid = z_valid = false;
         }
         if (!z_valid) {
-            z_diff = log_z(bn, rn.upper_node->time, rn.lower_node) - log_z(bo, ro.upper_node->time, ro.lower_node);
+            z_diff = S == 2 ? log_z(bn, rn.upper_node->time, rn.lower_node) - log_z(bo, ro.upper_node->time, ro.lower_node) : 0.0;
             z_valid = true;
         }
         ll -= a.assayed[i]*z_diff;
@@ -411,19 +454,36 @@ double Threader_smc::data_log_ratio(ARG &a) {
             }
             swap(observed_main, all_main);
             swap(observed_sub, all_sub);
-            ref_value = pattern_log_ratio(ref);
+            for (int b = 0; b < nbase; b++) {
+                ref_value[b] = pattern_log_ratio(ref, b);
+            }
             swap(observed_main, all_main);
             swap(observed_sub, all_sub);
             ref_valid = true;
         }
         double rest = a.assayed[i];
+        array<double, 4> rest_b = {0, 0, 0, 0};
+        const Bin_gaps *gp = (a.any_missing or S != 2) ? &owner->gaps_of(i) : nullptr;
+        if (S != 2) {
+            rest_b = gp->all_bases;
+        }
+        auto score = [&](double count, const array<double, 4> &bases) {
+            apply_pattern();
+            if (S == 2) {
+                ll += count*pattern_value[0];
+                rest -= count;
+            } else {
+                for (int b = 0; b < 4; b++) {
+                    ll += bases[b]*pattern_value[b];
+                    rest_b[b] -= bases[b];
+                }
+            }
+        };
         if (a.any_missing) {
-            const Bin_gaps &g = owner->gaps_of(i);
+            const Bin_gaps &g = *gp;
             if (g.uniform and g.full == missing_list) {
                 touched.clear();
-                apply_pattern();
-                ll += g.count*pattern_value;
-                rest -= g.count;
+                score(g.count, g.count_bases);
             } else if (!g.sample.empty()) {
                 touched = missing_list;
                 for (int s : touched) {
@@ -432,9 +492,7 @@ double Threader_smc::data_log_ratio(ARG &a) {
                 }
                 for (size_t j = 0; j < g.sample.size(); j++) {
                     if (g.before[j] > 0) {
-                        apply_pattern();
-                        ll += g.before[j]*pattern_value;
-                        rest -= g.before[j];
+                        score(g.before[j], g.bases[j]);
                     }
                     int s = g.sample[j];
                     target[s] = g.d[j] < 0;
@@ -444,9 +502,7 @@ double Threader_smc::data_log_ratio(ARG &a) {
                     }
                 }
                 if (g.tail > 0) {
-                    apply_pattern();
-                    ll += g.tail*pattern_value;
-                    rest -= g.tail;
+                    score(g.tail, g.tail_bases);
                 }
                 missing_list.clear();
                 for (int s : touched) {
@@ -468,14 +524,27 @@ double Threader_smc::data_log_ratio(ARG &a) {
                 const Site_messages &s = site_pool[site_slot.at(*mut_it)];
                 Node *query = ro.lower_node;
                 int kd_o = bo.lower_node->flat_index, kd_n = bn.lower_node->flat_index;
-                double w_o = join(bo, ro.upper_node->time, query, s.nu, s.in[kd_o], s.above[kd_o]);
-                double w_n = join(bn, rn.upper_node->time, query, s.nu, s.in[kd_n], s.above[kd_n]);
+                double w_o = 0, w_n = 0;
+                auto add = [&](const Site_messages &m) {
+                    w_o += join(bo, ro.upper_node->time, query, m.nu, m.in[kd_o], m.above[kd_o], m.unit);
+                    w_n += join(bn, rn.upper_node->time, query, m.nu, m.in[kd_n], m.above[kd_n], m.unit);
+                };
+                add(s);
+                for (const Site_messages &part : s.parts) {
+                    add(part);
+                }
                 ll += log((w_n - s.empty_term)/(w_o - s.empty_term));
             }
             rest -= 1;
             ++mut_it;
         }
-        ll += rest*ref_value;
+        if (S == 2) {
+            ll += rest*ref_value[0];
+        } else {
+            for (int b = 0; b < 4; b++) {
+                ll += rest_b[b]*ref_value[b];
+            }
+        }
     }
     return ll;
 }
@@ -570,25 +639,97 @@ void Threader_smc::set_check_points(ARG &a) {
     tsp.set_check_points(check_points);
 }
 
+void Threader_smc::prepare_emission_tree(ARG &a, bool &stale, const Tree *tree) {
+    if (!stale) {
+        return;
+    }
+    if (tree != nullptr) {
+        emit_flat.assign(*tree);
+    }
+    emit_order.assign(emit_flat, a.root.get());
+    if (emit_trees == (int) emit_nodes.size()) {
+        emit_nodes.emplace_back();
+    }
+    vector<Node *> &nodes = emit_nodes[emit_trees++];
+    nodes.clear();
+    for (auto &x : emit_flat.parents) {
+        nodes.push_back(x.first);
+    }
+    stale = false;
+}
+
+void Threader_smc::set_emission_groups(ARG &a, Emission &e, bool &stale, int bin, Node *query_node, const Tree *tree) {
+    e.groups.clear();
+    e.group_weights.clear();
+    if (a.model.states == 2) {
+        return;
+    }
+    prepare_emission_tree(a, stale, tree);
+    double unit = a.penalty*a.thetas[bin]/(a.coordinates[bin + 1] - a.coordinates[bin]);
+    e.unit = unit;
+    const ARG *owner = a.entry_owner == nullptr ? &a : a.entry_owner;
+    const Bin_gaps &g = owner->gaps_of(bin);
+    int n = 0;
+    for (Node *s : a.sample_nodes) {
+        n = max(n, s->index + 1);
+    }
+    group_missing.assign(n, 0);
+    if (base_tree != emit_trees - 1 or base_query != query_node or base_unit != unit) {
+        for (int b = 0; b < 4; b++) {
+            a.emission_site(emit_flat, emit_order, unit, 0.0, query_node, emit_peel, base_pool[b], b, &group_missing);
+            base_pool[b].tree = emit_trees - 1;
+        }
+        base_tree = emit_trees - 1;
+        base_query = query_node;
+        base_unit = unit;
+    }
+    for (int b = 0; b < 4; b++) {
+        e.base_groups[b] = &base_pool[b];
+    }
+    array<double, 4> rest = g.all_bases;
+    size_t used = 0;
+    auto add_group = [&](const array<double, 4> &n) {
+        for (int b = 0; b < 4; b++) {
+            if (n[b] <= 0) {
+                continue;
+            }
+            if (used == group_pool.size()) {
+                group_pool.emplace_back();
+            }
+            a.emission_site(emit_flat, emit_order, unit, 0.0, query_node, emit_peel, group_pool[used], b, &group_missing);
+            group_pool[used].tree = emit_trees - 1;
+            e.group_weights.push_back(n[b]);
+            used++;
+        }
+    };
+    for (size_t j = 0; j < g.sample.size(); j++) {
+        if (g.before[j] > 0) {
+            add_group(g.bases[j]);
+            for (int b = 0; b < 4; b++) {
+                rest[b] -= g.bases[j][b];
+            }
+        }
+        group_missing[g.sample[j]] = g.d[j] < 0;
+    }
+    if (g.tail > 0) {
+        add_group(g.tail_bases);
+        for (int b = 0; b < 4; b++) {
+            rest[b] -= g.tail_bases[b];
+        }
+    }
+    for (int b = 0; b < 4; b++) {
+        e.base_counts[b] = rest[b];
+    }
+    for (size_t i = 0; i < used; i++) {
+        e.groups.push_back(&group_pool[i]);
+    }
+}
+
 void Threader_smc::set_emission_sites(ARG &a, Emission &e, bool &stale, int bin, vector<pair<double, int>> &mut_set, Node *query_node, const Tree *tree) {
     double unit = a.penalty*a.thetas[bin]/(a.coordinates[bin + 1] - a.coordinates[bin]);
     for (auto &m : mut_set) {
         if (site_slot.count(m.first) == 0) {
-            if (stale) {
-                if (tree != nullptr) {
-                    emit_flat.assign(*tree);
-                }
-                emit_order.assign(emit_flat, a.root.get());
-                if (emit_trees == (int) emit_nodes.size()) {
-                    emit_nodes.emplace_back();
-                }
-                vector<Node *> &nodes = emit_nodes[emit_trees++];
-                nodes.clear();
-                for (auto &x : emit_flat.parents) {
-                    nodes.push_back(x.first);
-                }
-                stale = false;
-            }
+            prepare_emission_tree(a, stale, tree);
             int slot = (int) site_slot.size();
             if (slot == (int) site_pool.size()) {
                 site_pool.emplace_back();
@@ -608,6 +749,8 @@ void Threader_smc::run_BSP(ARG &a) {
     bsp.reserve_memory(end_index - start_index);
     bsp.set_cutoff(cutoff);
     bsp.set_emission(pe);
+    pe->model = &a.model;
+    bool four = a.model.states != 2;
     bsp.start(a.start_tree, cut_time);
     auto recomb_it = a.recombinations.upper_bound(start);
     auto mut_it = a.site_at(start);
@@ -658,8 +801,15 @@ void Threader_smc::run_BSP(ARG &a) {
             mut_set.push_back(*mut_it);
             mut_it++;
         }
+        if (four) {
+            set_emission_groups(a, *pe, stale, i, query_node, nullptr);
+        }
         if (mut_set.size() > 0 and !no_data) {
             set_emission_sites(a, *pe, stale, i, mut_set, query_node, nullptr);
+        } else {
+            pe->sites.clear();
+        }
+        if ((mut_set.size() > 0 or !pe->groups.empty()) and !no_data) {
             bsp.mut_emit(query_node);
         } else {
             bsp.null_emit(a.thetas[i], query_node);
@@ -704,6 +854,8 @@ void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb, bool resume) {
     tsp.reserve_memory(end_index - start_index);
     tsp.set_gap(gap);
     tsp.set_emission(be);
+    be->model = &a.model;
+    bool four = a.model.states != 2;
     map<double, Recombination>::iterator recomb_it;
     map<double, Branch>::iterator join_it;
     vector<pair<double, int>>::iterator mut_it;
@@ -815,6 +967,9 @@ void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb, bool resume) {
             mut_set.push_back(*mut_it);
             mut_it++;
         }
+        if (four) {
+            set_emission_groups(a, *be, stale, i, query_node, &tree);
+        }
         if (mut_set.size() > 0 and !no_data) {
             set_emission_sites(a, *be, stale, i, mut_set, query_node, &tree);
             if (stale) {
@@ -822,6 +977,10 @@ void Threader_smc::run_TSP(ARG &a, map<double, Branch> &jb, bool resume) {
                 const vector<Node *> &nodes = emit_nodes[be->sites[0]->tree];
                 n->flat_index = (int) (lower_bound(nodes.begin(), nodes.end(), n, compare_node()) - nodes.begin());
             }
+        } else {
+            be->sites.clear();
+        }
+        if ((mut_set.size() > 0 or !be->groups.empty()) and !no_data) {
             tsp.mut_emit(query_node);
         } else {
             tsp.null_emit(a.thetas[i], query_node);

@@ -12,6 +12,13 @@
 #include "Branch.hpp"
 #include "ARG.hpp"
 
+struct Edge_matrices {
+    bool at_root = false;
+    double lower[16];
+    double query[16];
+    double upper[16];
+};
+
 class Emission {
 
 public:
@@ -19,9 +26,22 @@ public:
     double crho = 0;
     double norm_scale = 1.0;
     double bin_width = 1.0;
+    const Site_model *model = nullptr;
+    double unit = 0;
+    double base_counts[4] = {0, 0, 0, 0};
+    const Site_messages *base_groups[4] = {nullptr, nullptr, nullptr, nullptr};
     vector<const Site_messages *> sites = {};
+    vector<const Site_messages *> groups = {};
+    vector<double> group_weights = {};
+    vector<Edge_matrices> edge = {};
 
     double mut_emit(Branch &branch, double time, Node *node, double norm);
+
+    double mut_emit(Branch &branch, double norm, const Edge_matrices *cached);
+
+    void null_logs_base(Branch &branch, const Edge_matrices *cached, double *out);
+
+    void edge_matrices(Branch &branch, double time, Node *node, Edge_matrices *out);
 
     void set_tree_product(double c, double rho, double p, double w) {
         crho = c*rho;

@@ -145,7 +145,8 @@ public:
     vector<double> null_logs = {};
     bool null_logs_valid = false;
     Node *log_node = nullptr;
-    double log_crho = -1, log_scale = -1;
+    double log_crho = -1, log_scale = -1, log_unit = -1;
+    vector<Edge_matrices> edge_cache = {};
     vector<double> norms = {}, alt_norms = {};
     long logs_stamp = 0, norm_stamp = -1, alt_stamp = -1;
     double norm_width = -1, alt_width = -1;

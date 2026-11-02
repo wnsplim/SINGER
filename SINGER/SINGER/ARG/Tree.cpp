@@ -20,15 +20,22 @@ double Tree::length() {
     return l;
 }
 
+void Flat_tree::touch() {
+    static int stamps = 0;
+    stamp = ++stamps;
+}
+
 void Flat_tree::assign(const Tree &tree) {
     parents.assign(tree.parents.begin(), tree.parents.end());
     lengths.clear();
     for (auto &x : parents) {
         lengths.push_back(x.second->time - x.first->time);
     }
+    touch();
 }
 
 void Flat_tree::forward_update(const Recombination &r) {
+    touch();
     auto key_less = [](const pair<Node *, Node *> &e, Node *n) { return compare_node()(e.first, n); };
     for (const Branch &b : r.deleted_branches) {
         auto it = lower_bound(parents.begin(), parents.end(), b.lower_node, key_less);

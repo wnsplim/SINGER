@@ -46,10 +46,12 @@ int main(int argc, const char * argv[]) {
     string r_value = "", m_value = "";
     double penalty = 1;
     double polar = 0.5;
+    string model_name = "CFN";
+    int gamma_k = 1;
     double missing_thres = 0.5;
     int scaling_rep = -1;
     int scaling_bin = 100;
-    int mapping_rep = 1;
+    int mapping_rep = -1;
     double epsilon_hmm = -1;
     double epsilon_psmc = 0.05;
     int ploidy = 2;
@@ -306,8 +308,8 @@ int main(int argc, const char * argv[]) {
                 cerr << "Error: -mapping_rep flag expects a number. " << endl;
                 exit(1);
             }
-            if (mapping_rep < 1) {
-                cerr << "Error: -mapping_rep must be at least 1. " << endl;
+            if (mapping_rep < 0) {
+                cerr << "Error: -mapping_rep must be at least 0. " << endl;
                 exit(1);
             }
         }
@@ -377,6 +379,33 @@ int main(int argc, const char * argv[]) {
                 exit(1);
             }
             input_filename = args[++i];
+        }
+        else if (arg == "-model") {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
+                cerr << "Error: -model flag expects JC, K80, F81, HKY or GTR. " << endl;
+                exit(1);
+            }
+            model_name = args[++i];
+            if (model_name != "CFN" and model_name != "JC" and model_name != "K80" and model_name != "F81" and model_name != "HKY" and model_name != "GTR") {
+                cerr << "Error: -model flag expects JC, K80, F81, HKY or GTR. " << endl;
+                exit(1);
+            }
+        }
+        else if (arg == "-gamma") {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
+                cerr << "Error: -gamma flag expects the number of rate categories. " << endl;
+                exit(1);
+            }
+            try {
+                gamma_k = stoi(args[++i]);
+            } catch (...) {
+                cerr << "Error: -gamma flag expects a number. " << endl;
+                exit(1);
+            }
+            if (gamma_k < 1) {
+                cerr << "Error: -gamma must be at least 1. " << endl;
+                exit(1);
+            }
         }
         else if (arg == "-output") {
             if (i + 1 >= n_args || args[i+1][0] == '-') {
@@ -494,6 +523,9 @@ int main(int argc, const char * argv[]) {
     if (scaling_rep < 0) {
         scaling_rep = exact ? 1 : 5;
     }
+    if (mapping_rep < 0) {
+        mapping_rep = model_name == "CFN" ? 1 : 0;
+    }
     if (epsilon_hmm < 0) {
         epsilon_hmm = exact ? 0.1 : 0.001;
     }
@@ -523,10 +555,46 @@ int main(int argc, const char * argv[]) {
     sampler.set_precision(epsilon_hmm, epsilon_psmc);
     sampler.set_input_file_prefix(input_filename);
     sampler.set_output_file_prefix(output_prefix);
-    if (sampler.data.is_alignment()) {
-        cerr << "Error: this build runs on VCF input; an alignment (FASTA, PHYLIP or NEXUS) needs the four-state substitution models. " << endl;
+    bool alignment = sampler.data.is_alignment();
+    if (alignment and model_name == "CFN") {
+        cerr << "Error: an alignment input needs -model JC, K80, F81, HKY or GTR. " << endl;
         exit(1);
     }
+    if (!alignment and model_name != "CFN") {
+        cerr << "Error: -model " << model_name << " needs an alignment input (FASTA, PHYLIP or NEXUS). " << endl;
+        exit(1);
+    }
+    if (alignment) {
+        bool ploidy_given = false, polar_given = false;
+        for (auto &g : given) {
+            ploidy_given = ploidy_given or g.first == "-ploidy";
+            polar_given = polar_given or g.first == "-polar";
+        }
+        if (!ploidy_given) {
+            ploidy = 1;
+        }
+        if (!chrom_name.empty()) {
+            cerr << "Error: -chrom applies to VCF input only; name the chromosome of a mask file with -chrom_n or -chrom_p. " << endl;
+            exit(1);
+        }
+        if (genotype_lik or phase) {
+            cerr << "Error: -genotype_lik and -phase apply to VCF input only. " << endl;
+            exit(1);
+        }
+        if (polar_given) {
+            cerr << "Warning: -polar has no effect under -model " << model_name << ", whose root prior is the stationary distribution. " << endl;
+        }
+    }
+    if (model_name != "CFN" and penalty != 1) {
+        cerr << "Error: -penalty applies to the CFN model only. " << endl;
+        exit(1);
+    }
+    if (gamma_k > 1 and model_name == "CFN") {
+        cerr << "Error: -gamma applies to the four-state models only. " << endl;
+        exit(1);
+    }
+    sampler.model_name = model_name;
+    sampler.gamma_k = gamma_k;
     sampler.ploidy = ploidy;
     if (tip_ages_file.size() > 0) {
         sampler.read_tip_ages(tip_ages_file, g);

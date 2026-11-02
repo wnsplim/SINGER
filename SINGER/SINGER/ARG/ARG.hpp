@@ -14,10 +14,58 @@
 #include "Tree.hpp"
 #include "RSP_smc.hpp"
 #include "Rate_map.hpp"
+#include "Site_model.hpp"
 #include <array>
 #include <tuple>
 #include <unordered_map>
 #include <functional>
+
+typedef array<double, 4> Msg;
+
+inline void push_up(const double *T, int S, const Msg &m, Msg &parent) {
+    if (S == 2) {
+        parent[0] *= m[0] + T[1]*m[1];
+        parent[1] *= m[1] + T[2]*m[0];
+        return;
+    }
+    for (int s = 0; s < S; s++) {
+        double v = 0;
+        for (int t = 0; t < S; t++) {
+            v += T[S*s + t]*m[t];
+        }
+        parent[s] *= v;
+    }
+}
+
+inline void transmit(const double *T, int S, const Msg &m, Msg &out) {
+    if (S == 2) {
+        out[0] = m[0] + T[1]*m[1];
+        out[1] = m[1] + T[2]*m[0];
+        return;
+    }
+    for (int s = 0; s < S; s++) {
+        double v = 0;
+        for (int t = 0; t < S; t++) {
+            v += T[S*s + t]*m[t];
+        }
+        out[s] = v;
+    }
+}
+
+inline void transmit_up(const double *T, int S, const Msg &a, Msg &out) {
+    if (S == 2) {
+        out[0] = a[0] + T[2]*a[1];
+        out[1] = a[1] + T[1]*a[0];
+        return;
+    }
+    for (int s = 0; s < S; s++) {
+        double v = 0;
+        for (int t = 0; t < S; t++) {
+            v += T[S*t + s]*a[t];
+        }
+        out[s] = v;
+    }
+}
 
 struct Genotype_likelihood {
     double pos;
@@ -34,6 +82,10 @@ struct Bin_gaps {
     bool uniform = false;
     vector<int> full = {};
     double count = 0;
+    vector<array<double, 4>> bases = {};
+    array<double, 4> tail_bases = {0, 0, 0, 0};
+    array<double, 4> all_bases = {0, 0, 0, 0};
+    array<double, 4> count_bases = {0, 0, 0, 0};
 };
 
 struct Tree_order {
@@ -49,28 +101,39 @@ struct Tree_order {
     int index_of(const Flat_tree &flat, Node *n) const;
 };
 
+struct Edge_transitions {
+    int stamp = -1;
+    int model = -1;
+    double unit = -1;
+    vector<double> P = {};
+};
+
 struct Peel {
     vector<char> missing = {};
-    vector<array<double, 2>> msg = {};
-    vector<array<double, 2>> empty = {};
-    int count[2] = {0, 0};
+    vector<Msg> msg = {};
+    vector<Msg> empty = {};
+    int count[4] = {0, 0, 0, 0};
     int leaf[2] = {-1, -1};
     vector<int> path = {};
     vector<char> in_path = {};
-    vector<array<double, 2>> alt = {};
-    vector<array<double, 2>> outside = {};
+    vector<Msg> alt = {};
+    vector<Msg> outside = {};
     vector<char> in_main = {};
+    mutable vector<Edge_transitions> trans = {};
+    mutable int trans_next = 0;
 };
 
 struct Site_messages {
     double unit = 0;
-    vector<array<double, 2>> in = {};
-    vector<array<double, 2>> above = {};
-    array<double, 2> nu = {1.0, 1.0};
+    vector<Msg> in = {};
+    vector<Msg> above = {};
+    Msg nu = {1.0, 1.0, 1.0, 1.0};
     int top = -1;
     int tree = -1;
     double empty_term = 0;
     double scale = 1;
+    double z = 0;
+    vector<Site_messages> parts = {};
 };
 
 class ARG {
@@ -89,6 +152,8 @@ public:
     int bin_num = 0;
     double penalty = 1;
     double ancestral_prob = 0.5;
+    Site_model model;
+    vector<char> column_base = {};
     bool any_missing = false;
     vector<double> unassayed_sites = {};
     double sequence_length = 0;
@@ -201,13 +266,25 @@ public:
 
     void site_missing(const Flat_tree &flat, double pos, vector<char> &missing);
 
-    void peel_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p);
+    void root_prior(double *prior) const;
 
-    double root_value(const array<double, 2> &top, bool seen0, bool seen1) const;
+    Msg leaf_message(int code) const;
+
+    void peel_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, int base = -1, const vector<char> *forced_missing = nullptr);
+
+    double root_value(const Msg &top, bool seen0, bool seen1) const;
 
     double site_value(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p);
 
-    void emission_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s);
+    void emission_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s, int base = -1, const vector<char> *forced_missing = nullptr);
+
+    void emission_single(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s, int base, const vector<char> *forced_missing);
+
+    void draw_site_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<int> &state);
+
+    void mixture_counts(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<Msg> &above, vector<double> &differs, vector<char> &informed_msg, vector<char> &informed_tip, int base = -1, const vector<char> *forced_missing = nullptr);
+
+    void base_counts(double s, double t, array<double, 4> &n) const;
 
     void entry_weights(const Flat_tree &flat, const Tree_order &t, double unit, double pos, const Genotype_likelihood &g, Peel &p, double *w);
 
@@ -235,9 +312,9 @@ public:
 
     void set_lengths(Flat_tree &flat, const function<double(Node *)> *time_of);
 
-    void outside_messages(const Flat_tree &flat, const Tree_order &t, double unit, const Peel &p, vector<array<double, 2>> &above);
+    void outside_messages(const Flat_tree &flat, const Tree_order &t, double unit, const Peel &p, vector<Msg> &above);
 
-    void site_counts(const Flat_tree &flat, const Tree_order &t, double unit, const Peel &p, const vector<array<double, 2>> &above, vector<double> &differs, vector<char> &informed_msg, vector<char> &informed_tip);
+    void site_counts(const Flat_tree &flat, const Tree_order &t, double unit, const Peel &p, const vector<Msg> &above, vector<double> &differs, vector<char> &informed_msg, vector<char> &informed_tip);
 
     void draw_mutations(const function<double(Node *)> *time_of);
 
@@ -272,11 +349,11 @@ public:
 
     Peel likelihood_peel;
 
-    vector<array<double, 2>> reference_msg = {}, pattern_msg = {};
+    vector<vector<Msg>> reference_msg = {}, pattern_msg = {};
 
-    void reference_peel(const Flat_tree &flat, const Tree_order &t, double unit, vector<array<double, 2>> &msg) const;
+    void reference_peel(const Flat_tree &flat, const Tree_order &t, double unit, vector<Msg> &msg, int base = 0) const;
 
-    void repeel_path(const Flat_tree &flat, const Tree_order &t, double unit, int k, vector<array<double, 2>> &msg) const;
+    void repeel_path(const Flat_tree &flat, const Tree_order &t, double unit, int k, vector<Msg> &msg) const;
 
     double mutation_log_likelihood(map<double, Branch> &lineage, double x, double y, double p, const Tree &tree_p);
 

@@ -81,7 +81,11 @@ public:
     
     void set_check_points(ARG &a);
 
+    void prepare_emission_tree(ARG &a, bool &stale, const Tree *tree);
+
     void set_emission_sites(ARG &a, Emission &e, bool &stale, int bin, vector<pair<double, int>> &mut_set, Node *query_node, const Tree *tree);
+
+    void set_emission_groups(ARG &a, Emission &e, bool &stale, int bin, Node *query_node, const Tree *tree);
 
     void run_BSP(ARG &a);
 
@@ -109,10 +113,16 @@ public:
 
     Flat_tree ratio_flat;
     Tree_order ratio_order;
-    vector<array<double, 2>> ratio_ref = {};
-    vector<array<double, 2>> ratio_pattern = {};
+    vector<vector<Msg>> ratio_ref = {};
+    vector<vector<Msg>> ratio_pattern = {};
     Peel ratio_peel;
-    vector<array<double, 2>> ratio_cell = {};
+    vector<Msg> ratio_cell = {};
+    vector<Site_messages> group_pool = {};
+    vector<char> group_missing = {};
+    Site_messages base_pool[4];
+    int base_tree = -1;
+    Node *base_query = nullptr;
+    double base_unit = -1;
 
     double redrawn_acceptance_ratio(ARG &a, tuple<double, Branch, double> cut_point);
 
