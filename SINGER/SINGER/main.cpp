@@ -48,7 +48,6 @@ int main(int argc, const char * argv[]) {
     string model_name = "CFN";
     int gamma_k = 1;
     bool augment = false;
-    double missing_thres = 0.5;
     int scaling_rep = -1;
     int scaling_bin = 100;
     int mapping_rep = -1;
@@ -262,22 +261,6 @@ int main(int argc, const char * argv[]) {
             }
             if (polar <= 0 or polar >= 1) {
                 cerr << "Error: -polar flag expects a number between 0 and 1. " << endl;
-                exit(1);
-            }
-        }
-        else if (arg == "-missing_thres") {
-            if (i + 1 >= n_args || args[i+1][0] == '-') {
-                cerr << "Error: -missing_thres flag cannot be empty. " << endl;
-                exit(1);
-            }
-            try {
-                missing_thres = stod(args[++i]);
-            } catch (const invalid_argument&) {
-                cerr << "Error: -missing_thres flag expects a number. " << endl;
-                exit(1);
-            }
-            if (missing_thres < 0 or missing_thres > 1) {
-                cerr << "Error: -missing_thres flag expects a number between 0 and 1. " << endl;
                 exit(1);
             }
         }
@@ -531,7 +514,6 @@ int main(int argc, const char * argv[]) {
     Sampler sampler;
     sampler.penalty = penalty;
     sampler.polar = polar;
-    sampler.data.missing_thres = missing_thres;
     sampler.scaling_rep = scaling_rep;
     Threader_smc::no_data = no_data;
     sampler.scaling_bin = scaling_bin;

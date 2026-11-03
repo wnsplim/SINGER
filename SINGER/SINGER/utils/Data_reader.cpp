@@ -662,7 +662,7 @@ void Data_reader::read_alignment(double start_pos, double end_pos) {
     }
     vector<double> run_start(n, -1);
     vector<int> m(n);
-    int variable = 0, invariant = 0, no_data = 0, dropped = 0, multiple = 0, ambiguous = 0, masked_columns = 0;
+    int variable = 0, invariant = 0, no_data = 0, multiple = 0, ambiguous = 0, masked_columns = 0;
     for (long long c = (long long) start_pos; c < (long long) end_pos; c++) {
         double x = c - start_pos;
         int n_missing = 0, bases = 0, partial = 0;
@@ -701,11 +701,6 @@ void Data_reader::read_alignment(double start_pos, double end_pos) {
             invariant++;
             continue;
         }
-        if (n_missing > missing_thres*n) {
-            dropped++;
-            unassayed_sites.push_back(x);
-            continue;
-        }
         variable++;
         multiple += n_bases > 2;
         ambiguous += partial > 0;
@@ -724,8 +719,7 @@ void Data_reader::read_alignment(double start_pos, double end_pos) {
         any_missing = any_missing or !masked_intervals[i].empty();
     }
     cout << "alignment: " << n << " sequences, " << length << " columns, " << variable << " variable columns, " << invariant
-         << " invariant columns, " << masked_columns << " columns in the mask, " << no_data << " columns without data, " << dropped
-         << " variable columns dropped above -missing_thres " << missing_thres << ", " << multiple
+         << " invariant columns, " << masked_columns << " columns in the mask, " << no_data << " columns without data, " << multiple
          << " columns with more than two bases, " << ambiguous << " columns with ambiguity codes" << endl;
 }
 
@@ -1244,7 +1238,7 @@ void Data_reader::read(double start_pos, double end_pos, bool with_sites) {
         mask_of_sample.push_back(m == sample_masks.end() ? nullptr : &m->second);
     }
     read_calls(start_pos, end_pos);
-    drop_missing_sites(start_pos, end_pos);
+    mask_deletions(start_pos, end_pos);
     if (with_sites) {
         ifstream index(input + ".index");
         if (ploidy == 2 and index.is_open() and !Vcf_reader::is_bcf(input)) {
@@ -1286,11 +1280,10 @@ void Data_reader::add_call_sites(double start_pos, double end_pos, bool with_sit
         Record_likelihood r = record_likelihood(pos, ref, alt, "");
         vector<int> state(haplotypes, -1);
         vector<Genotype_entry> found;
-        int missing = 0, from_file = 0, alt_count = 0, alleles = 0;
+        int from_file = 0, alt_count = 0, alleles = 0;
         for (int i = 0; i < (int) call_column.size(); i++) {
             Genotype_read g = read_genotype("", i, x, pos, &r);
             if (!g.likelihood) {
-                missing += ploidy;
                 continue;
             }
             from_file += 1;
@@ -1304,11 +1297,6 @@ void Data_reader::add_call_sites(double start_pos, double end_pos, bool with_sit
             }
         }
         if (!variant_site(alt_count, haplotypes, alleles)) {
-            continue;
-        }
-        if (missing > missing_thres*haplotypes) {
-            masked.push_back({x, x + 1});
-            dropped_records += 1;
             continue;
         }
         added = true;
@@ -1341,8 +1329,7 @@ void Data_reader::add_call_sites(double start_pos, double end_pos, bool with_sit
 }
 
 void Data_reader::print_missing_summary() {
-    cout << "missing data: " << dropped_records << " records dropped above -missing_thres " << missing_thres << ", "
-         << dropped_bases_total << " bases masked by the sample masks above -missing_thres, " << deleted_bases << " bases removed by deletions, "
+    cout << "missing data: " << deleted_bases << " bases removed by deletions, "
          << unphased_masked << " unphased heterozygous genotypes treated as missing, " << multiallelic_skipped << " multiallelic sites skipped";
     if (genotype_lik) {
         cout << "; genotype likelihoods: " << likelihood_genotypes << " genotypes with a likelihood, " << call_likelihoods << " taken from -genotype_calls, "
@@ -1356,21 +1343,18 @@ void Data_reader::print_missing_summary() {
     cout << endl;
 }
 
-void Data_reader::drop_missing_sites(double start_pos, double end_pos) {
+void Data_reader::mask_deletions(double start_pos, double end_pos) {
     Vcf_reader file(input, selected_chrom());
     string line;
-    vector<pair<double, double>> dropped;
-    long long prev_pos = -1;
-    int records = 0;
     double deleted = 0;
     while (file.next(line)) {
         if (line[0] == '#') {
             continue;
         }
         istringstream iss(line);
-        string chrom, id, ref, alt, qual, filter, info, format, genotype;
+        string chrom, id, ref, alt;
         long long pos;
-        iss >> chrom >> pos >> id >> ref >> alt >> qual >> filter >> info >> format;
+        iss >> chrom >> pos >> id >> ref >> alt;
         if (pos < start_pos) {continue;}
         if (pos >= end_pos) {break;}
         input_positions.insert(pos);
@@ -1380,58 +1364,12 @@ void Data_reader::drop_missing_sites(double start_pos, double end_pos) {
             double lo = first ? x + 1 : x;
             double hi = !first and pos == 1 and padding_last(ref, alt) ? x + ref.size() - 1 : x + ref.size();
             if (hi > lo) {
-                dropped.push_back({lo, hi});
+                masked.push_back({lo, hi});
                 deleted += hi - lo;
             }
         }
-        if (pos == prev_pos or in_mask(x) or ref.size() > 1 or alt.size() > 1) {
-            prev_pos = pos;
-            continue;
-        }
-        prev_pos = pos;
-        bool known[2] = {is_unambiguous(ref), is_unambiguous(alt)};
-        bool weigh = genotype_lik and known[0] and known[1];
-        Record_likelihood r;
-        if (weigh) {
-            r = record_likelihood(pos, ref, alt, format);
-        }
-        int individual = 0, missing = 0;
-        while (iss >> genotype) {
-            Genotype_read g = read_genotype(genotype, individual, x, pos, weigh ? &r : nullptr, known[0] and known[1]);
-            for (int k = 0; k < ploidy; k++) {
-                int c = k < g.n ? g.calls[k] : -1;
-                missing += c < 0;
-            }
-            individual += 1;
-        }
-        if (missing > missing_thres*ploidy*individual) {
-            dropped.push_back({x, x + 1});
-            records += 1;
-        }
     }
-    double haplotypes = ploidy*(double) mask_of_sample.size(), bases = 0;
-    vector<pair<double, int>> events;
-    for (auto v : mask_of_sample) {
-        if (v != nullptr) {
-            for (auto &m : *v) {
-                events.push_back({m.first, ploidy});
-                events.push_back({m.second, -ploidy});
-            }
-        }
-    }
-    sort(events.begin(), events.end());
-    int count = 0;
-    for (int i = 0; i < (int) events.size(); i++) {
-        count += events[i].second;
-        if (count > missing_thres*haplotypes and i + 1 < (int) events.size() and events[i + 1].first > events[i].first) {
-            dropped.push_back({events[i].first, events[i + 1].first});
-            bases += events[i + 1].first - events[i].first;
-        }
-    }
-    masked.insert(masked.end(), dropped.begin(), dropped.end());
     merge_intervals(masked);
-    dropped_records = records;
-    dropped_bases_total = bases;
     deleted_bases = deleted;
 }
 

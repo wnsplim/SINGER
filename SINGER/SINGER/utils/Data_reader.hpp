@@ -29,7 +29,6 @@ public:
     std::string chrom_n = "";
     std::string chrom_p = "";
     int ploidy = 2;
-    double missing_thres = 0.5;
     bool genotype_lik = false;
     bool phase = false;
     std::string calls = "";
@@ -105,8 +104,6 @@ private:
     std::vector<int> call_column = {};
     std::set<long long> input_positions = {};
     std::vector<const std::vector<std::pair<double, double>> *> mask_of_sample = {};
-    double dropped_bases_total = 0;
-    int dropped_records = 0;
     double deleted_bases = 0;
     int likelihood_genotypes = 0;
     int het_entries = 0;
@@ -137,7 +134,7 @@ private:
 
     void check_ploidy(const std::string &field, int n, int expected_ploidy, const int *calls, long long pos, int column);
 
-    void drop_missing_sites(double start_pos, double end_pos);
+    void mask_deletions(double start_pos, double end_pos);
 
     void naive_read_sites(double start_pos, double end_pos);
 
