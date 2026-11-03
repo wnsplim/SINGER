@@ -35,7 +35,6 @@ public:
     void exact_internal_rethread(ARG &a, tuple<double, Branch, double> cut_point);
 
     double cut_time = 0;
-    double full_length = 0;
     double start = 0;
     double end = 0;
     int start_index = 0;
@@ -97,13 +96,9 @@ public:
 
     void sample_joining_points(ARG &a);
 
-    void draw_added_states(ARG &a);
-    
     double acceptance_ratio(ARG &a);
 
     bool joins_deleted_node(ARG &a, map<double, Branch> &lineage);
-
-    bool keeps_deleted_node(ARG &a);
 
     double cut_ratio(ARG &a);
 

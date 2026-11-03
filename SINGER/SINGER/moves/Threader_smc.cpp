@@ -16,6 +16,13 @@ static void check_drawn_density(double q_new, double h_new) {
     }
 }
 
+static void check_ratio(double ar) {
+    if (isnan(ar)) {
+        cerr << "Error: the acceptance ratio of a proposal is not a number." << endl;
+        exit(1);
+    }
+}
+
 Threader_smc::Threader_smc(double c, double q) {
     cutoff = c;
     gap = q;
@@ -93,7 +100,6 @@ void Threader_smc::thread(ARG &a, Node_ptr n) {
     sample_joining_points(a);
     cout << get_time() << " : begin adding" << endl;
     a.add(new_joining_branches, added_branches);
-    draw_added_states(a);
     cout << get_time() << " : begin sampling recombination" << endl;
     a.approx_sample_recombinations();
     a.clear_remove_info();
@@ -113,7 +119,6 @@ void Threader_smc::rethread_sample(ARG &a, Node *n) {
     run_TSP(a);
     sample_joining_points(a);
     a.add(new_joining_branches, added_branches);
-    draw_added_states(a);
     a.approx_sample_recombinations();
     a.clear_remove_info();
 }
@@ -128,10 +133,10 @@ void Threader_smc::internal_rethread(ARG &a, tuple<double, Branch, double> cut_p
     run_TSP(a);
     sample_joining_points(a);
     double ar = has_gap_node(added_branches, a) ? 0 : acceptance_ratio(a);
+    check_ratio(ar);
     double q = random();
     if (q < ar) {
         a.add(new_joining_branches, added_branches);
-        draw_added_states(a);
     } else {
         a.add(a.joining_branches, a.removed_branches);
     }
@@ -141,9 +146,6 @@ void Threader_smc::internal_rethread(ARG &a, tuple<double, Branch, double> cut_p
 
 void Threader_smc::exact_internal_rethread(ARG &a, tuple<double, Branch, double> cut_point) {
     cut_time = get<2>(cut_point);
-#ifndef NDEBUG
-    full_length = a.get_tree_at(get<0>(cut_point)).length();
-#endif
     a.remove(cut_point);
     get_boundary(a);
     set_check_points(a);
@@ -161,20 +163,19 @@ void Threader_smc::exact_internal_rethread(ARG &a, tuple<double, Branch, double>
         }
         run_TSP(a);
         sample_joining_points(a);
-        if (keeps_deleted_node(a) and !has_gap_node(added_branches, a) and !joins_deleted_node(a, added_branches) and !a.empties_cut_span_end_recombination(new_joining_branches, added_branches)) {
+        if (!has_gap_node(added_branches, a) and !joins_deleted_node(a, added_branches) and !a.empties_cut_span_end_recombination(new_joining_branches, added_branches)) {
             ar = entries ? redrawn_acceptance_ratio(a, cut_point) : exact_acceptance_ratio(a);
         }
     }
+    check_ratio(ar);
     a.journal_on = false;
     double q = random();
     if (q < ar and entries) {
         a.add(new_joining_branches, added_branches);
-        draw_added_states(a);
         a.recombinations.erase(a.recombinations.lower_bound(start), a.recombinations.upper_bound(end));
         a.recombinations.insert(redrawn_records.begin(), redrawn_records.end());
     } else if (q < ar) {
         a.add(new_joining_branches, added_branches);
-        draw_added_states(a);
         a.smc_sample_recombinations(added_branches);
     } else {
         a.undo_journal();
@@ -225,7 +226,6 @@ double Threader_smc::data_log_ratio(ARG &a) {
     double pen = a.penalty;
     double T[16];
     Msg ones = {1.0, 1.0, 1.0, 1.0}, zero = {0.0, 0.0, 0.0, 0.0};
-    const ARG *owner = a.entry_owner == nullptr ? &a : a.entry_owner;
     auto [qi, qe] = a.entries_in(a.removed_branches.begin()->second.lower_node, start, end);
     const vector<Genotype_likelihood> &gl = a.entries();
     auto recomb_it = a.recombinations.upper_bound(start);
@@ -520,7 +520,7 @@ double Threader_smc::data_log_ratio(ARG &a) {
         }
         double rest = a.assayed[i];
         array<double, 4> rest_b = {0, 0, 0, 0};
-        const Bin_gaps *gp = (a.any_missing or S != 2) ? &owner->gaps_of(i) : nullptr;
+        const Bin_gaps *gp = (a.any_missing or S != 2) ? &a.gaps_of(i) : nullptr;
         if (S != 2) {
             rest_b = gp->all_bases;
         }
@@ -672,22 +672,6 @@ bool Threader_smc::joins_deleted_node(ARG &a, map<double, Branch> &lineage) {
     return false;
 }
 
-bool Threader_smc::keeps_deleted_node(ARG &a) {
-    map<Node *, double> deleted_at;
-    for (auto it = a.recombinations.upper_bound(a.start); it != a.recombinations.end() and it->first <= a.end; ++it) {
-        Recombination &r = it->second;
-        auto d = deleted_at.find(r.inserted_node);
-        if (d != deleted_at.end()) {
-            if (joined_at(a.removed_branches, d->second, it->first, r.inserted_node) and !joined_at(added_branches, d->second, it->first, r.inserted_node)) {
-                return false;
-            }
-            deleted_at.erase(d);
-        }
-        deleted_at[r.deleted_node] = it->first;
-    }
-    return true;
-}
-
 void Threader_smc::get_boundary(ARG &a) {
     start = a.start;
     end = a.end;
@@ -729,8 +713,7 @@ void Threader_smc::set_emission_groups(ARG &a, Emission &e, bool &stale, int bin
     prepare_emission_tree(a, stale, tree);
     double unit = a.penalty*a.thetas[bin]/(a.coordinates[bin + 1] - a.coordinates[bin]);
     e.unit = unit;
-    const ARG *owner = a.entry_owner == nullptr ? &a : a.entry_owner;
-    const Bin_gaps &g = owner->gaps_of(bin);
+    const Bin_gaps &g = a.gaps_of(bin);
     int n = 0;
     for (Node *s : a.sample_nodes) {
         n = max(n, s->index + 1);
@@ -1101,63 +1084,6 @@ void Threader_smc::sample_joining_points(ARG &a) {
     }
 }
 
-void Threader_smc::draw_added_states(ARG &a) {
-    if (!a.augment) {
-        return;
-    }
-    const Site_model &model = a.model;
-    double prior[4] = {0, 0, 0, 0};
-    a.root_prior(prior);
-    auto state_mask = [&](Node *n, double pos) {
-        bool miss = a.any_missing and n->is_sample and n->has_missing() and n->missing_at(Node::site_index(pos), pos);
-        return miss ? 15u : (unsigned) n->get_state(pos);
-    };
-    auto join_it = new_joining_branches.begin();
-    Branch b;
-    int bin = 0;
-    for (auto add_it = added_branches.begin(); add_it != added_branches.end() and add_it->first < end; ++add_it) {
-        double x = add_it->first;
-        auto next_it = next(add_it);
-        double y = next_it == added_branches.end() ? end : min(end, next_it->first);
-        while (join_it != new_joining_branches.end() and join_it->first <= x) {
-            b = join_it->second;
-            ++join_it;
-        }
-        Node *n = add_it->second.upper_node, *d = add_it->second.lower_node;
-        if (n == nullptr or d == nullptr) {
-            continue;
-        }
-        bool top = b.upper_node == a.root.get();
-        for (auto it = a.mutation_sites.lower_bound(x); it != a.mutation_sites.end() and *it < y; ++it) {
-            double pos = *it;
-            while (a.coordinates[bin + 1] <= pos) {
-                bin++;
-            }
-            double u = a.penalty*a.thetas[bin]/(a.coordinates[bin + 1] - a.coordinates[bin])*model.rates[a.category_at(pos)];
-            unsigned ml = state_mask(b.lower_node, pos), md = state_mask(d, pos);
-            double Tl[16], Td[16], Tu[16], w[4];
-            model.transition(u*(n->time - b.lower_node->time), Tl);
-            model.transition(u*(n->time - d->time), Td);
-            int xu = 0;
-            if (!top) {
-                xu = __builtin_ctz((unsigned) b.upper_node->get_state(pos));
-                model.transition(u*(b.upper_node->time - n->time), Tu);
-            }
-            double total = 0;
-            for (int q = 0; q < 4; q++) {
-                w[q] = (top ? prior[q] : Tu[4*xu + q])*masked_sum(Tl + 4*q, ml)*masked_sum(Td + 4*q, md);
-                total += w[q];
-            }
-            double r = uniform_random()*total;
-            int s = 0;
-            while (s < 3 and r >= w[s]) {
-                r -= w[s];
-                s++;
-            }
-            n->set_site(pos, (double) (1 << s));
-        }
-    }
-}
 
 static double pruned_height(ARG &a) {
     for (auto &x : a.cut_tree.parents) {
@@ -1210,7 +1136,6 @@ double Threader_smc::cut_ratio(ARG &a) {
     if (new_join_it->second.upper_node == a.root.get()) {
         new_length += new_join_time - cut_height;
     }
-    assert(fabs(old_length - full_length) <= 1e-9*full_length);
     return old_length/new_length;
 }
 
