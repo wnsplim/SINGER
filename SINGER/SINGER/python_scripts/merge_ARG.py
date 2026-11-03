@@ -68,10 +68,7 @@ def sort_nodes_by_time(ts):
         metadata_offset=muts.metadata_offset,
     )
 
-    tables.sort()
-    tables.build_index()
-    tables.compute_mutation_parents()
-    tables.compute_mutation_times()
+    arg_io.finish_mutations(tables)
     return tables.tree_sequence()
 
 def write_output_ts(ts, output):

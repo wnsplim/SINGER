@@ -73,10 +73,18 @@ struct Genotype_likelihood {
     double L[4];
 };
 
+struct Mutation_row {
+    Branch branch;
+    int state;
+    char informed;
+    double time;
+};
+
 struct Bin_gaps {
     bool built = false;
     vector<int> sample = {};
     vector<int> d = {};
+    vector<double> at = {};
     vector<double> before = {};
     double tail = 0;
     bool uniform = false;
@@ -162,7 +170,7 @@ public:
     Node_ptr cut_node_owner = nullptr;
     double cut_time = 0;
     set<double> mutation_sites = {};
-    map<double, vector<pair<Branch, int>>> mutations = {};
+    map<double, vector<Mutation_row>> mutations = {};
     map<double, Recombination> recombinations = {};
     int bin_num = 0;
     double penalty = 1;
@@ -288,7 +296,7 @@ public:
 
     void draw_site_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<int> &state);
 
-    void draw_site_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<int> &state, int &category);
+    void draw_site_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<int> &state, int &category, int base = -1, const vector<char> *forced_missing = nullptr);
 
     int category_at(double pos) const;
 
@@ -323,8 +331,6 @@ public:
     void resample_genotypes();
 
     void draw_mutations();
-
-    map<double, vector<char>> mutation_informed = {};
 
     void set_lengths(Flat_tree &flat, const function<double(Node *)> *time_of);
 

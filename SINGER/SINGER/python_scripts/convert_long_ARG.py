@@ -48,10 +48,7 @@ def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, c
         arg_io.add_mutations(tables, mutation_file, block_coordinates[node_file_index],
                              lambda n, s=sample_num, k=node_num: n + k if n >= s else n, bases)
 
-    tables.sort()
-    tables.build_index()
-    tables.compute_mutation_parents()
-    tables.compute_mutation_times()
+    arg_io.finish_mutations(tables)
     return tables
 
 def block_prefixes(vcf_prefix, output_prefix):

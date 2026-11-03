@@ -8,6 +8,7 @@
 
 #include <string>
 #include <vector>
+#include <utility>
 using namespace std;
 
 class Site_model {
@@ -54,10 +55,13 @@ public:
 
     void count_matrix(double x, double *M) const;
 
+    void sample_path(int a, int b, double x, const double *P0, vector<pair<double, int>> &path) const;
+
     static double regularized_gamma(double a, double x);
 
 private:
 
+    vector<double> rate_matrix = {};
     vector<double> eigenvalues = {};
     vector<double> left = {};
     vector<double> right = {};

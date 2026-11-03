@@ -4,6 +4,7 @@
 //
 
 #include "Site_model.hpp"
+#include "random_utils.hpp"
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -42,7 +43,87 @@ void Site_model::set(const string &model, const vector<double> &frequencies, con
     for (double &q : Q) {
         q /= total;
     }
+    rate_matrix = Q;
     decompose(Q);
+}
+
+void Site_model::sample_path(int a, int b, double x, const double *P0, vector<pair<double, int>> &path) const {
+    path.clear();
+    if (states == 2) {
+        if (a != b) {
+            path.push_back({uniform_random()*x, b});
+        }
+        return;
+    }
+    int n = states;
+    double Pbuf[16], J[4], p[4];
+    double done = 0;
+    int s = a;
+    bool first = true;
+    while (true) {
+        double T = x - done;
+        const double *P = P0;
+        if (!first or P0 == nullptr) {
+            transition_eigen(T, Pbuf);
+            P = Pbuf;
+        }
+        first = false;
+        double q = -rate_matrix[n*s + s];
+        double stay = exp(-q*T);
+        if (s == b and uniform_random()*P[n*s + b] < stay) {
+            return;
+        }
+        for (int j = 0; j < n; j++) {
+            double y = (eigenvalues[j] + q)*T;
+            J[j] = stay*T*(fabs(y) < 1e-8 ? 1 + y/2 : expm1(y)/y);
+        }
+        double total = 0;
+        for (int i = 0; i < n; i++) {
+            p[i] = 0;
+            if (i == s) {
+                continue;
+            }
+            double c = 0;
+            for (int j = 0; j < n; j++) {
+                c += left[n*i + j]*right[n*j + b]*J[j];
+            }
+            p[i] = max(rate_matrix[n*s + i]*c, 0.0);
+            total += p[i];
+        }
+        double u = uniform_random()*total, acc = 0;
+        int next = -1;
+        for (int i = 0; i < n; i++) {
+            if (p[i] == 0) {
+                continue;
+            }
+            acc += p[i];
+            next = i;
+            if (u < acc) {
+                break;
+            }
+        }
+        auto cdf = [&](double tau) {
+            double c = 0;
+            for (int j = 0; j < n; j++) {
+                double y = -(eigenvalues[j] + q)*tau;
+                c += left[n*next + j]*right[n*j + b]*exp(eigenvalues[j]*T)*tau*(fabs(y) < 1e-8 ? 1 + y/2 : expm1(y)/y);
+            }
+            return rate_matrix[n*s + next]*c;
+        };
+        double v = uniform_random()*p[next], lo = 0, hi = T;
+        for (int it = 0; it < 60; it++) {
+            double mid = 0.5*(lo + hi);
+            if (cdf(mid) < v) {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        double tau = 0.5*(lo + hi);
+        path.push_back({done + tau, next});
+        done += tau;
+        s = next;
+    }
 }
 
 void Site_model::count_matrix(double x, double *M) const {

@@ -84,9 +84,9 @@ BASES = 'ACGT'
 
 
 def add_mutations(tables, mutation_file, offset, node_map, bases=False):
-    """The muts rows as sites and mutations; the fifth column, when present, as the mutation's informed flag. Without
-    a file, no site. With bases (a run under a four-state model), the row whose upper node is the root gives the
-    site's ancestral base and the states of the other rows are bases."""
+    """The muts rows as sites and mutations; the fifth column, when present, as the mutation's informed flag, the
+    sixth as its time. Without a file, no site. With bases (a run under a four-state model), the row whose upper node
+    is the root gives the site's ancestral base and the states of the other rows are bases."""
     tables.mutations.metadata_schema = MUTATION_SCHEMA
     if mutation_file is None:
         return
@@ -105,7 +105,17 @@ def add_mutations(tables, mutation_file, offset, node_map, bases=False):
         for row in rows:
             meta = {'informed': int(row[4])} if len(row) >= 5 else {}
             state = BASES[int(row[3])] if bases else str(int(row[3]))
-            tables.mutations.add_row(site=site, node=node_map(int(row[1])), derived_state=state, metadata=meta)
+            time = row[5] if len(row) >= 6 else tskit.UNKNOWN_TIME
+            tables.mutations.add_row(site=site, node=node_map(int(row[1])), derived_state=state, metadata=meta, time=time)
+
+
+def finish_mutations(tables):
+    """Sorts, indexes, and sets the mutation parents; computes the mutation times only when the muts rows carried none."""
+    tables.sort()
+    tables.build_index()
+    tables.compute_mutation_parents()
+    if np.isnan(tables.mutations.time).all():
+        tables.compute_mutation_times()
 
 
 def uses_bases(prefix):

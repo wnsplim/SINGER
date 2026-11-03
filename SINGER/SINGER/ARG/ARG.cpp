@@ -518,7 +518,7 @@ int ARG::num_unmapped() {
     for (auto &x : mutations) {
         int below_top = 0;
         for (auto &m : x.second) {
-            below_top += m.first.upper_node != root.get();
+            below_top += m.branch.upper_node != root.get();
         }
         count += below_top > 1;
     }
@@ -537,7 +537,7 @@ int ARG::count_flipping() {
     for (auto &x : mutations) {
         bool at_top = false;
         for (auto &m : x.second) {
-            at_top = at_top or m.first.upper_node == root.get();
+            at_top = at_top or m.branch.upper_node == root.get();
         }
         count += at_top and x.second.size() > 1;
     }
@@ -1068,7 +1068,6 @@ void ARG::set_lengths(Flat_tree &flat, const function<double(Node *)> *time_of) 
 
 void ARG::draw_mutations(const function<double(Node *)> *time_of) {
     mutations.clear();
-    mutation_informed.clear();
     Flat_tree flat;
     Tree_order t;
     Peel p;
@@ -1076,6 +1075,8 @@ void ARG::draw_mutations(const function<double(Node *)> *time_of) {
     vector<Msg> above;
     vector<double> differs;
     vector<char> informed_msg, informed_tip;
+    vector<pair<double, int>> path;
+    auto time_at = [&](Node *n) { return time_of == nullptr ? n->time : (*time_of)(n); };
     auto r_it = recombinations.begin();
     bool stale = true;
     int bin = 0;
@@ -1095,6 +1096,7 @@ void ARG::draw_mutations(const function<double(Node *)> *time_of) {
             bin++;
         }
         double unit = penalty*thetas[bin]/(coordinates[bin + 1] - coordinates[bin]);
+        int category = 0;
         if (model.rates.size() == 1) {
             peel_site(flat, t, unit, pos, p);
             draw_states(flat, t, unit, p, state);
@@ -1102,17 +1104,157 @@ void ARG::draw_mutations(const function<double(Node *)> *time_of) {
             site_counts(flat, t, unit, p, above, differs, informed_msg, informed_tip);
         } else {
             mixture_counts(flat, t, unit, pos, p, above, differs, informed_msg, informed_tip);
-            draw_site_states(flat, t, unit, pos, p, state);
+            draw_site_states(flat, t, unit, pos, p, state, category);
         }
-        vector<pair<Branch, int>> &rows = mutations[pos];
-        vector<char> &flags = mutation_informed[pos];
+        double u = unit*model.rates[category];
+        const double *P = model.states == 2 ? nullptr : edge_transitions(model, flat, u, p);
+        vector<Mutation_row> &rows = mutations[pos];
         for (int k = 0; k < (int) flat.parents.size(); k++) {
-            bool top = k == t.top;
-            int above_state = top ? 0 : state[t.up[k]];
-            if (!p.missing[k] and (state[k] != above_state or (top and model.states != 2))) {
-                rows.push_back({Branch(flat.parents[k].first, flat.parents[k].second), state[k]});
-                flags.push_back(top ? 1 : informed_msg[k]);
+            if (p.missing[k]) {
+                continue;
             }
+            Node *lower = flat.parents[k].first, *upper = flat.parents[k].second;
+            if (k == t.top) {
+                if (model.states != 2) {
+                    rows.push_back({Branch(lower, upper), state[k], 1, time_at(lower)});
+                }
+                continue;
+            }
+            model.sample_path(state[t.up[k]], state[k], u*flat.lengths[k], P == nullptr ? nullptr : P + 16*k, path);
+            double top_time = time_at(upper);
+            for (auto &[tau, s] : path) {
+                rows.push_back({Branch(lower, upper), s, informed_tip[k], top_time - tau/u});
+            }
+        }
+    }
+    if (model.states == 2) {
+        return;
+    }
+    Flat_tree flat2;
+    Tree_order t2;
+    Peel p2;
+    int samples = 0;
+    for (Node *s : sample_nodes) {
+        samples = max(samples, s->index + 1);
+    }
+    vector<char> forced(samples, 0);
+    vector<int> below;
+    auto r2 = recombinations.begin();
+    bool stale2 = true;
+    int K = (int) model.rates.size();
+    bool unknown = column_base.empty();
+    for (int b2 = 0; b2 < bin_num and coordinates[b2] < sequence_length; b2++) {
+        double x0 = coordinates[b2], x1 = coordinates[b2 + 1];
+        while (r2 != recombinations.end() and r2->first <= x0) {
+            flat2.forward_update(r2->second);
+            r2++;
+            stale2 = true;
+        }
+        if (stale2) {
+            set_lengths(flat2, time_of);
+            t2.assign(flat2, root.get());
+            stale2 = false;
+        }
+        const Bin_gaps &g = gaps_of(b2);
+        double unit = penalty*thetas[b2]/(x1 - x0);
+        int nb = (int) flat2.parents.size();
+        auto mut_it = mutation_sites.lower_bound(x0);
+        auto una_it = lower_bound(unassayed_sites.begin(), unassayed_sites.end(), x0);
+        auto draw_segment = [&](double s, double t) {
+            below.assign(nb, 0);
+            for (int k = 0; k < nb; k++) {
+                Node *l = flat2.parents[k].first;
+                if (l->is_sample and !forced[l->index]) {
+                    below[k] += 1;
+                }
+                if (t2.up[k] >= 0) {
+                    below[t2.up[k]] += below[k];
+                }
+            }
+            int total = below[t2.top];
+            array<double, 4> weight = {0, 0, 0, 0};
+            double weight_total = 0;
+            bool have_weight = false;
+            for (double x = ceil(s); x < t; x += 1) {
+                while (mut_it != mutation_sites.end() and *mut_it < x) {
+                    ++mut_it;
+                }
+                if (mut_it != mutation_sites.end() and *mut_it == x) {
+                    continue;
+                }
+                while (una_it != unassayed_sites.end() and *una_it < x) {
+                    ++una_it;
+                }
+                if (una_it != unassayed_sites.end() and *una_it == x) {
+                    continue;
+                }
+                auto m = upper_bound(masked.begin(), masked.end(), make_pair(x, numeric_limits<double>::infinity()));
+                if (m != masked.begin() and prev(m)->second > x) {
+                    continue;
+                }
+                int base;
+                if (unknown) {
+                    if (!have_weight) {
+                        for (int b = 0; b < 4; b++) {
+                            double v = 0;
+                            for (int k = 0; k < K; k++) {
+                                peel_site(flat2, t2, unit*model.rates[k], 0.0, p2, b, &forced);
+                                v += root_value(p2.msg[t2.top], p2.count[0] > 0, p2.count[1] > 0);
+                            }
+                            weight[b] = v;
+                            weight_total += v;
+                        }
+                        have_weight = true;
+                    }
+                    double w = uniform_random()*weight_total;
+                    base = 0;
+                    while (base < 3 and w >= weight[base]) {
+                        w -= weight[base];
+                        base++;
+                    }
+                } else {
+                    base = column_base[(size_t) x];
+                    if (base < 0) {
+                        continue;
+                    }
+                }
+                int category = 0;
+                draw_site_states(flat2, t2, unit, 0.0, p2, state, category, base, &forced);
+                double u = unit*model.rates[category];
+                const double *P = edge_transitions(model, flat2, u, p2);
+                vector<Mutation_row> *rows = nullptr;
+                for (int k = 0; k < nb; k++) {
+                    if (k == t2.top or p2.missing[k]) {
+                        continue;
+                    }
+                    model.sample_path(state[t2.up[k]], state[k], u*flat2.lengths[k], P + 16*k, path);
+                    if (path.empty()) {
+                        continue;
+                    }
+                    if (rows == nullptr) {
+                        rows = &mutations[x];
+                        Node *top_node = flat2.parents[t2.top].first;
+                        rows->push_back({Branch(top_node, flat2.parents[t2.top].second), state[t2.top], 1, time_at(top_node)});
+                    }
+                    Node *lower = flat2.parents[k].first, *upper = flat2.parents[k].second;
+                    double top_time = time_at(upper);
+                    for (auto &[tau, st] : path) {
+                        rows->push_back({Branch(lower, upper), st, (char) (below[k] > 0 and below[k] < total), top_time - tau/u});
+                    }
+                }
+            }
+        };
+        fill(forced.begin(), forced.end(), 0);
+        double prev_x = x0;
+        for (size_t j = 0; j < g.sample.size(); j++) {
+            if (g.at[j] > prev_x) {
+                draw_segment(prev_x, g.at[j]);
+                prev_x = g.at[j];
+            }
+            forced[g.sample[j]] = g.d[j] < 0;
+        }
+        if (x1 > prev_x) {
+            draw_segment(prev_x, x1);
         }
     }
 }
@@ -1544,12 +1686,12 @@ void ARG::draw_site_states(const Flat_tree &flat, const Tree_order &t, double un
     draw_site_states(flat, t, unit, pos, p, state, category);
 }
 
-void ARG::draw_site_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<int> &state, int &category) {
+void ARG::draw_site_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<int> &state, int &category, int base, const vector<char> *forced_missing) {
     int K = (int) model.rates.size();
     vector<double> z(K);
     double total = 0;
     for (int k = 0; k < K; k++) {
-        peel_site(flat, t, unit*model.rates[k], pos, p);
+        peel_site(flat, t, unit*model.rates[k], pos, p, base, forced_missing);
         z[k] = root_value(p.msg[t.top], p.count[0] > 0, p.count[1] > 0);
         total += z[k];
     }
@@ -1559,7 +1701,7 @@ void ARG::draw_site_states(const Flat_tree &flat, const Tree_order &t, double un
         u -= z[k];
         k++;
     }
-    peel_site(flat, t, unit*model.rates[k], pos, p);
+    peel_site(flat, t, unit*model.rates[k], pos, p, base, forced_missing);
     draw_states(flat, t, unit*model.rates[k], p, state);
     category = k;
 }
@@ -2194,6 +2336,7 @@ const Bin_gaps &ARG::gaps_of(int bin) const {
         }
         g.before.push_back(before);
         g.bases.push_back(bases);
+        g.at.push_back(x);
         g.sample.push_back(get<2>(e)->index);
         g.d.push_back(get<1>(e));
         gaps -= get<1>(e);
@@ -2501,14 +2644,8 @@ void ARG::write_mutations(string filename) {
     file.open(filename);
     file.precision(numeric_limits<double>::max_digits10);
     for (auto &x : mutations) {
-        auto f = mutation_informed.find(x.first);
-        for (int i = 0; i < (int) x.second.size(); i++) {
-            auto &y = x.second[i];
-            file << x.first << " " << y.first.lower_node->index << " " << y.first.upper_node->index << " " << y.second;
-            if (f != mutation_informed.end() and i < (int) f->second.size()) {
-                file << " " << (int) f->second[i];
-            }
-            file << "\n";
+        for (auto &m : x.second) {
+            file << x.first << " " << m.branch.lower_node->index << " " << m.branch.upper_node->index << " " << m.state << " " << (int) m.informed << " " << (m.time + time_offset)*Ne << "\n";
         }
     }
 }

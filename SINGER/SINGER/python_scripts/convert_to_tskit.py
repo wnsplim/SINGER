@@ -32,10 +32,7 @@ def read_ts(node_file, edge_file, counts_file):
 def read_ARG(node_file, branch_file, mutation_file, counts_file, bases):
     tables = read_ts(node_file, branch_file, counts_file)
     arg_io.add_mutations(tables, mutation_file, 0.0, lambda n: n, bases)
-    tables.sort()
-    tables.build_index()
-    tables.compute_mutation_parents()
-    tables.compute_mutation_times()
+    arg_io.finish_mutations(tables)
     return tables
 
 
