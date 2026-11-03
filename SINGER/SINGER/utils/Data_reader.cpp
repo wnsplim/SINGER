@@ -759,7 +759,8 @@ vector<string> Data_reader::sample_names() {
             return names;
         }
     }
-    return names;
+    cerr << "Error: " << input << " has no #CHROM header line. " << endl;
+    exit(1);
 }
 
 vector<double> Data_reader::read_tip_ages(const string &filename) {
@@ -822,10 +823,10 @@ vector<double> Data_reader::read_tip_ages(const string &filename) {
     return ages;
 }
 
-vector<double> Data_reader::read_numbers(const string &filename, const string &missing_message, bool *complete) {
+vector<double> Data_reader::read_numbers(const string &filename, const string &missing_message) {
     ifstream fin(filename);
     if (!fin.good()) {
-        cerr << missing_message << endl;
+        cerr << missing_message << ": " << filename << endl;
         exit(1);
     }
     vector<double> v;
@@ -833,8 +834,9 @@ vector<double> Data_reader::read_numbers(const string &filename, const string &m
     while (fin >> x) {
         v.push_back(x);
     }
-    if (complete != nullptr) {
-        *complete = fin.eof();
+    if (!fin.eof()) {
+        cerr << "Error: " << filename << " holds a value that is not a number after its " << v.size() << "th number. " << endl;
+        exit(1);
     }
     return v;
 }

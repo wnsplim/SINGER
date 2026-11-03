@@ -56,7 +56,7 @@ public:
 
     std::vector<double> read_tip_ages(const std::string &filename);
 
-    static std::vector<double> read_numbers(const std::string &filename, const std::string &missing_message, bool *complete = nullptr);
+    static std::vector<double> read_numbers(const std::string &filename, const std::string &missing_message);
 
     static std::vector<std::string> read_last_line(const std::string &filename);
 

@@ -11,8 +11,7 @@
 Rate_map::Rate_map() {}
 
 void Rate_map::load_map(string mut_map_file, double start, double end) {
-    bool complete = false;
-    vector<double> v = Data_reader::read_numbers(mut_map_file, "input rate map file not found", &complete);
+    vector<double> v = Data_reader::read_numbers(mut_map_file, "input rate map file not found");
     rate_distances.push_back(0);
     double left;
     double right;
@@ -26,12 +25,16 @@ void Rate_map::load_map(string mut_map_file, double start, double end) {
             cerr << "Error: each segment of the rate map " << mut_map_file << " must start where the previous one ends. " << endl;
             exit(1);
         }
+        if (right <= left or rate < 0) {
+            cerr << "Error: the rate map " << mut_map_file << " has a segment " << left << " " << right << " with an end not above its start or a negative rate. " << endl;
+            exit(1);
+        }
         coordinates.push_back(left);
         mut_dist = rate_distances.back() + rate*(right - left);
         rate_distances.push_back(mut_dist);
         sequence_length = right;
     }
-    if (!complete or coordinates.empty()) {
+    if (v.size() % 3 != 0 or coordinates.empty()) {
         cerr << "Error: every line of the rate map " << mut_map_file << " must be 'left right rate'. " << endl;
         exit(1);
     }

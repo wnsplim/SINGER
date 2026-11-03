@@ -256,7 +256,7 @@ double Threader_smc::data_log_ratio(ARG &a) {
         for (int j = (int) path.size() - 1; j >= 0; j--) {
             int c = path[j];
             Msg B = A;
-            for (int sib : t.kids[v]) {
+            for (int sib : t.children[v]) {
                 if (sib != c) {
                     model.transition(u*flat.lengths[sib], T);
                     push_up(T, S, msg[sib], B);

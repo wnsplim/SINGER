@@ -215,30 +215,6 @@ double Tree::log_exp(double lambda, double x) {
     return -lambda*x + log(lambda);
 }
 
-void Tree::impute_states(double m, map<Node *, double> states) {
-    for (auto &x : parents) {
-        impute_states_helper(x.first, states);
-    }
-    for (auto &x : states) {
-        if (x.first->is_sample) {
-            x.first->write_state(m, x.second);
-        }
-    }
-}
-
-void Tree::impute_states_helper(Node *n, map<Node *, double> &states) {
-    if (n->index == -1) {
-        states[n] = 0;
-        return;
-    }
-    if (states.count(n) > 0) {
-        return;
-    }
-    Node *p = parents[n];
-    impute_states_helper(p, states);
-    states[n] = states[p];
-}
-
 double Tree::random() {
     double p = uniform_random();
     return p;

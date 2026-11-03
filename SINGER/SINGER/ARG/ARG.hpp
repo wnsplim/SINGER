@@ -93,7 +93,7 @@ struct Tree_order {
     vector<double> times = {};
     vector<int> order = {};
     vector<int> up = {};
-    vector<vector<int>> kids = {};
+    vector<vector<int>> children = {};
     int top = -1;
     vector<int> leaf = {};
 
@@ -414,8 +414,6 @@ public:
     void read_branches(string filename);
     
     void read_recombs(string filename);
-    
-    void read_muts(string filename);
 
     void write_cells(string filename);
 

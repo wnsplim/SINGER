@@ -523,7 +523,7 @@ void Sampler::write_sample() {
 
 void Sampler::load_resume_arg() {
     arg = ARG(Ne, sequence_length);
-    string node_file, branch_file, recomb_file, mut_file, coord_file;
+    string node_file, branch_file, recomb_file, coord_file;
     node_file = output_prefix + "_nodes_" + to_string(sample_index) + ".txt";
     branch_file= output_prefix + "_branches_" + to_string(sample_index) + ".txt";
     recomb_file = output_prefix + "_recombs_" + to_string(sample_index) + ".txt";
@@ -557,16 +557,7 @@ void Sampler::load_resume_arg() {
     arg.compute_assayed();
     set_entries(leaves);
     if (!arg.genotype_likelihoods.empty()) {
-        if (ifstream(cells_file).good()) {
-            arg.read_cells(cells_file);
-        } else {
-            mut_file = output_prefix + "_muts_" + to_string(sample_index) + ".txt";
-            if (!ifstream(mut_file).good()) {
-                mut_file = output_prefix + "_muts_1_" + to_string(sample_index) + ".txt";
-            }
-            cerr << "No " << cells_file << ": the cells are read from " << mut_file << " (a run written before the cells file)." << endl;
-            arg.read_muts(mut_file);
-        }
+        arg.read_cells(cells_file);
     }
     if (arg.augment) {
         arg.redraw_node_states();

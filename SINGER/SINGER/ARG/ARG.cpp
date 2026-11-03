@@ -537,15 +537,23 @@ void ARG::read_cells(string filename) {
     create_node_set();
     vector<Node *> nodes = node_list;
     string line;
+    int line_number = 0;
     while (getline(fin, line)) {
+        line_number += 1;
         istringstream iss(line);
         double pos;
-        int leaf, state;
-        if (!(iss >> pos)) {
-            continue;
+        vector<int> v;
+        int x;
+        bool has_pos = (bool) (iss >> pos);
+        while (has_pos and iss >> x) {
+            v.push_back(x);
         }
-        while (iss >> leaf >> state) {
-            nodes[leaf]->write_state(pos, state);
+        if (!has_pos or !iss.eof() or v.size() % 2 != 0) {
+            cerr << "Error: line " << line_number << " of " << filename << " is not 'position leaf state leaf state ...'. " << endl;
+            exit(1);
+        }
+        for (size_t i = 0; i < v.size(); i += 2) {
+            nodes[v[i]]->write_state(pos, v[i + 1]);
         }
     }
 }
@@ -729,8 +737,8 @@ void Tree_order::assign(const Flat_tree &flat, Node *root_node) {
         flat.parents[k].first->flat_index = k;
     }
     up.assign(nb, -1);
-    kids.resize(nb);
-    for (vector<int> &v : kids) {
+    children.resize(nb);
+    for (vector<int> &v : children) {
         v.clear();
     }
     top = -1;
@@ -747,7 +755,7 @@ void Tree_order::assign(const Flat_tree &flat, Node *root_node) {
             top = k;
         } else if (flat.parents[k].second->flat_index >= 0) {
             up[k] = flat.parents[k].second->flat_index;
-            kids[up[k]].push_back(k);
+            children[up[k]].push_back(k);
         }
     }
 }
@@ -926,9 +934,9 @@ void ARG::emission_single(const Flat_tree &flat, const Tree_order &t, double uni
             main[v] = 1;
             transmit_up(edge_matrix(model, P, unit*flat.lengths[v], v, T), S, s.above[v], outside[v]);
         }
-        for (int c : t.kids[v]) {
+        for (int c : t.children[v]) {
             Msg a = outside[v];
-            for (int d : t.kids[v]) {
+            for (int d : t.children[v]) {
                 if (d != c) {
                     push_up(edge_matrix(model, P, unit*flat.lengths[d], d, T), S, p.msg[d], a);
                 }
@@ -975,7 +983,7 @@ static void path_peel(const Site_model &model, const Flat_tree &flat, const Tree
     const double *P = S == 2 ? nullptr : edge_transitions(model, flat, unit, p);
     for (int q : p.path) {
         Msg m = {1.0, 1.0, 1.0, 1.0};
-        for (int k : t.kids[q]) {
+        for (int k : t.children[q]) {
             const Msg &s = p.in_path[k] ? out[k] : p.msg[k];
             push_up(edge_matrix(model, P, unit*flat.lengths[k], k, T), S, s, m);
         }
@@ -1199,9 +1207,9 @@ void ARG::outside_messages(const Flat_tree &flat, const Tree_order &t, double un
         if (v != t.top) {
             transmit_up(edge_matrix(model, P, unit*flat.lengths[v], v, T), S, above[v], outside[v]);
         }
-        for (int c : t.kids[v]) {
+        for (int c : t.children[v]) {
             Msg a = outside[v];
-            for (int d : t.kids[v]) {
+            for (int d : t.children[v]) {
                 if (d != c) {
                     push_up(edge_matrix(model, P, unit*flat.lengths[d], d, T), S, p.msg[d], a);
                 }
@@ -1354,7 +1362,7 @@ void ARG::informed_edges(const function<void(Node *, Node *, double, double)> &a
                 all_masked[k] = v;
             } else {
                 bool first = true;
-                for (int c : t.kids[k]) {
+                for (int c : t.children[k]) {
                     all_masked[k] = first ? all_masked[c] : intersect_sorted(all_masked[k], all_masked[c]);
                     first = false;
                 }
@@ -1363,9 +1371,9 @@ void ARG::informed_edges(const function<void(Node *, Node *, double, double)> &a
         all_out[t.top] = {{x0, x1}};
         for (int i = nb - 1; i >= 0; i--) {
             int v = t.order[i];
-            for (int c : t.kids[v]) {
+            for (int c : t.children[v]) {
                 vector<pair<double, double>> o = all_out[v];
-                for (int d : t.kids[v]) {
+                for (int d : t.children[v]) {
                     if (d != c) {
                         o = intersect_sorted(o, all_masked[d]);
                     }
@@ -1794,7 +1802,7 @@ void ARG::draw_states(const Flat_tree &flat, const Tree_order &t, double unit, c
     }
     double rest = 1;
     if (restricted) {
-        for (int c : t.kids[top]) {
+        for (int c : t.children[top]) {
             rest *= completion(c);
         }
     }
@@ -1817,7 +1825,7 @@ void ARG::draw_states(const Flat_tree &flat, const Tree_order &t, double unit, c
         if (uniform_random()*(a_same + a_diff) < a_same) {
             state[k] = same;
             rest = others;
-            for (int c : t.kids[k]) {
+            for (int c : t.children[k]) {
                 rest *= completion(c);
             }
         } else {
@@ -1970,7 +1978,7 @@ void ARG::repeel_path(const Flat_tree &flat, const Tree_order &t, double unit, i
     double T[16];
     for (int q = t.up[k]; q >= 0; q = t.up[q]) {
         Msg m = {1.0, 1.0, 1.0, 1.0};
-        for (int c : t.kids[q]) {
+        for (int c : t.children[q]) {
             model.transition(unit*flat.lengths[c], T);
             push_up(T, S, msg[c], m);
         }
@@ -2698,42 +2706,6 @@ void ARG::read_recombs(string filename) {
     node_set.clear();
 }
 
-void ARG::read_muts(string filename) {
-    ifstream fin(filename);
-    if (!fin.good()) {
-        cerr << "input file not found" << endl;
-        exit(1);
-    }
-    create_node_set();
-    vector<Node *> nodes = node_list;
-    map<double, map<Node *, double>> marked;
-    string line;
-    while (getline(fin, line)) {
-        istringstream iss(line);
-        double pos, lower, upper, state;
-        if (!(iss >> pos >> lower >> upper >> state)) {
-            continue;
-        }
-        if (pos <= sequence_length) {
-            mutation_sites.insert(pos);
-            Node *ln = nodes[(int) lower];
-            Node *un = upper == -1 ? root.get() : nodes[(int) upper];
-            marked[pos][ln] = state;
-            marked[pos][un] = 1 - state;
-        }
-    }
-    Tree tree = Tree();
-    auto m_it = marked.begin();
-    auto r_it = recombinations.begin();
-    while (r_it->first < sequence_length) {
-        tree.forward_update(r_it->second);
-        while (m_it != marked.end() and m_it->first < next(r_it)->first) {
-            tree.impute_states(m_it->first, m_it->second);
-            m_it++;
-        }
-        r_it++;
-    }
-}
 
 double ARG::get_arg_length() {
     Tree tree = get_tree_at(0);

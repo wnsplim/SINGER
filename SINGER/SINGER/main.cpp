@@ -79,6 +79,10 @@ int main(int argc, const char * argv[]) {
     set<string> ckp_skip = {"-resume", "-n", "-seed", "-debug", "-output"};
     if (resume_given and !ckp_prefix.empty()) {
         ifstream ckp(ckp_prefix + ".ckp");
+        if (!ckp.good()) {
+            cerr << "Error: -resume needs the checkpoint " << ckp_prefix << ".ckp, which was not found. " << endl;
+            exit(1);
+        }
         string line;
         while (getline(ckp, line)) {
             istringstream iss(line);
@@ -325,6 +329,10 @@ int main(int argc, const char * argv[]) {
                 cerr << "Error: -scaling_bin flag expects a number. " << endl;
                 exit(1);
             }
+            if (scaling_bin < 1) {
+                cerr << "Error: -scaling_bin must be at least 1. " << endl;
+                exit(1);
+            }
         }
         else if (arg == "-hmm_epsilon") {
             if (i + 1 >= n_args || args[i+1][0] == '-') {
@@ -383,12 +391,12 @@ int main(int argc, const char * argv[]) {
         }
         else if (arg == "-model") {
             if (i + 1 >= n_args || args[i+1][0] == '-') {
-                cerr << "Error: -model flag expects JC, K80, F81, HKY or GTR. " << endl;
+                cerr << "Error: -model flag expects CFN, JC, K80, F81, HKY or GTR. " << endl;
                 exit(1);
             }
             model_name = args[++i];
             if (model_name != "CFN" and model_name != "JC" and model_name != "K80" and model_name != "F81" and model_name != "HKY" and model_name != "GTR") {
-                cerr << "Error: -model flag expects JC, K80, F81, HKY or GTR. " << endl;
+                cerr << "Error: -model flag expects CFN, JC, K80, F81, HKY or GTR. " << endl;
                 exit(1);
             }
         }
@@ -409,6 +417,10 @@ int main(int argc, const char * argv[]) {
             }
         }
         else if (arg == "-augment") {
+            if (i + 1 < n_args && args[i+1][0] != '-') {
+                cerr << "Error: -augment flag doesn't take any value. " << endl;
+                exit(1);
+            }
             augment = true;
         }
         else if (arg == "-output") {
@@ -476,14 +488,6 @@ int main(int argc, const char * argv[]) {
         else {
             cerr << "Error: Unknown flag. " << arg << endl;
             exit(1);
-        }
-    }
-    if (!resume and !output_prefix.empty()) {
-        ofstream ckp(output_prefix + ".ckp");
-        for (auto &g : given) {
-            if (ckp_skip.count(g.first) == 0) {
-                ckp << g.first << " " << g.second << "\n";
-            }
         }
     }
     if (m_value.size() == 0) {
@@ -564,11 +568,8 @@ int main(int argc, const char * argv[]) {
         cerr << "Error: an alignment input needs -model JC, K80, F81, HKY or GTR. " << endl;
         exit(1);
     }
-    bool ploidy_given = false, polar_given = false;
-    for (auto &g : given) {
-        ploidy_given = ploidy_given or g.first == "-ploidy";
-        polar_given = polar_given or g.first == "-polar";
-    }
+    bool ploidy_given = find(args.begin(), args.end(), "-ploidy") != args.end();
+    bool polar_given = find(args.begin(), args.end(), "-polar") != args.end();
     if (alignment) {
         if (!ploidy_given) {
             ploidy = 1;
@@ -602,6 +603,14 @@ int main(int argc, const char * argv[]) {
     if (augment and model_name == "CFN") {
         cerr << "Error: -augment applies to the four-state models only. " << endl;
         exit(1);
+    }
+    if (!resume and !output_prefix.empty()) {
+        ofstream ckp(output_prefix + ".ckp");
+        for (auto &g : given) {
+            if (ckp_skip.count(g.first) == 0) {
+                ckp << g.first << " " << g.second << "\n";
+            }
+        }
     }
     sampler.model_name = model_name;
     sampler.gamma_k = gamma_k;

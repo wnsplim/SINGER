@@ -50,10 +50,6 @@ public:
 
     double log_exp(double lambda, double x);
 
-    void impute_states(double m, map<Node *, double> states);
-    
-    void impute_states_helper(Node *n, map<Node *, double> &states);
-    
     double random();
 
 };
