@@ -22,7 +22,6 @@ public:
     double cut_time;
     int extra = 0;
     double rho = 0;
-    double first_moment = 0;
 
     coalescent_calculator(double t);
 
@@ -36,8 +35,6 @@ public:
 
     void update(double t_old, double t_new);
 
-    pair<double, double> compute_time_weights(double x, double y);
-
     double prob(double x, double y);
 
     double rel_prob(double x, double y);
@@ -49,8 +46,6 @@ public:
     double find_median(double x, double y);
 
     double surv(double x);
-
-    double rate(double x);
 
     double surv_inv(double p);
 
@@ -66,12 +61,9 @@ private:
     vector<double> Lam = {};
     vector<double> E = {};
     vector<double> G = {};
-    vector<double> Q = {};
     vector<double> W = {};
     vector<double> B = {};
     double tail_G = 0;
-    double tail_Q = 0;
-    double g_cut = 0;
     int rebuild_from = 0;
     double memo_x[4] = {}, memo_g[4] = {};
     int memo_n = 0, memo_next = 0;
@@ -80,7 +72,7 @@ private:
 
     void refresh();
 
-    void at(double x, double &g, double &q);
+    double at(double x);
 
     double g_at(double x);
 

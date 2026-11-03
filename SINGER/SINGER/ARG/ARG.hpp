@@ -91,7 +91,6 @@ struct Bin_gaps {
 
 struct Tree_order {
     vector<double> times = {};
-    vector<int> order = {};
     vector<int> up = {};
     vector<vector<int>> children = {};
     int top = -1;
@@ -175,7 +174,6 @@ public:
     bool any_missing = false;
     vector<double> unassayed_sites = {};
     double sequence_length = 0;
-    double bin_size = 0;
     vector<double> coordinates = {};
     vector<double> rhos = {};
     vector<double> thetas = {};
@@ -208,8 +206,6 @@ public:
     
     int get_index(double x);
     
-    void compute_rhos_thetas(double r, double m);
-    
     void compute_rhos_thetas(double r, double m, Rate_map &rm, Rate_map &mm, double start);
     
     void build_singleton_arg(const Node_ptr &n);
@@ -220,8 +216,6 @@ public:
     
     void add_new_node(double t, bool sample);
 
-    void resort_after_time_change();
-    
     Tree get_tree_at(double x);
 
     map<double, Tree> anchors = {};
@@ -246,8 +240,6 @@ public:
 
     void approx_sample_recombinations();
 
-    void adjust_recombinations();
-
     void read_coordinates(string filename);
 
     void write_coordinates(string filename);
@@ -266,8 +258,6 @@ public:
 
     unordered_map<Node *, vector<int>> leaf_entries = {};
 
-    const ARG *entry_owner = nullptr;
-
     void index_genotype_likelihoods();
 
     void index_missing(const vector<Node *> &leaves);
@@ -277,8 +267,6 @@ public:
     vector<pair<double, int>>::iterator site_at(double x);
 
     void set_collapsed(Node *leaf, double x, double y);
-
-    const vector<Genotype_likelihood> &entries() const;
 
     pair<const int *, const int *> entries_in(Node *leaf, double x, double y) const;
 

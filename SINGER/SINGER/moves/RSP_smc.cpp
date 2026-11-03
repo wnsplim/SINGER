@@ -156,8 +156,7 @@ void RSP_smc::sample_recombination(Recombination &r, double cut_time, Tree &tree
     }
     double total = accumulate(weights.begin(), weights.end(), 0.0);
     if (total <= 0) {
-        cout << r.pos << " " << candidates.size() << endl;
-        cerr << "no candidates in smc sampling" << endl;
+        cerr << "no candidates in smc sampling at position " << r.pos << endl;
         exit(1);
     }
     double w = uniform_random()*total;
@@ -315,26 +314,6 @@ void RSP_smc::approx_sample_recombination(Recombination &r, double cut_time) {
     double ub = min(r.deleted_node->time, r.inserted_node->time);
     if (r.start_time >= ub) {
         r.start_time = nextafter(ub, -numeric_limits<double>::infinity());
-    }
-    assert(r.start_time <= ub);
-}
-
-void RSP_smc::adjust(Recombination &r, double cut_time) {
-    if (r.pos == 0) {
-        return;
-    }
-    if (r.start_time > 0) {
-        return;
-    }
-    if (r.deleted_branches.size() == 0) {
-        return;
-    }
-    double lb, ub;
-    lb = max(cut_time, r.source_branch.lower_node->time);
-    ub = min(r.deleted_node->time, r.inserted_node->time);
-    r.start_time = choose_time(lb, ub);
-    if (r.start_time >= ub or r.start_time <= lb) {
-        r.start_time = 0.5*(lb + ub);
     }
     assert(r.start_time <= ub);
 }

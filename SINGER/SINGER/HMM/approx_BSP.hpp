@@ -27,11 +27,7 @@ public:
     double epsilon = 1e-30;
     shared_ptr<Emission> eh;
     set<double> check_points = {};
-    
-    double rho_unit = 0;
-    int grace_period = 0;
-    double penalty = 1;
-    
+
     vector<double> rhos = {};
     vector<double> recomb_sums = {};
     vector<double> weight_sums = {};
@@ -82,8 +78,7 @@ public:
     size_t forward_cap = 0;
     vector<size_t> row_starts = {0};
     size_t n_used = 0;
-    
-    bool states_change = false;
+
     set<Branch> valid_branches = {};
     
     size_t n_rows = 0;

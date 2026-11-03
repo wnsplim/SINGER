@@ -22,7 +22,6 @@ public:
     int categories = 1;
     double kappa = 1;
     vector<double> exchangeabilities = vector<double>(6, 1.0);
-    vector<double> rate_matrix = {};
     int stamp = 0;
 
     void set(const string &model, const vector<double> &frequencies, const vector<double> &exchangeabilities, double kappa);
@@ -54,8 +53,6 @@ public:
     void transition_eigen(double x, double *T) const;
 
     void count_matrix(double x, double *M) const;
-
-    double row_sum(double x) const;
 
     static double regularized_gamma(double a, double x);
 

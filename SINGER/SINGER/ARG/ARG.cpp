@@ -30,7 +30,6 @@ ARG::~ARG() {
 }
 
 void ARG::discretize(double s) {
-    bin_size = s;
     auto recomb_it = recombinations.upper_bound(0);
     double curr_pos = 0;
     while (curr_pos < sequence_length) {
@@ -88,14 +87,6 @@ int ARG::get_index(double x) {
     return index;
 }
 
-void ARG::compute_rhos_thetas(double r, double m) {
-    int n = (int) coordinates.size() - 1;
-    for (int i = 0; i < n; i++) {
-        rhos.push_back(r*(coordinates[i+1] - coordinates[i]));
-        thetas.push_back(m*(coordinates[i+1] - coordinates[i]));
-    }
-}
-
 void ARG::compute_rhos_thetas(double r, double m, Rate_map &rm, Rate_map &mm, double start) {
     int n = (int) coordinates.size() - 1;
     for (int i = 0; i < n; i++) {
@@ -149,19 +140,6 @@ void ARG::add_new_node(double t, bool sample) {
             sample_nodes.insert(n.get());
         }
     }
-}
- 
-void ARG::resort_after_time_change() {
-    for (auto &x : recombinations) {
-        Recombination &r = x.second;
-        r.deleted_branches = set<Branch>(r.deleted_branches.begin(), r.deleted_branches.end());
-        r.inserted_branches = set<Branch>(r.inserted_branches.begin(), r.inserted_branches.end());
-    }
-    node_set.clear();
-    create_node_set();
-    anchors_changed(0, INT_MAX);
-    start_tree = get_tree_at(start);
-    end_tree = get_tree_at(end);
 }
 
 Tree ARG::get_tree_at(double x) {
@@ -231,19 +209,9 @@ void ARG::rebuild_anchors() {
 static vector<map<double, Recombination>::node_type> spare_records;
 
 void ARG::window_copy_into(ARG &c, double lo_pos) {
-    c.Ne = Ne;
-    c.root = root;
     c.cut_node = cut_node;
-    c.cut_node_owner = cut_node_owner;
     c.cut_time = cut_time;
-    c.anchors.clear();
     c.anchor_dirty.clear();
-    c.anchor_step = anchor_step;
-    c.mutation_sites.clear();
-    for (auto it = mutation_sites.lower_bound(lo_pos); it != mutation_sites.end() and *it <= end; ++it) {
-        c.mutation_sites.insert(c.mutation_sites.end(), *it);
-    }
-    c.mutation_sites.insert(c.mutation_sites.end(), *mutation_sites.rbegin());
     while (!c.recombinations.empty()) {
         spare_records.push_back(c.recombinations.extract(c.recombinations.begin()));
     }
@@ -267,31 +235,14 @@ void ARG::window_copy_into(ARG &c, double lo_pos) {
         copy_record(*r_it);
     }
     copy_record(*recombinations.rbegin());
-    c.bin_num = bin_num;
-    c.penalty = penalty;
-    c.ancestral_prob = ancestral_prob;
-    c.model = model;
-    c.any_missing = any_missing;
-    c.unassayed_sites = unassayed_sites;
-    c.assayed = assayed;
-    c.sample_nodes = sample_nodes;
-    c.masked = masked;
     c.sequence_length = sequence_length;
-    c.entry_owner = entry_owner == nullptr ? this : entry_owner;
-    c.bin_size = bin_size;
     if (c.coordinates.size() != coordinates.size()) {
         c.coordinates = coordinates;
         c.rhos = rhos;
-        c.thetas = thetas;
     }
-    c.joining_branches = joining_branches;
-    c.removed_branches = removed_branches;
     c.start = start;
     c.end = end;
-    c.cut_pos = cut_pos;
-    c.cut_tree = cut_tree;
     c.start_tree = start_tree;
-    c.end_tree = end_tree;
 }
 
 Node *ARG::get_query_node_at(double x) {
@@ -468,21 +419,6 @@ void ARG::approx_sample_recombinations() {
     }
 }
 
-void ARG::adjust_recombinations() {
-    RSP_smc rsp = RSP_smc();
-    auto it = recombinations.upper_bound(0);
-    while (it->first < sequence_length) {
-        Recombination &r = it->second;
-        if (r.pos != 0 and r.pos < sequence_length) {
-            rsp.adjust(r, 0);
-            assert(r.start_time > 0);
-            assert(r.start_time <= r.inserted_node->time);
-            assert(r.start_time <= r.deleted_node->time);
-        }
-        it++;
-    }
-}
-
 void ARG::read_coordinates(string filename) {
     for (double x : Data_reader::read_numbers(filename, "input file not found")) {
         coordinates.push_back(x);
@@ -534,7 +470,6 @@ void ARG::read_cells(string filename) {
         cerr << "cells file not found: " << filename << endl;
         exit(1);
     }
-    create_node_set();
     vector<Node *> nodes = node_list;
     string line;
     int line_number = 0;
@@ -683,13 +618,12 @@ void ARG::index_missing(const vector<Node *> &leaves) {
 }
 
 pair<const int *, const int *> ARG::entries_in(Node *leaf, double x, double y) const {
-    const ARG *o = entry_owner == nullptr ? this : entry_owner;
-    auto it = o->leaf_entries.find(leaf);
-    if (it == o->leaf_entries.end()) {
+    auto it = leaf_entries.find(leaf);
+    if (it == leaf_entries.end()) {
         return {nullptr, nullptr};
     }
     const vector<int> &v = it->second;
-    auto pos_less = [&](int i, double p) { return o->genotype_likelihoods[i].pos < p; };
+    auto pos_less = [&](int i, double p) { return genotype_likelihoods[i].pos < p; };
     auto lo = lower_bound(v.begin(), v.end(), x, pos_less);
     auto hi = lower_bound(lo, v.end(), y, pos_less);
     return {v.data() + (lo - v.begin()), v.data() + (hi - v.begin())};
@@ -713,10 +647,6 @@ void ARG::set_collapsed(Node *leaf, double x, double y) {
     }
 }
 
-const vector<Genotype_likelihood> &ARG::entries() const {
-    return entry_owner == nullptr ? genotype_likelihoods : entry_owner->genotype_likelihoods;
-}
-
 int Tree_order::index_of(const Flat_tree &flat, Node *n) const {
     int k = (int) (lower_bound(times.begin(), times.end(), n->time) - times.begin());
     while (flat.parents[k].first != n) {
@@ -728,10 +658,6 @@ int Tree_order::index_of(const Flat_tree &flat, Node *n) const {
 void Tree_order::assign(const Flat_tree &flat, Node *root_node) {
     int nb = (int) flat.parents.size();
     times.resize(nb);
-    if ((int) order.size() != nb) {
-        order.resize(nb);
-        iota(order.begin(), order.end(), 0);
-    }
     for (int k = 0; k < nb; k++) {
         times[k] = flat.parents[k].first->time;
         flat.parents[k].first->flat_index = k;
@@ -852,7 +778,7 @@ void ARG::peel_site(const Flat_tree &flat, const Tree_order &t, double unit, dou
     fill(p.count, p.count + 4, 0);
     double T[16];
     const double *P = S == 2 ? nullptr : edge_transitions(model, flat, unit, p);
-    for (int k : t.order) {
+    for (int k = 0; k < nb; k++) {
         Node *l = flat.parents[k].first;
         if (l->is_sample and !p.missing[k]) {
             int code = base >= 0 ? (S == 2 ? base : 1 << base) : (int) l->get_state(pos);
@@ -925,8 +851,7 @@ void ARG::emission_single(const Flat_tree &flat, const Tree_order &t, double uni
     vector<char> &main = p.in_main;
     main.assign(nb, 0);
     main[t.top] = 1;
-    for (int i = nb - 1; i >= 0; i--) {
-        int v = t.order[i];
+    for (int v = nb - 1; v >= 0; v--) {
         if (v != t.top) {
             if (t.up[v] < 0 or !main[t.up[v]]) {
                 continue;
@@ -1202,8 +1127,7 @@ void ARG::outside_messages(const Flat_tree &flat, const Tree_order &t, double un
     above[t.top] = {prior[0], prior[1], prior[2], prior[3]};
     vector<Msg> outside(nb);
     outside[t.top] = above[t.top];
-    for (int i = nb - 1; i >= 0; i--) {
-        int v = t.order[i];
+    for (int v = nb - 1; v >= 0; v--) {
         if (v != t.top) {
             transmit_up(edge_matrix(model, P, unit*flat.lengths[v], v, T), S, above[v], outside[v]);
         }
@@ -1234,7 +1158,7 @@ void ARG::site_counts(const Flat_tree &flat, const Tree_order &t, double unit, c
         factor = same >= 0 ? Z/(Z - prior[same]*(1 - penalty)) : 1.0;
     }
     vector<int> below(nb, 0);
-    for (int k : t.order) {
+    for (int k = 0; k < nb; k++) {
         Node *l = flat.parents[k].first;
         if (l->is_sample and !p.missing[k]) {
             below[k] += 1;
@@ -1348,7 +1272,7 @@ void ARG::informed_edges(const function<void(Node *, Node *, double, double)> &a
             }
         };
         vector<vector<pair<double, double>>> all_masked(nb), all_out(nb);
-        for (int k : t.order) {
+        for (int k = 0; k < nb; k++) {
             Node *l = flat.parents[k].first;
             if (l->is_sample) {
                 vector<pair<double, double>> v;
@@ -1369,8 +1293,7 @@ void ARG::informed_edges(const function<void(Node *, Node *, double, double)> &a
             }
         }
         all_out[t.top] = {{x0, x1}};
-        for (int i = nb - 1; i >= 0; i--) {
-            int v = t.order[i];
+        for (int v = nb - 1; v >= 0; v--) {
             for (int c : t.children[v]) {
                 vector<pair<double, double>> o = all_out[v];
                 for (int d : t.children[v]) {
@@ -1500,11 +1423,7 @@ void ARG::expected_counts(const function<double(Node *)> *time_of, const functio
     vector<Msg> above2;
     vector<double> differs2;
     vector<char> informed_msg2, informed_tip2;
-    int samples = 0;
-    for (Node *s : sample_nodes) {
-        samples = max(samples, s->index + 1);
-    }
-    vector<char> forced(samples, 0);
+    vector<char> forced(sample_nodes.size(), 0);
     auto r2 = recombinations.begin();
     bool stale2 = true;
     for (int b2 = 0; b2 < bin_num and coordinates[b2] < sequence_length; b2++) {
@@ -1765,8 +1684,7 @@ void ARG::draw_states(const Flat_tree &flat, const Tree_order &t, double unit, c
             w[s] = prior[s]*msg[top][s];
         }
         state[top] = draw(w);
-        for (int i = nb - 1; i >= 0; i--) {
-            int k = t.order[i];
+        for (int k = nb - 1; k >= 0; k--) {
             if (k == top) {
                 continue;
             }
@@ -1806,8 +1724,7 @@ void ARG::draw_states(const Flat_tree &flat, const Tree_order &t, double unit, c
             rest *= completion(c);
         }
     }
-    for (int i = nb - 1; i >= 0; i--) {
-        int k = t.order[i];
+    for (int k = nb - 1; k >= 0; k--) {
         if (k == top) {
             continue;
         }
@@ -1839,7 +1756,8 @@ void ARG::resample_site(const Flat_tree &flat, const Tree_order &t, int bin, dou
     int nb = (int) flat.parents.size();
     int top = t.top;
     double unit = penalty*thetas[bin]/(coordinates[bin + 1] - coordinates[bin]);
-    double prior[2] = {ancestral_prob, 1 - ancestral_prob};
+    double prior[4];
+    root_prior(prior);
     peel_site(flat, t, unit, pos, p);
     const vector<char> &missing = p.missing;
     vector<size_t> active;
@@ -1895,7 +1813,7 @@ void ARG::resample_site(const Flat_tree &flat, const Tree_order &t, int bin, dou
             }
         }
         vector<array<int, 2>> fixed(nb, {0, 0});
-        for (int k : t.order) {
+        for (int k = 0; k < nb; k++) {
             if (flat.parents[k].first->is_sample and !missing[k] and !free[k]) {
                 fixed[k][state[k]] += 1;
             }
@@ -1935,8 +1853,7 @@ void ARG::resample_site(const Flat_tree &flat, const Tree_order &t, int bin, dou
         }
         int b = j/2, r = j%2;
         vector<char> inside(nb, 0);
-        for (int i = nb - 1; i >= 0; i--) {
-            int k = t.order[i];
+        for (int k = nb - 1; k >= 0; k--) {
             inside[k] = k == b or (t.up[k] >= 0 and inside[t.up[k]]);
             state[k] = inside[k] ? 1 - r : r;
         }
@@ -1961,8 +1878,9 @@ void ARG::reference_peel(const Flat_tree &flat, const Tree_order &t, double unit
     int S = model.states;
     double T[16];
     Msg leaf = leaf_message(S == 2 ? base : 1 << base);
-    msg.assign(flat.parents.size(), {1.0, 1.0, 1.0, 1.0});
-    for (int k : t.order) {
+    int nb = (int) flat.parents.size();
+    msg.assign(nb, {1.0, 1.0, 1.0, 1.0});
+    for (int k = 0; k < nb; k++) {
         if (flat.parents[k].first->is_sample) {
             msg[k] = leaf;
         }
@@ -1995,8 +1913,7 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
     auto recomb_it = recombinations.upper_bound(x);
     auto mut_it = mutation_sites.lower_bound(x);
     auto [qi, qe] = entries_in(lineage.begin()->second.lower_node, x, y);
-    const vector<Genotype_likelihood> &gl = entries();
-    const ARG *owner = entry_owner == nullptr ? this : entry_owner;
+    const vector<Genotype_likelihood> &gl = genotype_likelihoods;
     Tree_order &t = likelihood_order;
     Peel &peel = likelihood_peel;
     bool order_stale = true;
@@ -2122,7 +2039,7 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
         }
         double rest = assayed[i];
         array<double, 4> rest_b = {0, 0, 0, 0};
-        const Bin_gaps *gp = (any_missing or S != 2) ? &owner->gaps_of(i) : nullptr;
+        const Bin_gaps *gp = (any_missing or S != 2) ? &gaps_of(i) : nullptr;
         if (S != 2) {
             rest_b = gp->all_bases;
         }

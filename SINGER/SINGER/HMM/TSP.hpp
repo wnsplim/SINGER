@@ -20,7 +20,6 @@ class TSP {
 public:
     
     double cut_time = 0;
-    double lower_bound = 0;
     double gap = 0;
     int min_num = 1;
     double epsilon = 1e-7;
@@ -119,15 +118,13 @@ public:
     void rewind_to(int x);
 
     void forward_to(int x);
-    vector<double> thetas = {};
-    
+
     vector<double> lower_sums = {};
     vector<double> upper_sums = {};
     vector<double> diagonals = {};
     vector<double> factors = {};
     vector<double> masses = {};
     vector<double> lower_diagonals = {};
-    vector<double> upper_diagonals = {};
     vector<double> stays = {};
     vector<double> selfs = {};
 
@@ -153,7 +150,7 @@ public:
     void update_norms(Node *query_node);
 
     vector<double> cd_lb = {}, cd_ub = {}, cd_time = {};
-    vector<double> cd_diagonals = {}, cd_lower = {}, cd_upper = {}, cd_factors = {}, cd_stays = {}, cd_selfs = {};
+    vector<double> cd_diagonals = {}, cd_lower = {}, cd_factors = {}, cd_stays = {}, cd_selfs = {};
     double cd_rho = -1, cd_sister_mass = -1, cd_top = 0;
     bool cd_valid = false;
     vector<double> A = {}, Bv = {}, BA = {}, BB = {}, GA = {}, GB = {}, HA = {}, HB = {}, SA = {}, SB = {};
@@ -169,7 +166,6 @@ public:
     vector<double> null_emit_probs = {};
     vector<double> mut_emit_probs = {};
     int sample_index = -1;
-    double log_h = 0;
     double sel_log_q = 0;
     double time_log_q = 0;
     Node *find_node = nullptr;

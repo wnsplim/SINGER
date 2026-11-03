@@ -35,10 +35,6 @@ void Node::add_mutation(double pos) {
     set_site(pos, 1);
 }
 
-void Node::add_missing(double pos) {
-    missing_sites.push_back(pos);
-}
-
 bool Node::is_missing(double pos) {
     if (binary_search(missing_sites.begin(), missing_sites.end(), pos)) {
         return true;

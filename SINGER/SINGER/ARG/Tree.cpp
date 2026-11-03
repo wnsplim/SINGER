@@ -211,10 +211,6 @@ double Tree::prior_likelihood() {
     return log_likelihood;
 }
 
-double Tree::log_exp(double lambda, double x) {
-    return -lambda*x + log(lambda);
-}
-
 double Tree::random() {
     double p = uniform_random();
     return p;

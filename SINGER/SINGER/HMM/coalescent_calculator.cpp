@@ -79,11 +79,10 @@ void coalescent_calculator::refresh() {
         Lam.resize(m);
         E.resize(m);
         G.resize(m);
-        Q.resize(m);
         W.resize(m);
         B.resize(m);
         kk.resize(m);
-        j0 = 0; // k = m - j shifts for the whole array when the size changes
+        j0 = 0;
     }
     if (j0 == 0) {
         E[0] = exp(-Lam[0]);
@@ -98,7 +97,6 @@ void coalescent_calculator::refresh() {
             E[j+1] = ea;
             Lam[j+1] = Lam[j];
             G[j+1] = G[j];
-            Q[j+1] = Q[j];
             B[j+1] = B[j] + W[j]*dt + 0.5*dt*dt;
             W[j+1] = W[j] + dt;
             continue;
@@ -107,7 +105,6 @@ void coalescent_calculator::refresh() {
         E[j+1] = eb;
         Lam[j+1] = Lam[j] + k*dt;
         G[j+1] = G[j] + (ea - eb)/k;
-        Q[j+1] = Q[j] + ((t[j] - cut_time)*ea - (t[j+1] - cut_time)*eb)/k + (ea - eb)/k/k;
         double e = -expm1(-k*dt);
         B[j+1] = B[j] + W[j]*e/k + dt/k - e/k/k;
         W[j+1] = W[j]*(1 - e) + e/k;
@@ -115,31 +112,22 @@ void coalescent_calculator::refresh() {
     double ez = exp(-Lam[m-1]);
     double kz = 1 + extra;
     tail_G = ez/kz;
-    tail_Q = ((t[m-1] - cut_time)/kz + 1/(kz*kz))*ez;
-    first_moment = G[m-1] + tail_G;
     rebuild_from = m;
-    double q_cut;
-    at(cut_time, g_cut, q_cut);
 }
 
-void coalescent_calculator::at(double x, double &g, double &q) {
+double coalescent_calculator::at(double x) {
     int m = (int) t.size();
     if (isinf(x)) {
-        g = G[m-1] + tail_G;
-        q = Q[m-1] + tail_Q;
-        return;
+        return G[m-1] + tail_G;
     }
     int j = (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
     double k = kk[j] + extra;
     if (k == 0) {
-        g = G[j];
-        q = Q[j];
-        return;
+        return G[j];
     }
     double ea = E[j];
     double ex = exp(-(Lam[j] + k*(x - t[j])));
-    g = G[j] + (ea - ex)/k;
-    q = Q[j] + ((t[j] - cut_time)*ea - (x - cut_time)*ex)/k + (ea - ex)/k/k;
+    return G[j] + (ea - ex)/k;
 }
 
 double coalescent_calculator::g_at(double x) {
@@ -148,8 +136,7 @@ double coalescent_calculator::g_at(double x) {
             return memo_g[k];
         }
     }
-    double g, q;
-    at(x, g, q);
+    double g = at(x);
     memo_x[memo_next] = x;
     memo_g[memo_next] = g;
     memo_next = (memo_next + 1) % 4;
@@ -159,7 +146,7 @@ double coalescent_calculator::g_at(double x) {
 
 double coalescent_calculator::prob(double x, double y) {
     refresh();
-    double gx = (x == cut_time) ? g_cut : g_at(x);
+    double gx = (x == cut_time) ? 0 : g_at(x);
     double gy = g_at(y);
     return max(gy - gx, 0.0);
 }
@@ -218,10 +205,6 @@ double coalescent_calculator::log_density(double x, double y, double s) {
     return p > 0 ? lx - ls - log(p) : -numeric_limits<double>::infinity();
 }
 
-double coalescent_calculator::find_median(double x, double y) {
-    return compute_time_weights(x, y).first;
-}
-
 double coalescent_calculator::surv(double x) {
     if (isinf(x)) {
         return 0;
@@ -229,12 +212,6 @@ double coalescent_calculator::surv(double x) {
     refresh();
     int j = (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
     return exp(-(Lam[j] + (kk[j] + extra)*(x - t[j])));
-}
-
-double coalescent_calculator::rate(double x) {
-    refresh();
-    int j = (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
-    return (double)(kk[j] + extra);
 }
 
 double coalescent_calculator::surv_inv(double p) {
@@ -276,9 +253,12 @@ double coalescent_calculator::recomb_mass(double s, double v) {
     return b2 + wx*(gv - gx)*exp(lx);
 }
 
-pair<double, double> coalescent_calculator::compute_time_weights(double x, double y) {
+double coalescent_calculator::find_median(double x, double y) {
     if (x == y) {
-        return {x, 0};
+        return x;
+    }
+    if (y - x < 0.001) {
+        return 0.5*(x + y);
     }
     refresh();
     int m = (int) t.size();
@@ -302,11 +282,5 @@ pair<double, double> coalescent_calculator::compute_time_weights(double x, doubl
         a = b;
         j += 1;
     }
-    double time = x + Q1/P;
-    double w = E[j < m ? j : m-1]*((x - cut_time)*P + Q1)/first_moment;
-    if (y - x < 0.001) {
-        time = 0.5*(x + y);
-        w = (time - cut_time)*prob(x, y)/first_moment;
-    }
-    return {time, w};
+    return x + Q1/P;
 }

@@ -227,7 +227,7 @@ double Threader_smc::data_log_ratio(ARG &a) {
     double T[16];
     Msg ones = {1.0, 1.0, 1.0, 1.0}, zero = {0.0, 0.0, 0.0, 0.0};
     auto [qi, qe] = a.entries_in(a.removed_branches.begin()->second.lower_node, start, end);
-    const vector<Genotype_likelihood> &gl = a.entries();
+    const vector<Genotype_likelihood> &gl = a.genotype_likelihoods;
     auto recomb_it = a.recombinations.upper_bound(start);
     auto mut_it = a.mutation_sites.lower_bound(start);
     auto oj = a.joining_branches.begin(), on = a.removed_branches.begin();

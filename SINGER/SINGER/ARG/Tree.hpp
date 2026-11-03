@@ -48,8 +48,6 @@ public:
 
     double prior_likelihood();
 
-    double log_exp(double lambda, double x);
-
     double random();
 
 };

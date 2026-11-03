@@ -37,8 +37,6 @@ public:
     double unchanged_recomb_length(const Flat_tree &tree);
     
     void approx_sample_recombination(Recombination &r, double cut_time);
-    
-    void adjust(Recombination &r, double cut_time);
 
 private:
 

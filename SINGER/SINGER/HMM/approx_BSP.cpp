@@ -97,7 +97,6 @@ void approx_BSP::reset() {
     recomb_sum = 0;
     weight_sum = 0;
     sample_index = -1;
-    states_change = false;
     cc = nullptr;
     n_arena = 0;
 }

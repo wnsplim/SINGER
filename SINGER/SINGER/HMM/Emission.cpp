@@ -121,16 +121,11 @@ double Emission::mut_emit(Branch &branch, double norm, const Edge_matrices *cach
 }
 
 double Emission::mut_emit(Branch &branch, double time, Node *node, double norm) {
-    if (model->states == 2) {
-        double emit = norm;
-        for (const Site_messages *site : sites) {
-            emit *= site_ratio_two(*site, branch, time, node);
-        }
-        return emit;
+    double emit = norm;
+    for (const Site_messages *site : sites) {
+        emit *= site_ratio_two(*site, branch, time, node);
     }
-    edge.resize(model->rates.size());
-    edge_matrices(branch, time, node, edge.data());
-    return mut_emit(branch, norm, edge.data());
+    return emit;
 }
 
 void Emission::null_logs_base(Branch &branch, const Edge_matrices *cached, double *out) {

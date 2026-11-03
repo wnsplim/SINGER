@@ -27,8 +27,6 @@ public:
     int start_pos = 0;
     int source_pos = 0;
     Node *node = nullptr;
-    double s_lb = -1.0;
-    double s_ub = -1.0;
     Interval *source_interval = nullptr;
 
     vector<double> source_weights = {};

@@ -42,7 +42,6 @@ void Site_model::set(const string &model, const vector<double> &frequencies, con
     for (double &q : Q) {
         q /= total;
     }
-    rate_matrix = Q;
     decompose(Q);
 }
 
@@ -215,10 +214,6 @@ void Site_model::transition_eigen(double x, double *T) const {
             T[n*i + j] /= row;
         }
     }
-}
-
-double Site_model::row_sum(double x) const {
-    return states == 2 ? 1 + x : 1.0;
 }
 
 double Site_model::regularized_gamma(double a, double x) {

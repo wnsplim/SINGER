@@ -77,13 +77,11 @@ void TSP::reset() {
     applied = 0;
     n_kernels = 0;
     kernel_at.clear();
-    thetas.clear();
     lower_sums.clear();
     upper_sums.clear();
     diagonals.clear();
     factors.clear();
     lower_diagonals.clear();
-    upper_diagonals.clear();
     temp.clear();
     null_emit_probs.clear();
     mut_emit_probs.clear();
@@ -96,7 +94,6 @@ void TSP::reset() {
     tb_kernel = -1;
     dim = 0;
     sample_index = -1;
-    lower_bound = 0;
     n_arena = 0;
 }
 
@@ -162,7 +159,6 @@ void TSP::start(Branch &branch, double t) {
     cc_lowest_change = numeric_limits<double>::infinity();
     curr_index = 0;
     curr_branch = branch;
-    lower_bound = max(cut_time, branch.lower_node->time);
     generate_intervals(branch, branch.lower_node->time, branch.upper_node->time);
     set_dimensions();
     compute_factors();
@@ -197,7 +193,6 @@ void TSP::transfer(Recombination &r, Branch &prev_branch, Branch &next_branch) {
     swaps.push_back({curr_index, {r.deleted_node->time, r.inserted_node->time}});
     applied = swaps.size();
     curr_branch = next_branch;
-    lower_bound = max(cut_time, next_branch.lower_node->time);
     if (prev_branch == r.source_branch and next_branch == r.merging_branch) {
         set_interval_constraint(r);
     } else if (prev_branch == r.target_branch and next_branch == r.recombined_branch) {
@@ -247,7 +242,6 @@ void TSP::recombine(Branch &prev_branch, Branch &next_branch) {
     null_logs_valid = false;
     curr_branch = next_branch;
     curr_index += 1;
-    lower_bound = max(cut_time, next_branch.lower_node->time);
     generate_intervals(next_branch, next_branch.lower_node->time, next_branch.upper_node->time);
     push_row(temp);
     set_state_space(curr_index);
@@ -403,7 +397,6 @@ void TSP::forward_to(int x) {
 
 map<double, Node *> TSP::sample_joining_nodes(int start_index, vector<double> &coordinates) {
     forward_to(curr_index);
-    log_h = 0;
     sel_log_q = 0;
     time_log_q = 0;
     map<double, Node *> joining_nodes = {};
@@ -452,8 +445,6 @@ double TSP::sister_factor(double s) {
 }
 
 void TSP::fill_interval_time(Interval *iv) {
-    iv->s_lb = cc->surv(iv->lb);
-    iv->s_ub = cc->surv(iv->ub);
     if (iv->ub - iv->lb < 1e-3) {
         iv->fill_time();
         return;
@@ -556,7 +547,6 @@ void TSP::set_dimensions() {
     dim = (int) curr_intervals.size();
     diagonals.resize(dim); diagonals.assign(dim, 0);
     lower_diagonals.resize(dim); lower_diagonals.assign(dim, 0);
-    upper_diagonals.resize(dim); upper_diagonals.assign(dim, 0);
     lower_sums.resize(dim); lower_sums.assign(dim, 0);
     upper_sums.resize(dim); upper_sums.assign(dim, 0);
     null_emit_probs.resize(dim); null_emit_probs.assign(dim, 0);
@@ -678,7 +668,6 @@ void TSP::compute_diagonals(double rho) {
         if (same) {
             diagonals = cd_diagonals;
             lower_diagonals = cd_lower;
-            upper_diagonals = cd_upper;
             factors = cd_factors;
             stays = cd_stays;
             selfs = cd_selfs;
@@ -765,7 +754,6 @@ void TSP::compute_diagonals(double rho) {
             lower_diagonals[i-1] = jump(A[i-1], Bv[i-1], BA[i-1], BB[i-1], GA[i-1], GB[i-1], HA[i-1], HB[i-1], SA[i-1], SB[i-1])/base;
         }
         if (i + 1 < dim) {
-            upper_diagonals[i+1] = jump(A[i+1], Bv[i+1], BA[i+1], BB[i+1], GA[i+1], GB[i+1], HA[i+1], HB[i+1], SA[i+1], SB[i+1])/base;
             double a = max(Bv[i], cut_time);
             double m = GB[dim-1] - GB[i];
             factors[i] = (m > 0) ? jump(a, top, BB[i], BB[dim-1], GB[i], GB[dim-1], HB[i], HB[dim-1], SB[i], SB[dim-1])/base/m : 0;
@@ -773,7 +761,6 @@ void TSP::compute_diagonals(double rho) {
         assert(!isnan(diagonals[i]));
     }
     lower_diagonals[dim-1] = 0;
-    upper_diagonals[0] = 0;
     factors[dim-1] = 0;
     cd_lb.resize(dim); cd_ub.resize(dim); cd_time.resize(dim);
     for (int i = 0; i < dim; i++) {
@@ -783,7 +770,6 @@ void TSP::compute_diagonals(double rho) {
     }
     cd_diagonals = diagonals;
     cd_lower = lower_diagonals;
-    cd_upper = upper_diagonals;
     cd_factors = factors;
     cd_stays = stays;
     cd_selfs = selfs;
@@ -891,7 +877,6 @@ Interval *TSP::sample_curr_interval(int x) {
 
 Interval *TSP::sample_prev_interval(Interval *interval, int x) {
     vector<Interval *> &intervals = get_state_space(x);
-    lower_bound = intervals.front()->lb;
     double ws = 0;
     compute_trace_back_probs(x + 1, interval, intervals);
     vector<double> &probs = forward_probs[x];
@@ -946,7 +931,6 @@ int TSP::trace_back_helper(Interval *interval, int x) {
     double p = 1;
     double shrinkage;
     vector<Interval *> &intervals = get_state_space(x);
-    lower_bound = intervals.front()->lb;
     while (p > q and x > y) {
         compute_trace_back_probs(x, interval, intervals);
         vector<double> &prev_probs = forward_probs[x - 1];
@@ -1211,10 +1195,6 @@ Node *TSP::sample_joining_node(Interval *interval) {
     if (pinned(interval)) {
         n = interval->node;
     } else {
-        if (interval->ub - interval->lb > 0.005) {
-            double sd = cc->surv(interval->lb) - cc->surv(interval->ub);
-            if (sd > 0) log_h += log(sd);
-        }
         t = sample_time(interval->lb, interval->ub);
         time_log_q += cc->log_density(interval->lb, interval->ub, t);
         node_owner.push_back(new_node(t));

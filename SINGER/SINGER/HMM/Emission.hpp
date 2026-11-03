@@ -35,7 +35,6 @@ public:
     vector<const Site_messages *> groups = {};
     vector<double> group_weights = {};
     vector<pair<array<const Site_messages *, 4>, double>> unknown_groups = {};
-    vector<Edge_matrices> edge = {};
 
     double mut_emit(Branch &branch, double time, Node *node, double norm);
 
