@@ -78,7 +78,7 @@ void coalescent_calculator::refresh() {
     if ((int) Lam.size() != m) {
         Lam.resize(m);
         E.resize(m);
-        G.resize(m);
+        T.resize(m);
         W.resize(m);
         B.resize(m);
         kk.resize(m);
@@ -96,59 +96,59 @@ void coalescent_calculator::refresh() {
         if (k == 0) {
             E[j+1] = ea;
             Lam[j+1] = Lam[j];
-            G[j+1] = G[j];
             B[j+1] = B[j] + W[j]*dt + 0.5*dt*dt;
             W[j+1] = W[j] + dt;
             continue;
         }
-        double eb = exp(-(Lam[j] + k*dt));
-        E[j+1] = eb;
+        E[j+1] = exp(-(Lam[j] + k*dt));
         Lam[j+1] = Lam[j] + k*dt;
-        G[j+1] = G[j] + (ea - eb)/k;
         double e = -expm1(-k*dt);
         B[j+1] = B[j] + W[j]*e/k + dt/k - e/k/k;
         W[j+1] = W[j]*(1 - e) + e/k;
     }
-    double ez = exp(-Lam[m-1]);
-    double kz = 1 + extra;
-    tail_G = ez/kz;
+    T[m-1] = E[m-1]/(kk[m-1] + extra);
+    for (int j = m - 2; j >= 0; j--) {
+        double k = kk[j] + extra;
+        T[j] = T[j+1] + (k == 0 ? 0 : E[j]*(-expm1(-k*(t[j+1] - t[j])))/k);
+    }
     rebuild_from = m;
 }
 
-double coalescent_calculator::at(double x) {
-    int m = (int) t.size();
+double coalescent_calculator::tail_at(double x) {
     if (isinf(x)) {
-        return G[m-1] + tail_G;
+        return 0;
     }
+    int m = (int) t.size();
     int j = (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
     double k = kk[j] + extra;
+    double above = j + 1 < m ? T[j+1] : 0;
     if (k == 0) {
-        return G[j];
+        return above;
     }
-    double ea = E[j];
     double ex = exp(-(Lam[j] + k*(x - t[j])));
-    return G[j] + (ea - ex)/k;
+    if (j + 1 == m) {
+        return ex/k;
+    }
+    return above + ex*(-expm1(-k*(t[j+1] - x)))/k;
 }
 
-double coalescent_calculator::g_at(double x) {
+double coalescent_calculator::tail(double x) {
+    refresh();
     for (int k = 0; k < memo_n; k++) {
         if (memo_x[k] == x) {
-            return memo_g[k];
+            return memo_t[k];
         }
     }
-    double g = at(x);
+    double v = tail_at(x);
     memo_x[memo_next] = x;
-    memo_g[memo_next] = g;
+    memo_t[memo_next] = v;
     memo_next = (memo_next + 1) % 4;
     memo_n = min(memo_n + 1, 4);
-    return g;
+    return v;
 }
 
 double coalescent_calculator::prob(double x, double y) {
-    refresh();
-    double gx = (x == cut_time) ? 0 : g_at(x);
-    double gy = g_at(y);
-    return max(gy - gx, 0.0);
+    return max(tail(x) - tail(y), 0.0);
 }
 
 double coalescent_calculator::rel_prob(double x, double y) {
@@ -228,7 +228,6 @@ double coalescent_calculator::surv_inv(double p) {
 
 double coalescent_calculator::recomb_mass(double s, double v) {
     refresh();
-    int m = (int) t.size();
     double x = min(s, v);
     int jx = (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
     double kx = kk[jx] + extra;
@@ -240,17 +239,7 @@ double coalescent_calculator::recomb_mass(double s, double v) {
     }
     double wx = W[jx]*(1 - ex) + ex/kx;
     double lx = Lam[jx] + kx*dx;
-    double gx = G[jx] + (E[jx] - exp(-lx))/kx;
-    double gv;
-    if (isinf(v)) {
-        gv = G[m-1] + tail_G;
-    } else {
-        int jv = (int) (upper_bound(t.begin(), t.end(), v) - t.begin()) - 1;
-        double kv = kk[jv] + extra;
-        double lv = Lam[jv] + kv*(v - t[jv]);
-        gv = G[jv] + (E[jv] - exp(-lv))/kv;
-    }
-    return b2 + wx*(gv - gx)*exp(lx);
+    return b2 + wx*(tail(x) - tail(v))*exp(lx);
 }
 
 double coalescent_calculator::find_median(double x, double y) {

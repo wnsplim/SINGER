@@ -342,15 +342,13 @@ void TSP::null_emit(double theta, Node *query_node) {
         s0 += curr_probs[i];
     }
     ws = (s0 + s1) + (s2 + s3);
-    if (ws > 0) {
-        double inv_ws = 1.0/ws;
-        for (int j = 0; j < dim; j++) {
-            curr_probs[j] *= inv_ws;
-        }
-    } else {
-        for (int i = 0; i < dim; i++) {
-            curr_probs[i] = 1.0/forward_probs[curr_index].size();
-        }
+    if (!(ws > 0)) {
+        cerr << "Error: the time HMM's forward probabilities sum to " << ws << " at step " << curr_index << "." << endl;
+        exit(1);
+    }
+    double inv_ws = 1.0/ws;
+    for (int j = 0; j < dim; j++) {
+        curr_probs[j] *= inv_ws;
     }
 }
 
@@ -372,7 +370,10 @@ void TSP::mut_emit(Node *query_node) {
         s0 += curr_probs[i];
     }
     ws = (s0 + s1) + (s2 + s3);
-    assert(ws > 0);
+    if (!(ws > 0)) {
+        cerr << "Error: the time HMM's forward probabilities sum to " << ws << " at step " << curr_index << "." << endl;
+        exit(1);
+    }
     double inv_ws = 1.0/ws;
     for (int j = 0; j < dim; j++) {
         curr_probs[j] *= inv_ws;
@@ -687,8 +688,8 @@ void TSP::compute_diagonals(double rho) {
             SA[j] = SB[j-1];
         } else {
             BA[j] = cc1->recomb_mass(A[j] + 1, A[j]);
-            GA[j] = cc->prob(cut_time, A[j]);
-            HA[j] = cc1->prob(cut_time, A[j]);
+            GA[j] = cc->tail(A[j]);
+            HA[j] = cc1->tail(A[j]);
             SA[j] = cc->surv(A[j]);
         }
         if (Bv[j] == A[j]) {
@@ -698,8 +699,8 @@ void TSP::compute_diagonals(double rho) {
             SB[j] = SA[j];
         } else {
             BB[j] = cc1->recomb_mass(Bv[j] + 1, Bv[j]);
-            GB[j] = cc->prob(cut_time, Bv[j]);
-            HB[j] = cc1->prob(cut_time, Bv[j]);
+            GB[j] = cc->tail(Bv[j]);
+            HB[j] = cc1->tail(Bv[j]);
             SB[j] = cc->surv(Bv[j]);
         }
     }
@@ -711,8 +712,8 @@ void TSP::compute_diagonals(double rho) {
         stay = non_recomb_prob(rho, t);
         double fs = sister_factor(t);
         double Bt = cc1->recomb_mass(t + 1, t);
-        double Gt = cc->prob(cut_time, t);
-        double Ht = cc1->prob(cut_time, t);
+        double Gt = cc->tail(t);
+        double Ht = cc1->tail(t);
         double S = cc->surv(t);
         double W = 0;
         if (top > t) {
@@ -733,13 +734,13 @@ void TSP::compute_diagonals(double rho) {
             } else {
                 double m = 0;
                 if (tb > a) m += (tb == b ? Bb : Bt) - Ba;
-                if (b > t) m += W*(Gb - (a >= t ? Ga : Gt))/S;
+                if (b > t) m += W*((a >= t ? Ga : Gt) - Gb)/S;
                 p = fs*pref*m;
             }
             if (sister_mass > 0) {
                 double q = 0;
-                if (tb > a) q += (tb == b ? Hb : Ht) - Ha;
-                if (b > t) q += sis*(Gb - (a >= t ? Ga : Gt));
+                if (tb > a) q += Ha - (tb == b ? Hb : Ht);
+                if (b > t) q += sis*((a >= t ? Ga : Gt) - Gb);
                 p += rho*sister_mass*q;
             }
             return max(p, epsilon);
@@ -755,7 +756,7 @@ void TSP::compute_diagonals(double rho) {
         }
         if (i + 1 < dim) {
             double a = max(Bv[i], cut_time);
-            double m = GB[dim-1] - GB[i];
+            double m = GB[i] - GB[dim-1];
             factors[i] = (m > 0) ? jump(a, top, BB[i], BB[dim-1], GB[i], GB[dim-1], HB[i], HB[dim-1], SB[i], SB[dim-1])/base/m : 0;
         }
         assert(!isnan(diagonals[i]));

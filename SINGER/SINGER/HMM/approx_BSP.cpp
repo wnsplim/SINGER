@@ -240,7 +240,10 @@ void approx_BSP::null_emit(double theta, Node *query_node) {
         s0 += p;
     }
     ws = (s0 + s1) + (s2 + s3);
-    assert(ws > 0);
+    if (!(ws > 0)) {
+        cerr << "Error: the branch HMM's forward probabilities sum to " << ws << " at step " << curr_index << "." << endl;
+        exit(1);
+    }
     double inv_ws = 1.0/ws;
     for (int j = 0; j < dim; j++) {
         curr_probs[j] *= inv_ws;
@@ -272,7 +275,10 @@ void approx_BSP::mut_emit(Node *query_node) {
         s0 += p;
     }
     ws = (s0 + s1) + (s2 + s3);
-    assert(ws > 0);
+    if (!(ws > 0)) {
+        cerr << "Error: the branch HMM's forward probabilities sum to " << ws << " at step " << curr_index << "." << endl;
+        exit(1);
+    }
     double inv_ws = 1.0/ws;
     for (int j = 0; j < dim; j++) {
         curr_probs[j] *= inv_ws;

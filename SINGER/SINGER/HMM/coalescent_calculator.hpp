@@ -35,6 +35,8 @@ public:
 
     void update(double t_old, double t_new);
 
+    double tail(double x);
+
     double prob(double x, double y);
 
     double rel_prob(double x, double y);
@@ -60,21 +62,18 @@ private:
     vector<int> kk = {};
     vector<double> Lam = {};
     vector<double> E = {};
-    vector<double> G = {};
+    vector<double> T = {};
     vector<double> W = {};
     vector<double> B = {};
-    double tail_G = 0;
     int rebuild_from = 0;
-    double memo_x[4] = {}, memo_g[4] = {};
+    double memo_x[4] = {}, memo_t[4] = {};
     int memo_n = 0, memo_next = 0;
 
     void set_events(vector<pair<double, int>> &events);
 
     void refresh();
 
-    double at(double x);
-
-    double g_at(double x);
+    double tail_at(double x);
 
 };
 
