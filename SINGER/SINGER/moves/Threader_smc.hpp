@@ -100,6 +100,8 @@ public:
 
     bool joins_deleted_node(ARG &a, map<double, Branch> &lineage);
 
+    bool keeps_deleted_node(ARG &a);
+
     double cut_ratio(ARG &a);
 
     double exact_acceptance_ratio(ARG &a);
