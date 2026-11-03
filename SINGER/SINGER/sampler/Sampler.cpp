@@ -95,7 +95,7 @@ void Sampler::update_model(const function<double()> &log_likelihood) {
     }
     normal_distribution<double> normal(0.0, 1.0);
     double step = 0.2;
-    double concentration_pi = max(1000.0, sequence_length), concentration_r = max(1000.0, (double) arg.mutation_sites.size());
+    double concentration_pi = max(1000.0, arg.column_base.empty() ? (double) arg.mutation_sites.size() : sequence_length), concentration_r = max(1000.0, (double) arg.mutation_sites.size());
     double current = log_likelihood();
     auto decide = [&](double log_ratio) {
         double proposed = log_likelihood();

@@ -115,6 +115,7 @@ void Site_model::decompose(const vector<double> &Q) {
                     B[n*p + k] = c*bpk - s*bqk;
                     B[n*q + k] = s*bpk + c*bqk;
                 }
+                B[n*p + q] = B[n*q + p] = 0;
                 for (int k = 0; k < n; k++) {
                     double wkp = W[n*k + p], wkq = W[n*k + q];
                     W[n*k + p] = c*wkp - s*wkq;

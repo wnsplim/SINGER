@@ -299,8 +299,7 @@ void RSP_smc::approx_sample_recombination(Recombination &r, double cut_time) {
             r.start_time = choose_time(lb2, ub2);
         }
     } else {
-        cout << r.pos << " " << source_candidates.size() << endl;
-        cerr << "no candidates in smc sampling" << endl;
+        cerr << "no candidates in smc sampling at position " << r.pos << endl;
         exit(1);
     }
     if (r.deleted_node->time == r.inserted_node->time) {
