@@ -27,14 +27,11 @@ def read_ts(node_file, edge_file, counts_file):
         k = int(child_indices[i])
         if (node_time[j] < node_time[k]):
             print(j, k, node_time[j], node_time[k])
-    for i in range(edge_span.shape[0]):
-        if (edge_span[i, 0] >= edge_span[i, 1]):
-            print(edge_span[i, :])
     return tables
 
-def read_ARG(node_file, branch_file, mutation_file, counts_file=None, bases=False):
+def read_ARG(node_file, branch_file, mutation_file, counts_file, bases):
     tables = read_ts(node_file, branch_file, counts_file)
-    arg_io.add_mutations(tables, mutation_file, tables.sequence_length, 0.0, lambda n: n, bases)
+    arg_io.add_mutations(tables, mutation_file, 0.0, lambda n: n, bases)
     tables.sort()
     tables.build_index()
     tables.compute_mutation_parents()
@@ -50,23 +47,16 @@ def write_trees(input_prefix, output_prefix, start, end, step, vcf_file=None):
         counts_file = f"{input_prefix}_counts_{i}.txt"
         if not os.path.exists(node_file):
             sys.exit(f"No MCMC sample {i}: {node_file} not found. -start and -end are MCMC sample indices, -end exclusive.")
-        draws = arg_io.muts_files(input_prefix, i) or [(None, None)]
-        for draw, mutation_file in draws:
+        draws = arg_io.muts_files(input_prefix, i)
+        if not draws:
+            print(f"Warning: no muts file for sample {i}; the tree sequence is written without sites.", file=sys.stderr)
+        for draw, mutation_file in draws or [(None, None)]:
             tables = read_ARG(node_file, branch_file, mutation_file, counts_file, bases)
             arg_io.add_provenance(tables, 'convert_to_tskit.py', [input_prefix], i, draw, rescaled)
             ts = tables.tree_sequence()
             if vcf_file is not None:
                 ts = vcf_io.add_individuals_from_vcf(ts, vcf_file)
             ts.dump(arg_io.trees_name(output_prefix, i, draw))
-
-def write_fast_trees(input_prefix, output_prefix, start, end, step):
-    for i in range(start, end, step):
-        trees_file = f"{output_prefix}_{i}.trees"
-        node_file = f"{input_prefix}_fast_nodes_{i}.txt"
-        branch_file = f"{input_prefix}_fast_branches_{i}.txt"
-        mutation_file = f"{input_prefix}_fast_muts_{i}.txt"
-        ts = read_ARG(node_file, branch_file, mutation_file).tree_sequence()
-        ts.dump(trees_file)
 
 def main():
     parser = argparse.ArgumentParser(description='Convert to tskit format')

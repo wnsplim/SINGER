@@ -83,26 +83,22 @@ def add_edges(tables, edge_span, parent, child, offset, counts_file, keep):
 BASES = 'ACGT'
 
 
-def add_mutations(tables, mutation_file, length, offset, node_map, bases=False):
-    """The muts rows below length as sites and mutations; the fifth column, when present, as the mutation's informed
-    flag. Without a file, no site. With bases (a run under a four-state model), the row whose upper node is the root
-    gives the site's ancestral base and the states of the other rows are bases."""
+def add_mutations(tables, mutation_file, offset, node_map, bases=False):
+    """The muts rows as sites and mutations; the fifth column, when present, as the mutation's informed flag. Without
+    a file, no site. With bases (a run under a four-state model), the row whose upper node is the root gives the
+    site's ancestral base and the states of the other rows are bases."""
     tables.mutations.metadata_schema = MUTATION_SCHEMA
     if mutation_file is None:
         return
     mutations = np.loadtxt(mutation_file, ndmin=2)
     by_site = {}
     for row in mutations:
-        if row[0] < length:
-            by_site.setdefault(row[0], []).append(row)
+        by_site.setdefault(row[0], []).append(row)
     for pos in sorted(by_site):
         rows = by_site[pos]
         ancestral = '0'
         if bases:
-            ancestral = 'A'
-            for row in rows:
-                if int(row[2]) == -1:
-                    ancestral = BASES[int(row[3])]
+            ancestral = next(BASES[int(row[3])] for row in rows if int(row[2]) == -1)
             rows = [row for row in rows if int(row[2]) != -1]
         tables.sites.add_row(position=pos + offset, ancestral_state=ancestral)
         site = tables.sites.num_rows - 1

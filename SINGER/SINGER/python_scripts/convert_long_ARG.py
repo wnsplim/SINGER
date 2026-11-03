@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 import numpy as np
 import tskit
 import vcf_io
@@ -44,7 +45,7 @@ def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, c
         child_indices[child_indices >= sample_num] += node_num
 
         arg_io.add_edges(tables, edge_span, parent_indices, child_indices, block_coordinates[node_file_index], counts_file, keep)
-        arg_io.add_mutations(tables, mutation_file, length, block_coordinates[node_file_index],
+        arg_io.add_mutations(tables, mutation_file, block_coordinates[node_file_index],
                              lambda n, s=sample_num, k=node_num: n + k if n >= s else n, bases)
 
     tables.sort()
@@ -89,6 +90,8 @@ def main():
     prefixes, block_coordinates = block_prefixes(args.vcf, args.output)
     draws = arg_io.muts_files(prefixes[0], args.iteration)
     with_muts = bool(draws)
+    if not with_muts:
+        print(f"Warning: no muts file for iteration {args.iteration}; the tree sequence is written without sites.", file=sys.stderr)
     bases = arg_io.uses_bases(prefixes[0])
     for draw, _ in draws or [(None, None)]:
         node_files, branch_files, mutation_files, counts_files, rescaled = generate_file_lists(prefixes, args.iteration, draw, with_muts)
