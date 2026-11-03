@@ -226,7 +226,6 @@ int main(int argc, const char * argv[]) {
                 cerr << "Error: -Ne flag expects a number. " << endl;
                 exit(1);
             }
-            Ne = 2*Ne;
         }
         else if (arg == "-r") {
             if (i + 1 >= n_args || args[i+1][0] == '-') {
@@ -537,22 +536,7 @@ int main(int argc, const char * argv[]) {
     if (epsilon_hmm < 0) {
         epsilon_hmm = exact ? 0.1 : 0.001;
     }
-    Sampler sampler = Sampler(Ne, r, m);
-    if (!r_is_rate) {
-        sampler.recomb_map.load_map(r_value, start_pos, end_pos);
-        sampler.recomb_rate = sampler.recomb_map.mean_rate(start_pos, end_pos)*Ne;
-    }
-    if (!m_is_rate) {
-        sampler.mut_map.load_map(m_value, start_pos, end_pos);
-        sampler.mut_rate = sampler.mut_map.mean_rate(start_pos, end_pos)*Ne;
-    }
-    if (sampler.mut_rate == 0) {
-        cerr << "Error: the mutation rate is set to 0. " << endl;
-        exit(1);
-    }
-    if (sampler.recomb_rate == 0) {
-        cerr << "Warning: the recombination rate is set to 0; are you sure? " << endl;
-    }
+    Sampler sampler;
     sampler.penalty = penalty;
     sampler.polar = polar;
     sampler.data.missing_thres = missing_thres;
@@ -582,6 +566,24 @@ int main(int argc, const char * argv[]) {
             cerr << "Error: -genotype_lik and -phase apply to VCF input only. " << endl;
             exit(1);
         }
+    }
+    sampler.Ne = ploidy*Ne;
+    sampler.recomb_rate = r*sampler.Ne;
+    sampler.mut_rate = m*sampler.Ne;
+    if (!r_is_rate) {
+        sampler.recomb_map.load_map(r_value, start_pos, end_pos);
+        sampler.recomb_rate = sampler.recomb_map.mean_rate(start_pos, end_pos)*sampler.Ne;
+    }
+    if (!m_is_rate) {
+        sampler.mut_map.load_map(m_value, start_pos, end_pos);
+        sampler.mut_rate = sampler.mut_map.mean_rate(start_pos, end_pos)*sampler.Ne;
+    }
+    if (sampler.mut_rate == 0) {
+        cerr << "Error: the mutation rate is set to 0. " << endl;
+        exit(1);
+    }
+    if (sampler.recomb_rate == 0) {
+        cerr << "Warning: the recombination rate is set to 0; are you sure? " << endl;
     }
     if (model_name != "CFN") {
         if (genotype_lik or phase) {

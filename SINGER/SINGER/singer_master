@@ -336,8 +336,9 @@ def read_tip_ages(tip_ages_file, vcf_prefix, ploidy):
         ages.append(by_name[names[i//ploidy]])
     return ages
 
-def compute_Ne(vcf_prefix, start, end, m, ages=None, g=None, mask_n=None, mask_p=None, chrom=None, chrom_n=None, chrom_p=None, four_state=False):
-    """Ne from the nucleotide diversity, pi / (4 m) less the tip-age term. Under a four-state model the mean pairwise
+def compute_Ne(vcf_prefix, start, end, m, ploidy, ages=None, g=None, mask_n=None, mask_p=None, chrom=None, chrom_n=None, chrom_p=None, four_state=False):
+    """Ne in the convention of the ploidy (diploid Ne under ploidy 2, haploid N under ploidy 1) from the nucleotide
+    diversity, (pi / m less the mean tip-age difference) / (2 ploidy). Under a four-state model the mean pairwise
     difference per site is first corrected for multiple hits with the F81 distance -B ln(1 - pi / B), B = 1 - sum_b
     f_b^2 over the alignment's base composition (3/4 for a VCF, whose invariant bases are unknown); the correction is
     1 + pi / (2B) + ... and vanishes where pi is small."""
@@ -365,7 +366,7 @@ def compute_Ne(vcf_prefix, start, end, m, ages=None, g=None, mask_n=None, mask_p
         n = len(gens)
         pairs = [abs(gens[i] - gens[j]) for i in range(n) for j in range(i + 1, n)]
         mean_abs_diff = sum(pairs)/len(pairs)
-    Ne = diversity/4/m - mean_abs_diff/4
+    Ne = diversity/(2*ploidy)/m - mean_abs_diff/(2*ploidy)
     if Ne <= 0:
         raise ValueError(f"Estimated Ne is non-positive ({Ne:.1f}). Check that tip ages and mutation rate are in consistent units.")
     print(f"Estimated Ne: {Ne:.1f}")
@@ -414,7 +415,7 @@ def run_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin,
 def main():
     parser = argparse.ArgumentParser(description='Sample and infer ARG from genetic variation data')
 
-    parser.add_argument('-Ne', type=float, default=-1, help='Effective population size.')
+    parser.add_argument('-Ne', type=float, default=-1, help='Effective population size: the diploid Ne under -ploidy 2, the haploid population size N under -ploidy 1. Default: estimated from the diversity.')
     parser.add_argument('-m', type=str, required=True, help='Mutation rate per base per generation: a number, or a rate map file with lines "left right rate".')
     parser.add_argument('-r', type=str, help='Recombination rate per base per generation: a number, or a rate map file. Default: the -m value when -m is a number.')
     parser.add_argument('-input', type=str, help='Input file: .vcf, .vcf.gz or .bcf; or an alignment in FASTA, PHYLIP or NEXUS format, which needs -model.')
@@ -494,7 +495,7 @@ def main():
     if m == 0:
         parser.error("The mutation rate is set to 0")
     if args.Ne < 0:
-        args.Ne = compute_Ne(args.input, args.start, args.end, m, ages, args.g, args.mask_n, args.mask_p, args.chrom, args.chrom_n, args.chrom_p, four_state)
+        args.Ne = compute_Ne(args.input, args.start, args.end, m, args.ploidy, ages, args.g, args.mask_n, args.mask_p, args.chrom, args.chrom_n, args.chrom_p, four_state)
     scaling = (f" -scaling_rep {args.scaling_rep}" if args.scaling_rep is not None else "") + (f" -scaling_bin {args.scaling_bin}" if args.scaling_bin is not None else "") + (f" -mapping_rep {args.mapping_rep}" if args.mapping_rep is not None else "")
     run_singer(args.Ne, args.m, args.r, args.start, args.end, args.input, args.output, args.n, args.thin, polar, args.ploidy, args.seed, tips, args.max_attempts, args.resume, scaling)
 

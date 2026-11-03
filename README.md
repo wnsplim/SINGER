@@ -50,7 +50,7 @@ The optional flags include:
 
 |flag|required?|details|  
 |-------------------|-----|---|  
-|**-Ne**|optional|effective population size in diploid individuals: the number of haploid genomes is **2*Ne** at any ploidy, so a haploid population of N genomes takes -Ne N/2|
+|**-Ne**|optional|effective population size: the diploid Ne under -ploidy 2, the haploid population size N under -ploidy 1|
 |**-ploidy**|optional|1 or 2, the ploidy of every sample in the VCF (default 2).|
 |**-r**|optional|per base pair per generation recombination rate: a number, or the name of a rate map file. If `-m` is a number, the default is the value of `-m`. If `-m` is a rate map file, `-r` is required|
 |**-n**|optional|the number of posterior samples, default at 100|
@@ -191,6 +191,6 @@ By doing the merging operation, you will get the ARG samples with the length of 
 ## Suggestions from developer
 
 1. As a Bayesian sampling method, SINGER works best when you sample some ARGs from posterior, **only using one single sample is NOT ideal**. To this point, we highly encourage specifying **-n, -thin** flags. You can find how we run SINGER on real datasets on:
-2. It is of importance to carefully choose the parameters, such as -Ne, -m, and -r. We recommend first choosing the mutation rate m, and then based on average pairwise diversity \($\pi=4\cdot N_e \cdot m\$), you can decide the Ne parameter. If you are not super sure about the recombination rate, you can leave out -r, and SINGER sets it equal to -m. 
+2. It is of importance to carefully choose the parameters, such as -Ne, -m, and -r. We recommend first choosing the mutation rate m, and then based on average pairwise diversity \($\pi=4\cdot N_e \cdot m\$ under -ploidy 2, $\pi=2\cdot N \cdot m\$ under -ploidy 1), you can decide the Ne parameter. If you are not super sure about the recombination rate, you can leave out -r, and SINGER sets it equal to -m. 
 3. Unfortunately for now we only support phased, high-quality genomes, and polymorphic sites with missingness will be excluded. We are working on incorporating missingness and unphased data in the near future. ARGweaver has better support in these regards.
 4. **A frequent bug reported** is caused by running SINGER on essentially a region with no or very low sequencing data, such as centromeric regions. SINGER cannot infer the ARG when there is no data present, and will likely bug out due to underflow issues. 
