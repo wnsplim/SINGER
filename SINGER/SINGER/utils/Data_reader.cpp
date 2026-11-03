@@ -185,20 +185,20 @@ static vector<string> split(const string &s, char sep) {
     return out;
 }
 
-static bool parse_likelihood(const string &s, bool gl, int count, double *G) {
+static int parse_likelihood(const string &s, bool gl, int count, double *G) {
     vector<string> v = split(s, ',');
     if ((int) v.size() != count) {
-        return false;
+        return -1;
     }
     for (int k = 0; k < count; k++) {
         char *e = nullptr;
         double x = strtod(v[k].c_str(), &e);
         if (e == v[k].c_str() or *e != '\0' or !isfinite(x)) {
-            return false;
+            return -1;
         }
         G[k] = gl ? pow(10, x) : pow(10, -x/10);
     }
-    return *max_element(G, G + count) > *min_element(G, G + count);
+    return *max_element(G, G + count) > *min_element(G, G + count) ? 1 : 0;
 }
 
 static string single_alt(const vector<string> &alts) {
@@ -371,6 +371,12 @@ void Data_reader::load_alignment() {
     }
     if (taxa.empty()) {
         Vcf_reader::fail("no sequences in " + input);
+    }
+    set<string> seen;
+    for (const string &t : taxa) {
+        if (!seen.insert(t).second) {
+            Vcf_reader::fail("the sequence name " + t + " appears twice in " + input);
+        }
     }
     for (const string &s : sequences) {
         if (s.size() != sequences[0].size()) {
@@ -1027,20 +1033,27 @@ Data_reader::Record_likelihood Data_reader::record_likelihood(long long pos, con
     return r;
 }
 
-bool Data_reader::sample_likelihood(const Record_likelihood &r, int sample, const string &field, double *G, bool &from_calls) {
+bool Data_reader::sample_likelihood(const Record_likelihood &r, int sample, const string &field, double *G, bool &from_calls, bool &flat) {
     int count = ploidy == 1 ? 2 : 3;
     from_calls = false;
+    flat = false;
     if (r.field >= 0) {
         vector<string> parts = split(field, ':');
-        if (r.field < (int) parts.size() and parse_likelihood(parts[r.field], r.gl, count, G)) {
+        int p = r.field < (int) parts.size() ? parse_likelihood(parts[r.field], r.gl, count, G) : -1;
+        if (p == 1) {
             likelihood_seen = true;
             return true;
         }
+        flat = p == 0;
     }
-    if (sample < (int) r.call_values.size() and !r.call_values[sample].empty() and parse_likelihood(r.call_values[sample], r.call_gl, count, G)) {
-        from_calls = true;
-        likelihood_seen = true;
-        return true;
+    if (sample < (int) r.call_values.size() and !r.call_values[sample].empty()) {
+        int p = parse_likelihood(r.call_values[sample], r.call_gl, count, G);
+        if (p == 1) {
+            from_calls = true;
+            likelihood_seen = true;
+            return true;
+        }
+        flat = flat or p == 0;
     }
     return false;
 }
@@ -1111,10 +1124,13 @@ Data_reader::Genotype_read Data_reader::read_genotype(const string &field, int i
     }
     g.het = phase and known and g.n == 2 and g.calls[0] >= 0 and g.calls[1] >= 0 and g.calls[0] != g.calls[1];
     double G[3];
-    if (r != nullptr and sample_likelihood(*r, individual, field, G, g.from_calls)) {
+    bool flat = false;
+    if (r != nullptr and sample_likelihood(*r, individual, field, G, g.from_calls, flat)) {
         g.likelihood = true;
         g.entry = state_likelihoods(g.n, g.calls, unphased, g.het, G, g.L, g.alleles);
         g.n = ploidy;
+    } else if (flat) {
+        g.calls[0] = g.calls[1] = -1;
     } else if (g.het) {
         const double G_het[3] = {0, 1, 0};
         g.entry = state_likelihoods(g.n, g.calls, unphased, true, G_het, g.L, g.alleles);
@@ -1263,7 +1279,8 @@ void Data_reader::add_call_sites(double start_pos, double end_pos, bool with_sit
             continue;
         }
         string ref = p.second.front().ref, alt = single_alt(p.second.front().alts);
-        if (ref.size() != 1 or alt.size() != 1 or !is_unambiguous(ref) or !is_unambiguous(alt)) {
+        if (ref.size() != 1 or alt.size() != 1 or p.second.size() > 1) {
+            unassayed_sites.push_back(x);
             continue;
         }
         Record_likelihood r = record_likelihood(pos, ref, alt, "");
@@ -1383,7 +1400,7 @@ void Data_reader::drop_missing_sites(double start_pos, double end_pos) {
             Genotype_read g = read_genotype(genotype, individual, x, pos, weigh ? &r : nullptr, known[0] and known[1]);
             for (int k = 0; k < ploidy; k++) {
                 int c = k < g.n ? g.calls[k] : -1;
-                missing += c < 0 or !known[c];
+                missing += c < 0;
             }
             individual += 1;
         }
@@ -1455,7 +1472,7 @@ void Data_reader::naive_read_sites(double start_pos, double end_pos) {
             prev_pos = pos;
             continue;
         }
-        if (!is_unambiguous(ref) or !is_unambiguous(alt)) {
+        if (ref.size() != 1 or alt.size() != 1) {
             removed_mutation += 1;
             prev_pos = pos;
             continue;
@@ -1541,7 +1558,7 @@ void Data_reader::guide_read_sites(double start, double end) {
             prev_pos = pos;
             continue;
         }
-        if (!is_unambiguous(ref) or !is_unambiguous(alt)) {
+        if (ref.size() != 1 or alt.size() != 1) {
             removed_mutation += 1;
             prev_pos = pos;
             continue;
@@ -1669,7 +1686,7 @@ void Data_reader::scan_missing(double start_pos, double end_pos) {
             unphased_masked += g.unphased_missing;
             for (int k = 0; k < ploidy; k++) {
                 int c = k < g.n ? g.calls[k] : -1;
-                if (c < 0 or !known[c]) {
+                if (c < 0) {
                     missing_haplotypes.push_back(ploidy*individual + k);
                 }
                 alt_count += c == 1;

@@ -123,7 +123,7 @@ private:
 
     Record_likelihood record_likelihood(long long pos, const std::string &ref, const std::string &alt, const std::string &format);
 
-    bool sample_likelihood(const Record_likelihood &r, int sample, const std::string &field, double *G, bool &from_calls);
+    bool sample_likelihood(const Record_likelihood &r, int sample, const std::string &field, double *G, bool &from_calls, bool &flat);
 
     bool state_likelihoods(int n, int *calls, bool unphased, bool het, const double *likelihoods, double *L, int &alleles);
 
