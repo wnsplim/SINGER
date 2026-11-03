@@ -25,7 +25,6 @@ static bool parse_rate(const string &value, double &rate) {
 
 int main(int argc, const char * argv[]) {
     bool resume = false;
-    bool debug = false;
     bool no_data = false;
     string mode = "exact";
     string tip_ages_file = "";
@@ -76,7 +75,7 @@ int main(int argc, const char * argv[]) {
             ckp_prefix = g.second;
         }
     }
-    set<string> ckp_skip = {"-resume", "-n", "-seed", "-debug", "-output"};
+    set<string> ckp_skip = {"-resume", "-n", "-seed", "-output"};
     if (resume_given and !ckp_prefix.empty()) {
         ifstream ckp(ckp_prefix + ".ckp");
         if (!ckp.good()) {
@@ -207,13 +206,6 @@ int main(int argc, const char * argv[]) {
                 exit(1);
             }
             mode = args[++i];
-        }
-        else if (arg == "-debug") {
-            if (i + 1 < n_args && args[i+1][0] != '-') {
-                cerr << "Error: -debug flag doesn't take any value. " << endl;
-                exit(1);
-            }
-            debug = true;
         }
         else if (arg == "-Ne") {
             if (i + 1 >= n_args || args[i+1][0] == '-') {
@@ -645,10 +637,6 @@ int main(int argc, const char * argv[]) {
     if (resume) {
         sampler.sequence_length = end_pos - start_pos;
         sampler.resume_internal_sample(num_iters, spacing);
-        return 0;
-    } else if (debug) {
-        sampler.sequence_length = end_pos - start_pos;
-        sampler.debug_resume_internal_sample(num_iters, spacing);
         return 0;
     }
     sampler.load_data(start_pos, end_pos);

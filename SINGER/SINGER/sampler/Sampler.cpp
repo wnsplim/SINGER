@@ -414,23 +414,6 @@ void Sampler::resume_internal_sample(int num_iters, int spacing) {
     internal_sample(num_iters, spacing);
 }
 
-void Sampler::debug_resume_internal_sample(int num_iters, int spacing) {
-    retract_log(5);
-    string log_file = output_prefix + ".log";
-    vector<string> words = Data_reader::read_last_line(log_file);
-    if (words.size() == 0 or words[2] == "initial_thread" or words[0] == "Time") {
-        cout << "new seed: " << random_seed << endl;
-        sample_index = 0;
-        load_data(start, end);
-        iterative_start();
-        internal_sample(num_iters, spacing);
-    } else {
-        read_resume_point(log_file);
-        sample_index += 1;
-        cout << "new seed: " << random_seed << endl;
-        internal_sample(num_iters, spacing);
-    }
-}
 
 vector<double> Sampler::rescale(string filename) {
     vector<double> times;
@@ -573,52 +556,4 @@ void Sampler::read_resume_point(string filename) {
     arg.sequence_length = sequence_length;
     arg.end = stod(words[log_length - 3]);
     arg.end_tree = arg.get_tree_at(arg.end);
-}
-
-void Sampler::retract_log(int k) {
-    const std::string file_path = output_prefix + ".log";
-    std::ifstream in_file(file_path, std::ios::in | std::ios::ate);
-
-    if (!in_file.is_open()) {
-        std::cerr << "Unable to open log file: " << file_path << std::endl;
-        return;
-    }
-
-    std::string first_line, second_line;
-    in_file.seekg(0);
-    std::getline(in_file, first_line);
-    std::getline(in_file, second_line);
-
-    in_file.seekg(0, std::ios::end);
-    char c;
-    int line_count = 0;
-    long pos = in_file.tellg();
-
-    while (pos > 0 && line_count < k) {
-        in_file.seekg(--pos, std::ios::beg);
-        in_file.get(c);
-        if (c == '\n') {
-            ++line_count;
-        }
-    }
-
-    pos = (line_count < k) ? 0 : pos + 1;
-
-    in_file.seekg(0, std::ios::beg);
-    std::string content(pos, '\0');
-    in_file.read(&content[0], pos);
-    in_file.close();
-
-    int remaining_lines = (int) std::count(content.begin(), content.end(), '\n') + (content.empty() ? 0 : 1);
-
-    std::ofstream out_file(file_path, std::ios::out | std::ios::trunc);
-    if (remaining_lines >= 2) {
-        out_file << content;
-    } else {
-        out_file << first_line << '\n';
-        if (!second_line.empty()) {
-            out_file << second_line << '\n';
-        }
-    }
-    out_file.close();
 }

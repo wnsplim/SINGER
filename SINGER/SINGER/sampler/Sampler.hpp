@@ -99,8 +99,6 @@ public:
 
     void resume_internal_sample(int num_iters, int spacing);
 
-    void debug_resume_internal_sample(int num_iters, int spacing);
-
     vector<double> rescale(string filename);
 
     void write_mapping(string base, string index, string counts_file, const vector<double> &rescaled);
@@ -114,8 +112,6 @@ public:
     void load_resume_arg();
 
     void read_resume_point(string filename);
-
-    void retract_log(int k);
 };
 
 #endif /* Sampler_hpp */

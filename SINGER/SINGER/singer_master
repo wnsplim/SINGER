@@ -4,7 +4,6 @@ import sys
 import os
 import subprocess
 import argparse
-import random
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), d) for d in ("", "python_scripts")]
 import vcf_io
 # import uuid
@@ -380,25 +379,6 @@ def tip_flags(tip_ages, g):
 def singer_path():
     return os.path.join(os.path.dirname(os.path.realpath(__file__)), "singer")
 
-def run_with_auto_debug(first_cmd, debug_cmd, seed, max_attempts, output_prefix):
-    random.seed(seed)
-    random_seeds = [random.randint(0, 2**30 - 1) for _ in range(max_attempts)]
-    cmd = first_cmd + f" -seed {seed}"
-    print(cmd)
-    process = subprocess.run(cmd.split(), check=False)
-    attempts = 0
-    while process.returncode != 0:
-        with open(output_prefix + ".attempts", "a") as f:
-            f.write(f"{cmd}\treturn code {process.returncode}\n")
-        if attempts == max_attempts:
-            print(f"Auto-debug failed after {attempts} attempts (commands in {output_prefix}.attempts). Contact the author for help: yun_deng@berkeley.edu")
-            sys.exit(1)
-        print(f"Auto-debug iteration: {attempts}")
-        cmd = debug_cmd + f" -seed {random_seeds[attempts]}"
-        print(cmd)
-        process = subprocess.run(cmd.split(), check=False)
-        attempts += 1
-
 def is_number(value):
     try:
         float(value)
@@ -406,10 +386,10 @@ def is_number(value):
         return False
     return True
 
-def run_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips, max_attempts, resume, scaling=""):
-    common = f"{singer_path()} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end}" + (f" -polar {polar}" if polar is not None else "") + f" -n {num_iters} -thin {thin}"
-    first = common + (" -resume" if resume else "") + f" -ploidy {ploidy}" + tips + scaling
-    run_with_auto_debug(first, common + f" -debug -ploidy {ploidy}" + tips + scaling, seed, max_attempts, output_prefix)
+def run_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips, resume, scaling=""):
+    cmd = f"{singer_path()} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end}" + (f" -polar {polar}" if polar is not None else "") + f" -n {num_iters} -thin {thin}" + (" -resume" if resume else "") + f" -ploidy {ploidy}" + tips + scaling + f" -seed {seed}"
+    print(cmd)
+    sys.exit(subprocess.run(cmd.split(), check=False).returncode)
 
       
 def main():
@@ -441,7 +421,6 @@ def main():
     parser.add_argument('-scaling_rep', type=int, help='Number of ARG rescaling rounds applied to a copy of each written sample, whose node times are written to <output>_rescaled_nodes_<i>.txt; the MCMC itself is never rescaled; 0 disables rescaling. Default: 1.')
     parser.add_argument('-scaling_bin', type=int, help='Number of time bins used for ARG rescaling. Default: 100.')
     parser.add_argument('-mapping_rep', type=int, help='Number of stochastic mapping draws written for each sample. With 1 the draw is <output>_muts_<i>.txt; with more, draw r is <output>_muts_<r>_<i>.txt. Default: 1.')
-    parser.add_argument('-max_attempts', type=int, default=100, help='Maximum number of automatic restarts (-debug) after a failed run; 0 disables them. Each failed command is appended to OUTPUT.attempts. Default: 100.')
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -497,7 +476,7 @@ def main():
     if args.Ne < 0:
         args.Ne = compute_Ne(args.input, args.start, args.end, m, args.ploidy, ages, args.g, args.mask_n, args.mask_p, args.chrom, args.chrom_n, args.chrom_p, four_state)
     scaling = (f" -scaling_rep {args.scaling_rep}" if args.scaling_rep is not None else "") + (f" -scaling_bin {args.scaling_bin}" if args.scaling_bin is not None else "") + (f" -mapping_rep {args.mapping_rep}" if args.mapping_rep is not None else "")
-    run_singer(args.Ne, args.m, args.r, args.start, args.end, args.input, args.output, args.n, args.thin, polar, args.ploidy, args.seed, tips, args.max_attempts, args.resume, scaling)
+    run_singer(args.Ne, args.m, args.r, args.start, args.end, args.input, args.output, args.n, args.thin, polar, args.ploidy, args.seed, tips, args.resume, scaling)
 
 
 if __name__ == "__main__":
