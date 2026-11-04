@@ -106,7 +106,6 @@ def is_alignment(path):
 
 
 def read_alignment(path):
-    """The sequences of a FASTA, PHYLIP (sequential or interleaved) or NEXUS file as (names, sequences)."""
     with open(path) as f:
         text = f.read()
     stripped = text.lstrip()
@@ -163,13 +162,11 @@ def read_alignment(path):
 
 
 def calculate_diversity_alignment(seqs, start, end, mask_n=None, mask_p=None, chrom_n=None, chrom_p=None):
-    """Mean pairwise differences per column over the observed bases A, C, G, T (every other character is missing),
-    divided by the number of unmasked columns in [start, end); mask rows are 0-based columns as in a BED file."""
     start, end = int(start), int(end)
     masked = []
     if mask_n or mask_p:
         if (mask_n and not chrom_n) or (mask_p and not chrom_p):
-            sys.exit("Error: a mask with an alignment needs -chrom_n or -chrom_p to name the chromosome in the mask file.")
+            sys.exit("Error: a mask with an alignment needs -chrom_n or -chrom_p.")
         masked = [(lo - 1, hi - 1) for lo, hi in read_masks(mask_n, mask_p, chrom_n, chrom_p, start, end)]
     masked_columns = sum(hi - lo + 1 for lo, hi in masked)
     total = 0.0
@@ -336,11 +333,6 @@ def read_tip_ages(tip_ages_file, vcf_prefix, ploidy):
     return ages
 
 def compute_Ne(vcf_prefix, start, end, m, ploidy, ages=None, g=None, mask_n=None, mask_p=None, chrom=None, chrom_n=None, chrom_p=None, four_state=False):
-    """Ne in the convention of the ploidy (diploid Ne under ploidy 2, haploid N under ploidy 1) from the nucleotide
-    diversity, (pi / m less the mean tip-age difference) / (2 ploidy). Under a four-state model the mean pairwise
-    difference per site is first corrected for multiple hits with the F81 distance -B ln(1 - pi / B), B = 1 - sum_b
-    f_b^2 over the alignment's base composition (3/4 for a VCF, whose invariant bases are unknown); the correction is
-    1 + pi / (2B) + ... and vanishes where pi is small."""
     alignment = is_alignment(vcf_prefix)
     if alignment:
         seqs = read_alignment(vcf_prefix)[1]
@@ -357,7 +349,7 @@ def compute_Ne(vcf_prefix, start, end, m, ploidy, ages=None, g=None, mask_n=None
             if counts.sum() > 0:
                 B = 1 - np.sum((counts/counts.sum())**2)
         if diversity >= B:
-            sys.exit(f"Error: the mean pairwise difference per site ({diversity:.4f}) reaches the saturation level {B:.4f} of the base composition; no finite distance, give -Ne.")
+            sys.exit("Error: the diversity is saturated; give -Ne.")
         diversity = -B*np.log(1 - diversity/B)
     mean_abs_diff = 0.0
     if ages:
@@ -395,32 +387,32 @@ def run_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin,
 def main():
     parser = argparse.ArgumentParser(description='Sample and infer ARG from genetic variation data')
 
-    parser.add_argument('-Ne', type=float, default=-1, help='Effective population size: the diploid Ne under -ploidy 2, the haploid population size N under -ploidy 1. Default: estimated from the diversity.')
-    parser.add_argument('-m', type=str, required=True, help='Mutation rate per base per generation: a number, or a rate map file with lines "left right rate".')
-    parser.add_argument('-r', type=str, help='Recombination rate per base per generation: a number, or a rate map file. Default: the -m value when -m is a number.')
-    parser.add_argument('-input', type=str, help='Input file: .vcf, .vcf.gz or .bcf; or an alignment in FASTA, PHYLIP or NEXUS format, which needs -model.')
-    parser.add_argument('-model', type=str, default='CFN', choices=['CFN', 'JC', 'K80', 'F81', 'HKY', 'GTR'], help='Substitution model: CFN (two states, VCF input only), or JC, K80, F81, HKY, GTR (four states, VCF or alignment input; the chain samples their parameters). Default: CFN.')
-    parser.add_argument('-gamma', type=int, default=1, help='Number of discrete gamma rate categories across columns under a four-state model; the chain samples the shape. Default: 1.')
-    parser.add_argument('-augment', action='store_true', help='Under a four-state model, sample the internal nodes\' bases with the ARG (the state-augmented rethread).')
+    parser.add_argument('-Ne', type=float, default=-1, help='Effective population size. Default: estimated from the diversity.')
+    parser.add_argument('-m', type=str, required=True, help='Mutation rate: a number, or a rate map file.')
+    parser.add_argument('-r', type=str, help='Recombination rate: a number, or a rate map file. Default: the -m value.')
+    parser.add_argument('-input', type=str, help='Input file: .vcf, .vcf.gz, .bcf, or an alignment (FASTA, PHYLIP, NEXUS).')
+    parser.add_argument('-model', type=str, default='CFN', choices=['CFN', 'JC', 'K80', 'F81', 'HKY', 'GTR'], help='Substitution model: CFN, JC, K80, F81, HKY or GTR. Default: CFN.')
+    parser.add_argument('-gamma', type=int, default=1, help='Number of discrete gamma rate categories under a four-state model. Default: 1.')
+    parser.add_argument('-augment', action='store_true', help='Sample the mutations with the ARG under a four-state model.')
     parser.add_argument('-output', type=str, required=True, help='Output file prefix.')
     parser.add_argument('-start', type=float, required=True, help='Start position.')
-    parser.add_argument('-end', type=float, required=True, help='End position. SINGER reads the records with start <= POS < end.')
+    parser.add_argument('-end', type=float, required=True, help='End position (exclusive).')
     parser.add_argument('-n', type=int, default=100, help='Number of MCMC samples. Default: 100.')
-    parser.add_argument('-thin', type=int, default=200, help='Number of MCMC iterations between adjacent samples. Default: 200.')
-    parser.add_argument('-polar', type=float, help='Probability of correct polarization under CFN: 0.5 for unpolarized data, 0.99 for polarized data. Default: 0.5.')
+    parser.add_argument('-thin', type=int, default=200, help='Thinning interval length. Default: 200.')
+    parser.add_argument('-polar', type=float, help='Probability of correct polarization. Default: 0.5.')
     parser.add_argument('-resume', action='store_true', help='Resume MCMC with this flag.')
-    parser.add_argument('-ploidy', type=int, help="Ploidy of the vcf file (1 or 2). Default: 2 for a VCF, 1 for an alignment.")
+    parser.add_argument('-ploidy', type=int, help="Ploidy of the vcf file (1 or 2). Default: 2, or 1 for an alignment.")
     parser.add_argument('-seed', type=int, default=42, help='Random seed for reproducibility. Default: 42.')
-    parser.add_argument('-tip_ages', type=str, help='File with the sample ages in years before present: one row per sample column of the VCF in VCF order, or two columns "name age"; the two haplotypes of a diploid sample share the age. Requires -g.')
-    parser.add_argument('-g', type=float, help='Generation time in years, used with -tip_ages.')
-    parser.add_argument('-mask_n', type=str, help='Negative mask. A BED file of the regions to mask. A row without a sample name masks its region for all samples. A row with a VCF sample name in a fourth column masks it for that sample only.')
-    parser.add_argument('-mask_p', type=str, help='Positive mask. A BED file of the accessible regions, for example the 1000 Genomes strict accessibility mask for GRCh37. Every base between -start and -end outside these regions is masked for all samples. You can use -mask_p together with -mask_n.')
-    parser.add_argument('-chrom', type=str, help='Chromosome to read from the VCF. Default: the first one in the file.')
-    parser.add_argument('-chrom_n', type=str, help='Chromosome to read from the -mask_n file. Default: the -chrom chromosome.')
-    parser.add_argument('-chrom_p', type=str, help='Chromosome to read from the -mask_p file. Default: the -chrom chromosome.')
-    parser.add_argument('-scaling_rep', type=int, help='Number of ARG rescaling rounds applied to a copy of each written sample, whose node times are written to <output>_rescaled_nodes_<i>.txt; the MCMC itself is never rescaled; 0 disables rescaling. Default: 1.')
-    parser.add_argument('-scaling_bin', type=int, help='Number of time bins used for ARG rescaling. Default: 100.')
-    parser.add_argument('-mapping_rep', type=int, help='Number of stochastic mapping draws written for each sample. With 1 the draw is <output>_muts_<i>.txt; with more, draw r is <output>_muts_<r>_<i>.txt. Default: 1.')
+    parser.add_argument('-tip_ages', type=str, help='File with the sample ages in years before present. Requires -g.')
+    parser.add_argument('-g', type=float, help='Generation time in years.')
+    parser.add_argument('-mask_n', type=str, help='Negative mask: a BED file of the regions to mask.')
+    parser.add_argument('-mask_p', type=str, help='Positive mask: a BED file of the accessible regions.')
+    parser.add_argument('-chrom', type=str, help='Chromosome to read from the VCF. Default: the first one.')
+    parser.add_argument('-chrom_n', type=str, help='Chromosome of the -mask_n file. Default: -chrom.')
+    parser.add_argument('-chrom_p', type=str, help='Chromosome of the -mask_p file. Default: -chrom.')
+    parser.add_argument('-scaling_rep', type=int, help='Number of ARG rescaling rounds per sample; 0 disables. Default: 1.')
+    parser.add_argument('-scaling_bin', type=int, help='Number of time bins for ARG rescaling. Default: 100.')
+    parser.add_argument('-mapping_rep', type=int, help='Number of stochastic mapping draws per sample. Default: 1.')
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -438,7 +430,7 @@ def main():
     alignment = is_alignment(args.input)
     four_state = args.model != 'CFN'
     if alignment and not four_state:
-        parser.error("An alignment input needs a four-state model: -model JC, K80, F81, HKY or GTR")
+        parser.error("An alignment input needs a four-state model")
     if args.gamma < 1:
         parser.error("-gamma must be at least 1")
     if args.gamma > 1 and not four_state:
@@ -446,9 +438,9 @@ def main():
     if args.augment and not four_state:
         parser.error("-augment needs a four-state model")
     if args.polar is not None and four_state:
-        parser.error("-polar applies to CFN only; the root prior of a four-state model is its stationary distribution")
+        parser.error("-polar applies to CFN only")
     if alignment and args.chrom:
-        parser.error("-chrom applies to VCF input only; name the chromosome of a mask file with -chrom_n or -chrom_p")
+        parser.error("-chrom applies to VCF input only")
     if args.ploidy is None:
         args.ploidy = 1 if alignment else 2
     polar = (0.5 if args.polar is None else args.polar) if not four_state else None

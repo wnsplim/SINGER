@@ -22,6 +22,10 @@ The Python scripts read a `.bcf` input through `bcftools`, which must then be on
 
 SINGER takes a **.vcf**, **.vcf.gz** or **.bcf** file and outputs a **.trees** file in tskit format. The mutations are already mapped to the branches, but non-polymorphic, multi-allelic sites and structral variants are excluded from inference. The branch length should be interpreted with units of generations, for example, for homo sapiens, you would need multiply that by 28 to convert to units of years. There will also be a **.log** file for you to check the argument you ran, and the summary statistic in MCMC iterations. 
 
+SINGER also takes a sequence alignment in **FASTA**, **PHYLIP** or **NEXUS** format, which needs `-model JC`, `K80`, `F81`, `HKY` or `GTR`. Positions are counted from 0. Every sequence is one haploid sample (`-ploidy 1` unless given). `-chrom`, `-genotype_lik` and `-phase` apply to VCF input only; a mask file with an alignment names its rows by sequence name and needs `-chrom_n` or `-chrom_p` to name the chromosome in the BED file.
+
+Under a four-state model a haplotype's base at a site is A, C, G or T, from the alignment or from the REF and ALT alleles of a VCF record. An IUPAC ambiguity code (R, Y, S, W, K, M, B, D, H, V), in an alignment or as a VCF allele is accepted. A gap, N, ? or any other character in an alignment, and a missing genotype in a VCF, is treated as missing data at that site. 
+
 ## Basic usage
 
 To sample ARGs with SINGER, you can run command line like shown below. 
@@ -50,25 +54,27 @@ The optional flags include:
 
 |flag|required?|details|  
 |-------------------|-----|---|  
-|**-Ne**|optional|effective population size: the diploid Ne under -ploidy 2, the haploid population size N under -ploidy 1|
+|**-Ne**|optional|effective population size: the diploid Ne under -ploidy 2, the haploid population size N under -ploidy 1. Without it `singer_master` estimates Ne from the diversity|
 |**-ploidy**|optional|1 or 2, the ploidy of every sample in the VCF (default 2).|
 |**-r**|optional|per base pair per generation recombination rate: a number, or the name of a rate map file. If `-m` is a number, the default is the value of `-m`. If `-m` is a rate map file, `-r` is required|
 |**-n**|optional|the number of posterior samples, default at 100|
 |**-thin**|optional|the number of MCMC iterations between adjacent samples, default at 200|
 |**-polar**|optional|the probability of correct polarization, default at 0.5 for unpolarized data, please use 0.99 for polarized data|
-|**-scaling_rep**|optional|the number of ARG rescaling rounds applied to a copy of each written posterior sample, default at 1. The rescaled node times are written to `prefix_of_output_files_rescaled_nodes_{i}.txt`; the MCMC itself is never rescaled, and the other output files are the sampled ARG. Set to 0 to disable rescaling|
+|**-scaling_rep**|optional|the number of ARG rescaling rounds applied to a copy of each written posterior sample, default at 1; the rescaled node times are written to `prefix_of_output_files_rescaled_nodes_{i}.txt`. Set to 0 to disable rescaling|
 |**-scaling_bin**|optional|the number of time bins used for ARG rescaling, default at 100|
 |**-mapping_rep**|optional|the number of stochastic mapping draws written for each posterior sample, default at 1. With 1 the draw is `prefix_of_output_files_muts_{i}.txt`. With more, draw `r` is `prefix_of_output_files_muts_{r}_{i}.txt`|
 |**-tip_ages**|optional|file with the sampling ages in calendar years before present, see [Heterochronous samples](#heterochronous-samples-ancient-dna)|
 |**-g**|optional|generation time in years, required with `-tip_ages`|
 |**-mask_n**|optional|Negative mask. A BED file of the regions to mask. A row without a sample name masks its region for all samples, and SINGER ignores the VCF records in that region. A row with a VCF sample name in a fourth column masks the region for that sample only, and SINGER treats both of its haplotypes as missing data there.|
 |**-mask_p**|optional|Positive mask. A BED file of the accessible regions, for example the 1000 Genomes strict accessibility mask for GRCh37 ([20141020.strict_mask.whole_genome.bed](https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/supporting/accessible_genome_masks/20141020.strict_mask.whole_genome.bed)). SINGER masks each base between `-start` and `-end` outside these regions for all samples. You can use `-mask_p` together with `-mask_n`.|
-|**-genotype_lik**|optional|read the GL or PL of each genotype, from the input record or else from `-genotype_calls`, and let the MCMC redraw that genotype from its likelihood and the ARG; a genotype without a likelihood is read as written; a written heterozygous genotype keeps its written phase unless `-phase` is also given.|
-|**-phase**|optional|let the MCMC redraw the phase of each heterozygous genotype, site by site, from the ARG; the written phase is the starting state. Without `-genotype_lik` only the written heterozygous genotypes are redrawn.|
-|**-genotype_calls**|optional|the caller's VCF whose GL or PL are used where the input has none, matched by position, REF, ALT and sample name; its variant positions absent from the input are added. Read only with `-genotype_lik`.|
+|**-genotype_lik**|optional|read the GL or PL of each genotype, from the input record or else from `-genotype_calls`, and let the MCMC redraw that genotype from its likelihood and the ARG; a genotype without a likelihood is read as written.|
+|**-phase**|optional|let the MCMC redraw the phase of each heterozygous genotype, site by site, from the ARG.|
+|**-genotype_calls**|optional|the caller's VCF whose GL or PL are used where the input has none, matched by position, REF, ALT and sample name. Read only with `-genotype_lik`.|
 |**-chrom**|optional|the chromosome to read from the input file (default: the first chromosome in the file)|
 |**-chrom_n**|optional|the chromosome to read from the `-mask_n` file (default: the `-chrom` chromosome)|
 |**-chrom_p**|optional|the chromosome to read from the `-mask_p` file (default: the `-chrom` chromosome)|
+|**-model**|optional|the substitution model: `CFN` (default; two states, VCF input only) or `JC`, `K80`, `F81`, `HKY`, `GTR` (four states, VCF or alignment input). The model's parameters are sampled in the MCMC and written to `prefix_of_output_files_model.txt`. Under a four-state model `-mapping_rep` defaults to 0, and `-polar`, `-genotype_lik` and `-phase` do not apply.|
+|**-gamma**|optional|the number of discrete gamma rate categories across sites under a four-state model, default at 1; the shape is sampled in the MCMC.|
 
 The output files will be:
 
@@ -76,14 +82,14 @@ The output files will be:
 prefix_of_output_files_nodes_{i}.txt, prefix_of_output_files_branches_{i}.txt, prefix_of_output_files_muts_{i}.txt, prefix_of_output_files_recombs_{i}.txt
 ```
 
-with `i` from `0` to `num_samples - 1`, and `prefix_of_output_files_rescaled_nodes_{i}.txt` when `-scaling_rep` is above 0. SINGER also writes `prefix_of_output_files_counts_{i}.txt`, with one row for each row of the branches file: the expected number of mutations on the branch, and the number of its bases at which the data can see a mutation on it (a base where at least one sample below the branch and one sample outside it have data). Each muts row is one substitution: the position, the lower and upper node of its branch, the state after it, 1 when at that site at least one sample below the branch and one outside it have data and 0 when the draw placed it on a branch the data cannot see (the same rule as the counts file), and its time in the units of the nodes file. Under a four-state model the draw is the full history of each site given the data (Nielsen 2002): a branch can carry several rows at one site, written from its older end down, and columns without a variable site are drawn too, so a row can sit at a column where every sample shows one base. A row whose upper node is -1 gives the state at the top of the tree. When `-scaling_rep` is above 0, the muts and counts files are drawn at the rescaled node times. `prefix_of_output_files.ckp` holds the flags of the run. `-resume` reads the flags it is not given from this file and stops when a given flag differs. With `-genotype_lik` or `-phase`, SINGER also writes `prefix_of_output_files_cells_{i}.txt`. Each row holds a site position, then the index and the allele of each haplotype of the samples that have a genotype likelihood or a phased heterozygote at that site. `-resume` reads the last sample's nodes, branches and recombs files, the log, the input files and, with `-genotype_lik` or `-phase`, its cells file. We recommend converting these files to tree sequence format in tskit, with this function:
+with `i` from `0` to `num_samples - 1`, and `prefix_of_output_files_rescaled_nodes_{i}.txt` when `-scaling_rep` is above 0. `prefix_of_output_files_counts_{i}.txt` has one row for each row of the branches file: the expected number of mutations on the branch, and the number of its bases at which the data can see a mutation on it (a base where at least one sample below the branch and one sample outside it have data). Each muts row is one mutation: the position, the lower and upper node of its branch, the state after it, 1 when the data can see it at that site by the same rule and 0 otherwise, and its time in the units of the nodes file. Under a four-state model a branch can carry several rows at one site, and a row whose upper node is -1 gives the base at the root. When `-scaling_rep` is above 0, the muts and counts files are drawn at the rescaled node times. Under a four-state model `prefix_of_output_files_model.txt` has one row per sample: the sample index, kappa, the base frequencies of A, C, G and T, the exchangeabilities of AC, AG, AT, CG, CT and GT, and the gamma shape. `prefix_of_output_files.ckp` holds the flags of the run, which `-resume` reads. With `-genotype_lik` or `-phase`, `prefix_of_output_files_cells_{i}.txt` holds, per site, the index and the allele of each redrawn haplotype. `-resume` reads the last sample's files. We recommend converting these files to tree sequence format in tskit, with this function:
 
 ```
 path_to_singer/convert_to_tskit.py -input prefix_of_arg_files -output prefix_of_tskit_files
 -start start_index -end end_index -step step_size
 ```
 
-This tool converts the ARG samples with index from `start_index` to `end_index`, with interval size `step_size`, to `prefix_of_tskit_files_{i}.trees`. The node times are the rescaled ones when SINGER wrote them (`-scaling_rep` above 0), else the sampled ones. With `-mapping_rep` above 1 it writes one tree sequence for each draw, `prefix_of_tskit_files_{r}_{i}.trees`. Each tree sequence carries the mapping in its mutation table, with `informed` in each mutation's metadata, the expected number of mutations and the informed bases of each branch in its edge metadata (`expected_mutations`, `informed_bases`), and the flags of the run in its provenance record. tskit does not simplify a tree sequence whose edges carry metadata. Call `tables.edges.drop_metadata()` first when you need `simplify`. `convert_long_ARG.py` writes the same content for a chromosome run in blocks.
+This tool converts the ARG samples with index from `start_index` to `end_index`, with interval size `step_size`, to `prefix_of_tskit_files_{i}.trees`. The node times are the rescaled ones when SINGER wrote them, else the sampled ones. With `-mapping_rep` above 1 it writes one tree sequence for each draw, `prefix_of_tskit_files_{r}_{i}.trees`. Each tree sequence carries the mapping in its mutation table (`informed` in the mutation metadata), the counts in its edge metadata (`expected_mutations`, `informed_bases`) and the flags of the run in its provenance record; call `tables.edges.drop_metadata()` before `simplify`, which tskit refuses on edges with metadata. Without a muts file the tree sequence has no mutation table. `convert_long_ARG.py` writes the same content for a chromosome run in blocks.
 
 ### Rate maps
 
@@ -97,11 +103,6 @@ A rate map file has one segment on each line, with three numbers: the left posit
 2500000 5000000 1.5e-8
 ```
 
-With a recombination map, the bin width follows the local recombination rate, so recombination hotspots get narrower bins. Bins end at the segment boundaries of both maps.
-
-SINGER stops with an error if the mutation rate is 0 everywhere between `-start` and `-end`, or if the VCF has a variant where the mutation rate is 0. If the recombination rate is 0 everywhere between `-start` and `-end`, SINGER prints a warning and infers an ARG without recombination.
-
-With a mutation rate map, the ARG rescaling (`-scaling_rep`) weights the length of each branch by the mutation rate along its span. Under missing data, both sides of the rescaling ratio use only the bases of a branch at which the data can see a mutation on it.
 
 ### Heterochronous samples (ancient DNA)
 

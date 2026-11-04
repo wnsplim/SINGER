@@ -718,9 +718,9 @@ void Data_reader::read_alignment(double start_pos, double end_pos) {
     for (int i = 0; i < n; i++) {
         any_missing = any_missing or !masked_intervals[i].empty();
     }
-    cout << "alignment: " << n << " sequences, " << length << " columns, " << variable << " variable columns, " << invariant
-         << " invariant columns, " << masked_columns << " columns in the mask, " << no_data << " columns without data, " << multiple
-         << " columns with more than two bases, " << ambiguous << " columns with ambiguity codes" << endl;
+    cout << "alignment: " << n << " sequences, " << length << " sites, " << variable << " variable sites, " << invariant
+         << " invariant sites, " << masked_columns << " sites in the mask, " << no_data << " sites without data, " << multiple
+         << " sites with more than two bases, " << ambiguous << " sites with ambiguity codes" << endl;
 }
 
 vector<double> Data_reader::base_frequencies() {
