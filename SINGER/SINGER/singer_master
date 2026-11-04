@@ -392,8 +392,8 @@ def main():
     parser.add_argument('-r', type=str, help='Recombination rate: a number, or a rate map file. Default: the -m value.')
     parser.add_argument('-input', type=str, help='Input file: .vcf, .vcf.gz, .bcf, or an alignment (FASTA, PHYLIP, NEXUS).')
     parser.add_argument('-subst_model', type=str, default='CFN', choices=['CFN', 'JC', 'K80', 'F81', 'HKY', 'GTR'], help='Substitution model: CFN, JC, K80, F81, HKY or GTR. Default: CFN.')
-    parser.add_argument('-gamma', type=int, default=1, help='Number of discrete gamma rate categories under a four-state model. Default: 1.')
-    parser.add_argument('-augment', action='store_true', help='Sample the mutations with the ARG under a four-state model.')
+    parser.add_argument('-gamma', type=int, default=1, help='Number of discrete gamma rate categories under a four-state model, or 0 for the continuous gamma under -augment. Default: 1.')
+    parser.add_argument('-augment', action='store_true', help='Sample the mutation history of every site with the ARG under a four-state model.')
     parser.add_argument('-output', type=str, required=True, help='Output file prefix.')
     parser.add_argument('-start', type=float, required=True, help='Start position.')
     parser.add_argument('-end', type=float, required=True, help='End position (exclusive).')
@@ -431,12 +431,18 @@ def main():
     four_state = args.subst_model != 'CFN'
     if alignment and not four_state:
         parser.error("An alignment input needs a four-state model")
-    if args.gamma < 1:
-        parser.error("-gamma must be at least 1")
-    if args.gamma > 1 and not four_state:
-        parser.error("-gamma needs a four-state model")
+    if args.gamma < 0:
+        parser.error("-gamma must be 0 or at least 1")
+    if args.gamma != 1 and not four_state:
+        print("Warning: under CFN the gamma shape is identified only by sites with more than one mutation, which the two-state model does not represent.", file=sys.stderr)
+        parser.error("-gamma is refused under CFN; use -subst_model JC, K80, F81, HKY or GTR")
     if args.augment and not four_state:
-        parser.error("-augment needs a four-state model")
+        print("Warning: under CFN the mutation history of a site is one change at most, and the pruned chain is the exact and cheaper sampler for it.", file=sys.stderr)
+        parser.error("-augment is refused under CFN; use -subst_model JC, K80, F81, HKY or GTR")
+    if args.augment and args.gamma > 1:
+        parser.error("-gamma above 1 is not available under -augment; -gamma 0 runs the continuous gamma")
+    if not args.augment and args.gamma == 0:
+        parser.error("-gamma 0 is available under -augment only")
     if args.polar is not None and four_state:
         parser.error("-polar applies to CFN only")
     if alignment and args.chrom:
@@ -446,7 +452,7 @@ def main():
     polar = (0.5 if args.polar is None else args.polar) if not four_state else None
     tips = tip_flags(args.tip_ages, args.g)
     tips += f" -subst_model {args.subst_model}"
-    if args.gamma > 1:
+    if args.gamma != 1:
         tips += f" -gamma {args.gamma}"
     if args.augment:
         tips += " -augment"
