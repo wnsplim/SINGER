@@ -40,6 +40,8 @@ public:
 
     bool has_exchangeabilities() const { return name == "GTR"; }
 
+    bool continuous_gamma() const { return categories == 0; }
+
     void transition(double x, double *T) const {
         if (states == 2) {
             T[0] = 1;
@@ -53,9 +55,33 @@ public:
 
     void transition_eigen(double x, double *T) const;
 
+    double transition_entry(double x, int i, int j) const;
+
+    double transition_dot(double x, int i, const double *w) const;
+
+    double rate(int i, int j) const { return rate_matrix[states*i + j]; }
+
+    double rate_integrated_entry(int b, double A, double l) const;
+
+    long double log_rate_integrated_stay(int b, long double A, long double l) const;
+
+    double h(int b, double x) const;
+
+    vector<double> h_max = {};
+
+    double sample_change_rate(int b, double A, double l) const;
+
+    long double node_expectation(int b, double A, double l1, double l2, double l3, double l0) const;
+
+    double node_excess(int b, double x1, double x2, double x3, double x0) const;
+
+    double node_rate(int b, double A, double l1, double l2, double l3, double l0) const;
+
+    double node_sum(double x1, double x2, double x3, int xu, int xl, const double *w) const;
+
     void count_matrix(double x, double *M) const;
 
-    void sample_path(int a, int b, double x, const double *P0, vector<pair<double, int>> &path) const;
+    void sample_path(int a, int b, double x, double P_ab, vector<pair<double, int>> &path, bool change = false) const;
 
     static double regularized_gamma(double a, double x);
 
@@ -70,8 +96,11 @@ private:
     vector<double> count_tensor = {};
     vector<double> distinct = {};
     vector<double> cijg = {};
+    vector<double> split_terms = {};
 
     void decompose(const vector<double> &Q);
+
+    void find_h_max();
 };
 
 #endif /* Site_model_hpp */

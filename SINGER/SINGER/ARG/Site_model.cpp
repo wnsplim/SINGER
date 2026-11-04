@@ -45,9 +45,214 @@ void Site_model::set(const string &model, const vector<double> &frequencies, con
     }
     rate_matrix = Q;
     decompose(Q);
+    find_h_max();
 }
 
-void Site_model::sample_path(int a, int b, double x, const double *P0, vector<pair<double, int>> &path) const {
+static double stay_phi2(double lambda, double q, double x) {
+    double y = (lambda + q)*x;
+    if (fabs(y) < 1e-2) {
+        return exp(-q*x)*(1.0/2 + y*(1.0/6 + y*(1.0/24 + y*(1.0/120 + y*(1.0/720 + y/5040)))));
+    }
+    if (y > 1) {
+        return (exp(lambda*x) - exp(-q*x)*(1 + y))/(y*y);
+    }
+    return exp(-q*x)*(expm1(y) - y)/(y*y);
+}
+
+double Site_model::h(int b, double x) const {
+    int G = (int) distinct.size();
+    const double *c = cijg.data() + states*G*b + G*b;
+    double q = -rate_matrix[states*b + b], v = 0;
+    for (int g = 0; g < G; g++) {
+        double z = distinct[g] + q;
+        v += c[g]*z*z*stay_phi2(distinct[g], q, x);
+    }
+    return v;
+}
+
+void Site_model::find_h_max() {
+    double top = 0;
+    for (double l : distinct) {
+        top = max(top, fabs(l));
+    }
+    h_max.assign(states, 0.0);
+    for (int b = 0; b < states; b++) {
+        double q = -rate_matrix[states*b + b], h0 = h(b, 0.0);
+        double end = max(2/sqrt(h0), 40/top), step = 0.05/(top + q);
+        int n = (int) ceil(end/step);
+        int best = 0;
+        double best_v = h0;
+        for (int i = 1; i <= n; i++) {
+            double v = h(b, i*step);
+            if (v > best_v) {
+                best_v = v;
+                best = i;
+            }
+        }
+        double lo = max(0, best - 1)*step, hi = (best + 1)*step, r = (sqrt(5.0) - 1)/2;
+        for (int it = 0; it < 100; it++) {
+            double m1 = hi - r*(hi - lo), m2 = lo + r*(hi - lo);
+            if (h(b, m1) < h(b, m2)) {
+                lo = m1;
+            } else {
+                hi = m2;
+            }
+        }
+        h_max[b] = max(best_v, h(b, (lo + hi)/2));
+    }
+}
+
+double Site_model::transition_dot(double x, int i, const double *w) const {
+    int G = (int) distinct.size();
+    double e[4];
+    for (int g = 0; g < G; g++) {
+        e[g] = exp(distinct[g]*x);
+    }
+    double total = 0;
+    for (int j = 0; j < states; j++) {
+        if (w[j] != 0) {
+            const double *c = cijg.data() + states*G*i + G*j;
+            double v = 0;
+            for (int g = 0; g < G; g++) {
+                v += c[g]*e[g];
+            }
+            total += w[j]*max(v, 0.0);
+        }
+    }
+    return total;
+}
+
+double Site_model::rate_integrated_entry(int b, double A, double l) const {
+    int G = (int) distinct.size();
+    const double *c = cijg.data() + states*G*b + G*b;
+    double v = 0;
+    for (int g = 0; g < G; g++) {
+        v += c[g]*exp(-alpha*log1p(-distinct[g]*l/A));
+    }
+    return v;
+}
+
+long double Site_model::log_rate_integrated_stay(int b, long double A, long double l) const {
+    return -(long double) alpha*log1pl(-(long double) rate_matrix[states*b + b]*l/A);
+}
+
+double Site_model::sample_change_rate(int b, double A, double l) const {
+    double q = -rate_matrix[states*b + b];
+    gamma_distribution<double> proposal(alpha + 1, 1/A);
+    while (true) {
+        double nu = proposal(random_engine);
+        if (uniform_random() < -expm1(-q*nu*l)/(q*nu*l)) {
+            return nu;
+        }
+    }
+}
+
+long double Site_model::node_expectation(int b, double A, double l1, double l2, double l3, double l0) const {
+    int G = (int) distinct.size();
+    const double *c = cijg.data() + states*G*b + G*b, *w = split_terms.data() + G*G*G*b;
+    long double v = 0;
+    if (!continuous_gamma()) {
+        long double e1[4], e2[4], e3[4], p = 0;
+        for (int g = 0; g < G; g++) {
+            e1[g] = expl((long double) distinct[g]*l1);
+            e2[g] = expl((long double) distinct[g]*l2);
+            e3[g] = expl((long double) distinct[g]*l3);
+            p += c[g]*expl((long double) distinct[g]*l0);
+        }
+        for (int i = 0; i < G; i++) {
+            for (int j = 0; j < G; j++) {
+                for (int k = 0; k < G; k++) {
+                    v += w[G*G*i + G*j + k]*e1[i]*e2[j]*e3[k];
+                }
+            }
+        }
+        return v*p;
+    }
+    auto power = [&](double lambda) { return exp(-alpha*log1p(-lambda/A)); };
+    double s = 0;
+    for (int i = 0; i < G; i++) {
+        for (int j = 0; j < G; j++) {
+            for (int k = 0; k < G; k++) {
+                double lambda = distinct[i]*l1 + distinct[j]*l2 + distinct[k]*l3;
+                if (l0 == 0) {
+                    s += w[G*G*i + G*j + k]*power(lambda);
+                    continue;
+                }
+                for (int m = 0; m < G; m++) {
+                    s += w[G*G*i + G*j + k]*c[m]*power(lambda + distinct[m]*l0);
+                }
+            }
+        }
+    }
+    return s;
+}
+
+double Site_model::node_excess(int b, double x1, double x2, double x3, double x0) const {
+    double x[4] = {x1, x2, x3, x0}, q = -rate_matrix[states*b + b], after[5], before = 1, v = 0, r = 0;
+    after[4] = 1;
+    for (int i = 3; i >= 0; i--) {
+        after[i] = after[i + 1]*exp(-q*x[i]);
+    }
+    for (int i = 0; i < 4; i++) {
+        v += x[i]*x[i]*h(b, x[i])*before*after[i + 1];
+        before *= transition_entry(x[i], b, b);
+    }
+    for (int s = 0; s < states; s++) {
+        if (s != b) {
+            r += transition_entry(x1, b, s)*transition_entry(x2, s, b)*transition_entry(x3, s, b);
+        }
+    }
+    return v + r*transition_entry(x0, b, b);
+}
+
+double Site_model::node_rate(int b, double A, double l1, double l2, double l3, double l0) const {
+    double q = -rate_matrix[states*b + b], bound = h_max[b]*(l1*l1 + l2*l2 + l3*l3 + l0*l0);
+    for (int s = 0; s < states; s++) {
+        double qs = -rate_matrix[states*s + s];
+        if (s != b) {
+            bound += qs*min(min(q*l1*l2, q*l1*l3), qs*l2*l3);
+        }
+    }
+    gamma_distribution<double> proposal(alpha + 2, 1/A);
+    while (true) {
+        double nu = proposal(random_engine);
+        if (uniform_random()*bound*nu*nu < node_excess(b, nu*l1, nu*l2, nu*l3, nu*l0)) {
+            return nu;
+        }
+    }
+}
+
+double Site_model::node_sum(double x1, double x2, double x3, int xu, int xl, const double *w) const {
+    int G = (int) distinct.size();
+    double e1[4], e2[4], e3[4], total = 0;
+    for (int g = 0; g < G; g++) {
+        e1[g] = exp(distinct[g]*x1);
+        e2[g] = exp(distinct[g]*x2);
+        e3[g] = exp(distinct[g]*x3);
+    }
+    for (int y = 0; y < states; y++) {
+        const double *cu = cijg.data() + states*G*xu + G*y, *cl = cijg.data() + states*G*y + G*xl;
+        double up = 0, low = 0, query = 0;
+        for (int g = 0; g < G; g++) {
+            up += cu[g]*e1[g];
+            low += cl[g]*e2[g];
+        }
+        for (int a = 0; a < states; a++) {
+            if (w[a] != 0) {
+                const double *cq = cijg.data() + states*G*y + G*a;
+                double v = 0;
+                for (int g = 0; g < G; g++) {
+                    v += cq[g]*e3[g];
+                }
+                query += w[a]*max(v, 0.0);
+            }
+        }
+        total += max(up, 0.0)*max(low, 0.0)*query;
+    }
+    return total;
+}
+
+void Site_model::sample_path(int a, int b, double x, double P_ab, vector<pair<double, int>> &path, bool change) const {
     path.clear();
     if (states == 2) {
         if (a != b) {
@@ -62,17 +267,19 @@ void Site_model::sample_path(int a, int b, double x, const double *P0, vector<pa
     bool first = true;
     while (true) {
         double T = x - done;
-        const double *P = P0;
-        if (!first or P0 == nullptr) {
-            transition_eigen(T, Pbuf);
-            P = Pbuf;
-        }
-        first = false;
         double q = -rate_matrix[n*s + s];
         double stay = exp(-q*T);
-        if (s == b and uniform_random()*P[n*s + b] < stay) {
-            return;
+        if (s == b and !(first and change)) {
+            double P_sb = P_ab;
+            if (!first) {
+                transition_eigen(T, Pbuf);
+                P_sb = Pbuf[n*s + b];
+            }
+            if (uniform_random()*P_sb < stay) {
+                return;
+            }
         }
+        first = false;
         for (int j = 0; j < n; j++) {
             double y = (eigenvalues[j] + q)*T;
             J[j] = stay*T*(fabs(y) < 1e-8 ? 1 + y/2 : expm1(y)/y);
@@ -272,6 +479,28 @@ void Site_model::decompose(const vector<double> &Q) {
             }
         }
     }
+    split_terms.assign(n*G*G*G, 0.0);
+    for (int b = 0; b < n; b++) {
+        for (int s = 0; s < n; s++) {
+            for (int i = 0; i < G; i++) {
+                for (int j = 0; j < G; j++) {
+                    for (int k = 0; k < G; k++) {
+                        split_terms[G*G*G*b + G*G*i + G*j + k] += cijg[n*G*b + G*s + i]*cijg[n*G*s + G*b + j]*cijg[n*G*s + G*b + k];
+                    }
+                }
+            }
+        }
+    }
+}
+
+double Site_model::transition_entry(double x, int i, int j) const {
+    int G = (int) distinct.size();
+    const double *c = cijg.data() + states*G*i + G*j;
+    double v = 0;
+    for (int g = 0; g < G; g++) {
+        v += c[g]*exp(distinct[g]*x);
+    }
+    return max(v, 0.0);
 }
 
 void Site_model::transition_eigen(double x, double *T) const {
@@ -338,7 +567,7 @@ void Site_model::set_gamma(int k, double shape) {
     alpha = shape;
     categories = k;
     rates.assign(1, 1.0);
-    if (k == 1) {
+    if (k <= 1) {
         return;
     }
     vector<double> cuts(k + 1, 0.0);

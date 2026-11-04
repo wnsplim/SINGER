@@ -21,6 +21,8 @@ extern std::uniform_real_distribution<> uniform_distribution;
 
 double uniform_random();
 
+long long binomial_random(long long n, double p);
+
 std::string get_time();
 
 #endif /* random_utils_hpp */

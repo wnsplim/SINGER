@@ -363,14 +363,14 @@ int main(int argc, const char * argv[]) {
             }
             input_filename = args[++i];
         }
-        else if (arg == "-model") {
+        else if (arg == "-subst_model") {
             if (i + 1 >= n_args || args[i+1][0] == '-') {
-                cerr << "Error: -model flag expects CFN, JC, K80, F81, HKY or GTR. " << endl;
+                cerr << "Error: -subst_model flag expects CFN, JC, K80, F81, HKY or GTR. " << endl;
                 exit(1);
             }
             model_name = args[++i];
             if (model_name != "CFN" and model_name != "JC" and model_name != "K80" and model_name != "F81" and model_name != "HKY" and model_name != "GTR") {
-                cerr << "Error: -model flag expects CFN, JC, K80, F81, HKY or GTR. " << endl;
+                cerr << "Error: -subst_model flag expects CFN, JC, K80, F81, HKY or GTR. " << endl;
                 exit(1);
             }
         }
@@ -523,7 +523,7 @@ int main(int argc, const char * argv[]) {
     sampler.set_output_file_prefix(output_prefix);
     bool alignment = sampler.data.is_alignment();
     if (alignment and model_name == "CFN") {
-        cerr << "Error: an alignment input needs -model JC, K80, F81, HKY or GTR. " << endl;
+        cerr << "Error: an alignment input needs -subst_model JC, K80, F81, HKY or GTR. " << endl;
         exit(1);
     }
     bool ploidy_given = find(args.begin(), args.end(), "-ploidy") != args.end();
@@ -565,7 +565,7 @@ int main(int argc, const char * argv[]) {
             exit(1);
         }
         if (polar_given) {
-            cerr << "Warning: -polar has no effect under -model " << model_name << ", whose root prior is the stationary distribution. " << endl;
+            cerr << "Warning: -polar has no effect under -subst_model " << model_name << ", whose root prior is the stationary distribution. " << endl;
         }
     }
     if (model_name != "CFN" and penalty != 1) {

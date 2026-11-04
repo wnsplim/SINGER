@@ -119,8 +119,8 @@ def finish_mutations(tables):
 
 
 def uses_bases(prefix):
-    """Whether the run at prefix used a four-state model (its .ckp names -model other than CFN)."""
-    return read_ckp(prefix).get('-model', 'CFN') != 'CFN'
+    """Whether the run at prefix used a four-state model (its .ckp names -subst_model other than CFN)."""
+    return read_ckp(prefix).get('-subst_model', 'CFN') != 'CFN'
 
 
 def read_ckp(prefix):

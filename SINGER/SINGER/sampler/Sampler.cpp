@@ -161,7 +161,7 @@ void Sampler::write_model() {
     if (model.states != 4) {
         return;
     }
-    ofstream file(output_prefix + "_model.txt", ios::out|ios::app);
+    ofstream file(output_prefix + "_subst_model.txt", ios::out|ios::app);
     file << setprecision(numeric_limits<double>::max_digits10) << sample_index << " " << model.kappa;
     for (double p : model.pi) {
         file << " " << p;
@@ -176,7 +176,7 @@ void Sampler::read_model() {
     if (model.states != 4) {
         return;
     }
-    string filename = output_prefix + "_model.txt";
+    string filename = output_prefix + "_subst_model.txt";
     ifstream fin(filename);
     if (!fin.good()) {
         cerr << "model file not found: " << filename << endl;

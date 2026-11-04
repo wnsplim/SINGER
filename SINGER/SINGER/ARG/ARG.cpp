@@ -1120,7 +1120,7 @@ void ARG::draw_mutations(const function<double(Node *)> *time_of) {
                 }
                 continue;
             }
-            model.sample_path(state[t.up[k]], state[k], u*flat.lengths[k], P == nullptr ? nullptr : P + 16*k, path);
+            model.sample_path(state[t.up[k]], state[k], u*flat.lengths[k], P == nullptr ? 0.0 : P[16*k + 4*state[t.up[k]] + state[k]], path);
             double top_time = time_at(upper);
             for (auto &[tau, s] : path) {
                 rows.push_back({Branch(lower, upper), s, informed_tip[k], top_time - tau/u});
@@ -1227,7 +1227,7 @@ void ARG::draw_mutations(const function<double(Node *)> *time_of) {
                     if (k == t2.top or p2.missing[k]) {
                         continue;
                     }
-                    model.sample_path(state[t2.up[k]], state[k], u*flat2.lengths[k], P + 16*k, path);
+                    model.sample_path(state[t2.up[k]], state[k], u*flat2.lengths[k], P[16*k + 4*state[t2.up[k]] + state[k]], path);
                     if (path.empty()) {
                         continue;
                     }
