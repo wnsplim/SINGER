@@ -77,9 +77,11 @@ public:
 
     void load_states(vector<Node *> &leaves);
 
-    void update_model(const function<double()> &log_likelihood);
+    void update_model(const function<double()> &log_likelihood, int repeats, bool substitution, bool alpha);
 
     void update_model();
+
+    void set_augment();
 
     void write_model();
 

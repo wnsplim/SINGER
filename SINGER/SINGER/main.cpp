@@ -385,8 +385,8 @@ int main(int argc, const char * argv[]) {
                 cerr << "Error: -gamma flag expects a number. " << endl;
                 exit(1);
             }
-            if (gamma_k < 1) {
-                cerr << "Error: -gamma must be at least 1. " << endl;
+            if (gamma_k < 0) {
+                cerr << "Error: -gamma must be 0 (the continuous gamma, under -augment) or at least 1. " << endl;
                 exit(1);
             }
         }
@@ -572,12 +572,22 @@ int main(int argc, const char * argv[]) {
         cerr << "Error: -penalty applies to the CFN model only. " << endl;
         exit(1);
     }
-    if (gamma_k > 1 and model_name == "CFN") {
-        cerr << "Error: -gamma applies to the four-state models only. " << endl;
+    if (gamma_k != 1 and model_name == "CFN") {
+        cerr << "Warning: under CFN the gamma shape is identified only by sites with more than one mutation, which the two-state model does not represent. " << endl;
+        cerr << "Error: -gamma is refused under CFN; use -subst_model JC, K80, F81, HKY or GTR. " << endl;
         exit(1);
     }
     if (augment and model_name == "CFN") {
-        cerr << "Error: -augment applies to the four-state models only. " << endl;
+        cerr << "Warning: under CFN the mutation history of a site is one change at most, and the pruned chain is the exact and cheaper sampler for it. " << endl;
+        cerr << "Error: -augment is refused under CFN; use -subst_model JC, K80, F81, HKY or GTR. " << endl;
+        exit(1);
+    }
+    if (augment and gamma_k > 1) {
+        cerr << "Error: -gamma above 1 is not available under -augment; -gamma 0 runs the continuous gamma. " << endl;
+        exit(1);
+    }
+    if (!augment and gamma_k == 0) {
+        cerr << "Error: -gamma 0 (the continuous gamma) is available under -augment only. " << endl;
         exit(1);
     }
     if (!resume and !output_prefix.empty()) {

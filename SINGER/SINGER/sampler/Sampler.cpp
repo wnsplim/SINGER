@@ -89,10 +89,7 @@ static vector<double> dirichlet_draw(const vector<double> &a) {
     return x;
 }
 
-void Sampler::update_model(const function<double()> &log_likelihood) {
-    if (model.states != 4) {
-        return;
-    }
+void Sampler::update_model(const function<double()> &log_likelihood, int repeats, bool substitution, bool alpha) {
     normal_distribution<double> normal(0.0, 1.0);
     double step = 0.2;
     double concentration_pi = max(1000.0, arg.column_base.empty() ? (double) arg.mutation_sites.size() : sequence_length), concentration_r = max(1000.0, (double) arg.mutation_sites.size());
@@ -106,13 +103,13 @@ void Sampler::update_model(const function<double()> &log_likelihood) {
             arg.model = model;
         }
     };
-    if (model.has_kappa()) {
+    for (int n = 0; n < repeats and substitution and model.has_kappa(); n++) {
         double k = model.kappa, k2 = k*exp(step*normal(random_engine));
         arg.model.kappa = k2;
         arg.model.refresh();
         decide(2*log1p(k) - 2*log1p(k2) + log(k2/k));
     }
-    if (model.has_frequencies()) {
+    for (int n = 0; n < repeats and substitution and model.has_frequencies(); n++) {
         vector<double> a(4), b(4);
         for (int i = 0; i < 4; i++) {
             a[i] = concentration_pi*model.pi[i];
@@ -125,7 +122,7 @@ void Sampler::update_model(const function<double()> &log_likelihood) {
         arg.model.refresh();
         decide(log_dirichlet(model.pi, b) - log_dirichlet(p2, a));
     }
-    if (model.has_exchangeabilities()) {
+    for (int n = 0; n < repeats and substitution and model.has_exchangeabilities(); n++) {
         vector<double> s(6), a(6), b(6);
         for (int i = 0; i < 6; i++) {
             s[i] = model.exchangeabilities[i]/6;
@@ -139,7 +136,7 @@ void Sampler::update_model(const function<double()> &log_likelihood) {
         arg.model.refresh();
         decide(log_dirichlet(s, b) - log_dirichlet(s2, a));
     }
-    if (model.categories > 1) {
+    for (int n = 0; n < repeats and alpha; n++) {
         double al = model.alpha, al2 = al*exp(step*normal(random_engine));
         arg.model.alpha = al2;
         arg.model.refresh();
@@ -151,10 +148,24 @@ void Sampler::update_model() {
     if (model.states != 4) {
         return;
     }
+    if (arg.augment) {
+        History_statistics s;
+        arg.history_statistics(s);
+        update_model([&]() { return arg.statistics_log_density(s); }, 10, true, false);
+        if (model.continuous_gamma()) {
+            update_model([&]() { return arg.alpha_log_density(s); }, 10, false, true);
+            arg.redraw_rates(s);
+        }
+        return;
+    }
     map<double, Branch> lineage;
     lineage[0] = Branch(*arg.sample_nodes.begin(), arg.root.get());
     Tree empty;
-    update_model([&]() { return arg.mutation_log_likelihood(lineage, 0, sequence_length, 0, empty); });
+    update_model([&]() { return arg.mutation_log_likelihood(lineage, 0, sequence_length, 0, empty); }, 1, true, model.categories > 1);
+}
+
+void Sampler::set_augment() {
+    arg.augment = augment and !Threader_smc::no_data;
 }
 
 void Sampler::write_model() {
@@ -238,7 +249,7 @@ void Sampler::build_singleton_arg() {
     Node_ptr n = *ordered_sample_nodes.begin();
     arg = ARG(Ne, sequence_length);
     arg.model = model;
-    arg.augment = augment;
+    set_augment();
     arg.column_base = data.column_base;
     arg.time_offset = tip_offset;
     arg.any_missing = data.any_missing;
@@ -287,6 +298,7 @@ void Sampler::set_entries(vector<Node *> &leaves) {
 void Sampler::iterative_start() {
     start_log();
     build_singleton_arg();
+    arg.augment = false;
     auto it = ordered_sample_nodes.begin();
     it++;
     Threader_smc threader = Threader_smc(bsp_c, tsp_q);
@@ -297,9 +309,6 @@ void Sampler::iterative_start() {
         arg.ancestral_prob = polar;
         Node_ptr n = *it;
         threader.thread(arg, n);
-        if (arg.augment) {
-            arg.redraw_node_states();
-        }
         it++;
         random_seed = random_engine();
         arg.draw_mutations();
@@ -312,6 +321,11 @@ void Sampler::iterative_start() {
         }
     }
     arg.resample_genotypes();
+    set_augment();
+    if (arg.augment) {
+        arg.draw_mutations(nullptr, arg.mutations, true);
+        arg.redraw_histories(arg.mutations, true);
+    }
     cout << "orignal ARG length: " << arg.get_arg_length() << endl;
     string node_file = output_prefix + "_start_nodes_" + to_string(sample_index) + ".txt";
     string branch_file= output_prefix + "_start_branches_" + to_string(sample_index) + ".txt";
@@ -336,9 +350,6 @@ void Sampler::sweep_samples() {
         random_engine.seed(random_seed);
         threader.reset();
         threader.rethread_sample(arg, n);
-        if (arg.augment) {
-            arg.redraw_node_states();
-        }
         random_seed = random_engine();
     }
     arg.release_dead_nodes();
@@ -366,12 +377,12 @@ void Sampler::internal_sample(int num_iters, int spacing) {
             }
             moves += 1;
             arg.clear_remove_info();
-            if (arg.augment) {
-                arg.redraw_node_states();
-            }
         }
         arg.resample_genotypes();
         arg.release_dead_nodes();
+        if (arg.augment) {
+            arg.redraw_histories(arg.mutations, true);
+        }
         update_model();
         string node_file = output_prefix + "_nodes_" + to_string(sample_index) + ".txt";
         string branch_file= output_prefix + "_branches_" + to_string(sample_index) + ".txt";
@@ -407,7 +418,9 @@ void Sampler::resume_internal_sample(int num_iters, int spacing) {
     sample_index += 1;
     arg.penalty = penalty;
     arg.ancestral_prob = polar;
-    arg.draw_mutations();
+    if (!arg.augment) {
+        arg.draw_mutations();
+    }
     arg.check_incompatibility();
     cout << "Number of trees: " << arg.recombinations.size() << endl;
     cout << "Number of flippings: " << arg.count_flipping() << endl;
@@ -441,9 +454,21 @@ vector<double> Sampler::rescale(string filename) {
 void Sampler::write_mapping(string base, string index, string counts_file, const vector<double> &rescaled) {
     function<double(Node *)> time_of = [&](Node *n) { return n == arg.root.get() ? n->time : rescaled[n->index]; };
     const function<double(Node *)> *tp = rescaled.empty() ? nullptr : &time_of;
+    map<double, vector<Mutation_row>> draws;
     for (int r = 1; r <= mapping_rep; r++) {
-        arg.draw_mutations(tp);
-        arg.write_mutations(base + "_muts_" + (mapping_rep > 1 ? to_string(r) + "_" : "") + index + ".txt");
+        string file = base + "_muts_" + (mapping_rep > 1 ? to_string(r) + "_" : "") + index + ".txt";
+        if (!arg.augment) {
+            arg.draw_mutations(tp, arg.mutations, false);
+            arg.write_mutations(file, arg.mutations);
+        } else if (r == 1) {
+            arg.write_histories(file, arg.mutations, tp);
+            if (model.continuous_gamma()) {
+                arg.write_rates(base + "_rates_" + index + ".txt");
+            }
+        } else {
+            arg.redraw_histories(draws, false);
+            arg.write_histories(file, draws, tp);
+        }
     }
     vector<double> expected, informed_bases;
     arg.mapping_counts(tp, expected, informed_bases);
@@ -524,7 +549,7 @@ void Sampler::load_resume_arg() {
     set_model();
     read_model();
     arg.model = model;
-    arg.augment = augment;
+    set_augment();
     arg.column_base = data.column_base;
     load_states(leaves);
     for (Node *n : leaves) {
@@ -543,7 +568,13 @@ void Sampler::load_resume_arg() {
         arg.read_cells(cells_file);
     }
     if (arg.augment) {
-        arg.redraw_node_states();
+        string index = to_string(sample_index);
+        string muts = output_prefix + "_muts_" + (mapping_rep > 1 ? "1_" : "") + index + ".txt";
+        string rescaled = scaling_rep > 0 ? output_prefix + "_rescaled_nodes_" + index + ".txt" : "";
+        if (!arg.read_histories(muts, output_prefix + "_rates_" + index + ".txt", rescaled)) {
+            arg.draw_mutations(nullptr, arg.mutations, true);
+            arg.redraw_histories(arg.mutations, true);
+        }
     }
 }
 

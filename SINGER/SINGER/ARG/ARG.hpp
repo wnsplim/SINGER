@@ -152,12 +152,58 @@ struct Site_messages {
     double scale = 1;
     double z = 0;
     vector<Site_messages> parts = {};
-    bool augmented = false;
-    int category = 0;
-    vector<unsigned char> lower_mask = {};
+    bool silent = false;
+    vector<unsigned char> kind = {};
     vector<signed char> upper_state = {};
-    vector<double> old_factor = {};
+    vector<signed char> lower_state = {};
+    vector<double> fixed = {};
+    array<double, 4> weight = {1.0, 1.0, 1.0, 1.0};
+    double rate = 1;
+    double T = 0;
+    int base = -1;
 };
+
+enum Join_kind : unsigned char { E1, E2, ROOT };
+
+struct Join_case {
+    Join_kind kind = E1;
+    bool query = false;
+    int anchor = -1;
+    double length = 0;
+};
+
+struct Pattern_group {
+    vector<char> forced = {};
+    vector<pair<double, double>> ranges = {};
+    array<double, 4> count = {0, 0, 0, 0};
+    double unknown = 0;
+};
+
+struct Joint_terms {
+    double fwd[4] = {0, 0, 0, 0};
+    double T = 0;
+    double A[4] = {0, 0, 0, 0};
+    long double log_c[4] = {0, 0, 0, 0};
+    long double F[4] = {0, 0, 0, 0};
+    long double Fc[4] = {0, 0, 0, 0};
+    long double R[4] = {0, 0, 0, 0};
+};
+
+struct Column_statistics {
+    double pos = 0;
+    int changes = 0;
+    array<double, 4> time = {0, 0, 0, 0};
+};
+
+struct History_statistics {
+    array<array<double, 4>, 4> changes = {};
+    array<double, 4> time = {0, 0, 0, 0};
+    array<double, 4> root = {0, 0, 0, 0};
+    vector<Column_statistics> columns = {};
+    map<double, array<double, 5>> groups = {};
+};
+
+const double *edge_transitions(const Site_model &model, const Flat_tree &flat, double unit, const Peel &p);
 
 class ARG {
     
@@ -177,7 +223,7 @@ public:
     double ancestral_prob = 0.5;
     Site_model model;
     bool augment = false;
-    map<double, int> site_category = {};
+    vector<vector<pair<double, int>>> exception_sites = {};
     vector<char> column_base = {};
     bool any_missing = false;
     vector<double> unassayed_sites = {};
@@ -298,13 +344,98 @@ public:
 
     void draw_site_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<int> &state, int &category, int base = -1, const vector<char> *forced_missing = nullptr);
 
-    int category_at(double pos) const;
+    int node_state(Node *n, double pos) { return __builtin_ctz((unsigned) n->get_state(pos)); }
 
-    void emission_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s);
+    int exception_base(int bin, double pos) const;
 
-    double augmented_site_value(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p);
+    void column_below(const Flat_tree &flat, const Tree_order &t, double pos, const vector<char> *forced, vector<int> &below);
 
-    void redraw_node_states();
+    unsigned query_mask(Node *query, const vector<int> &below, double pos, int base);
+
+    Join_case join_case(const Flat_tree &flat, const Tree_order &t, const vector<int> &below, const Branch &b, double time, Node *query, bool query_data, double unit);
+
+    int join_state(const Join_case &c, const Flat_tree &flat, const vector<Mutation_row> &rows, const Branch &b, double time, double pos);
+
+    int branch_state(const vector<Mutation_row> &rows, const Branch &b, double time, double pos);
+
+    double join_value(const Join_case &c, int s, unsigned mask) const;
+
+    double node_weights(const Branch &b, double time, double t_d, int xu, int xl, unsigned mask, double unit, double *w) const;
+
+    bool all_same_state(const Flat_tree &flat, const vector<int> &below, double pos, int base);
+
+    bool only_replaced_changes(const vector<Mutation_row> &rows, int base, const Join_case &cn, const Join_case &co, const Branch &bn, const Branch &bo, double pos);
+
+    map<array<double, 10>, Joint_terms> joint_cache = {};
+
+    const Joint_terms &joint_terms(const Join_case &cn, const Join_case &co, const Branch &bn, double tn, const Branch &bo, double to, double T, double unit);
+
+    long double joint_log_mix(const Joint_terms &j, const long double *v, int base) const;
+
+    double pattern_entry(int b, double uT, double l) const;
+
+    double group_entry(const Join_case &c, int b) const;
+
+    double group_constant(const Join_case &c, int b, double uT) const;
+
+    double data_length(const Flat_tree &flat, const Tree_order &t, const vector<int> &below) const;
+
+    void pattern_weights(const Flat_tree &flat, const Tree_order &t, const vector<int> &below, double unit, array<double, 4> &w) const;
+
+    map<double, double> site_rate = {};
+
+    vector<tuple<double, bool, double>> rate_journal = {};
+
+    double column_rate(double pos) const { return model.continuous_gamma() ? site_rate.at(pos) : 1.0; }
+
+    void journal_rate(double pos, double v, bool keep);
+
+    void pattern_groups(int bin, vector<Pattern_group> &out);
+
+    void history_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Site_messages &s);
+
+    void history_pattern(const Flat_tree &flat, const Tree_order &t, double unit, const vector<char> &forced, Node *query, Site_messages &s);
+
+    void pattern_fill(const Flat_tree &flat, const Tree_order &t, double unit, const vector<int> &below, Node *query, Site_messages &s);
+
+    vector<tuple<double, bool, vector<Mutation_row>>> row_journal = {};
+    unordered_map<double, int> row_journaled = {};
+    vector<tuple<Node *, double, double>> history_journal = {};
+    vector<pair<int, vector<pair<double, int>>>> exception_journal = {};
+    vector<char> exception_journaled = {};
+    vector<int> history_below = {};
+    vector<char> history_main = {};
+    vector<Pattern_group> history_groups = {};
+
+    vector<Mutation_row> &journal_rows(double pos);
+
+    void journal_state(Node *n, double pos, int s);
+
+    vector<pair<double, int>> &journal_exceptions(int bin);
+
+    void restore_histories();
+
+    void keep_histories();
+
+    void detach_histories();
+
+    void attach_histories(map<double, Branch> &joins, map<double, Branch> &added);
+
+    void write_histories(string filename, const map<double, vector<Mutation_row>> &rows, const function<double(Node *)> *time_of);
+
+    void redraw_histories(map<double, vector<Mutation_row>> &out, bool state);
+
+    void history_statistics(History_statistics &st);
+
+    double statistics_log_density(const History_statistics &st) const;
+
+    double alpha_log_density(const History_statistics &st) const;
+
+    void redraw_rates(const History_statistics &st);
+
+    void write_rates(string filename);
+
+    bool read_histories(string muts_file, string rates_file, string rescaled_file);
 
     void mixture_counts(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<Msg> &above, vector<double> &differs, vector<char> &informed_msg, vector<char> &informed_tip, int base = -1, const vector<char> *forced_missing = nullptr);
 
@@ -338,7 +469,7 @@ public:
 
     void site_counts(const Flat_tree &flat, const Tree_order &t, double unit, const Peel &p, const vector<Msg> &above, vector<double> &differs, vector<char> &informed_msg, vector<char> &informed_tip);
 
-    void draw_mutations(const function<double(Node *)> *time_of);
+    void draw_mutations(const function<double(Node *)> *time_of, map<double, vector<Mutation_row>> &out, bool state);
 
     vector<tuple<int, int, double, double>> branch_rows();
 
@@ -401,8 +532,8 @@ public:
     
     void write_recombs(string filename);
     
-    void write_mutations(string filename);
-    
+    void write_mutations(string filename, const map<double, vector<Mutation_row>> &rows);
+
     void read_nodes(string filename);
     
     void read_branches(string filename);

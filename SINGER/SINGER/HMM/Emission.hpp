@@ -14,6 +14,11 @@
 
 struct Edge_matrices {
     bool at_root = false;
+    double time = 0;
+    double query_length = 0;
+    double lower_length = 0;
+    double upper_length = 0;
+    double root_length = 0;
     double lower[16];
     double query[16];
     double upper[16];
@@ -35,6 +40,10 @@ public:
     vector<const Site_messages *> groups = {};
     vector<double> group_weights = {};
     vector<pair<array<const Site_messages *, 4>, double>> unknown_groups = {};
+    bool augment = false;
+    bool unknown = false;
+    const Site_messages *main_pattern = nullptr;
+    vector<pair<const Site_messages *, array<double, 5>>> patterns = {};
 
     double mut_emit(Branch &branch, double time, Node *node, double norm);
 

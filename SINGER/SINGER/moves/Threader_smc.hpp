@@ -110,6 +110,14 @@ public:
 
     double data_log_ratio(ARG &a);
 
+    double history_log_ratio(ARG &a);
+
+    vector<int> ratio_below = {};
+
+    vector<Pattern_group> ratio_groups = {};
+
+    vector<Pattern_group> emit_groups = {};
+
     Flat_tree ratio_flat;
     Tree_order ratio_order;
     vector<vector<Msg>> ratio_ref = {};

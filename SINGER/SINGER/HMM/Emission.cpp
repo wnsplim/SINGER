@@ -45,20 +45,71 @@ static double ratio_with(int S, const Site_messages &s, int k, const Edge_matric
     return (w - s.empty_term)/s.scale;
 }
 
-static double state_ratio(const Site_messages &s, int k, const Edge_matrices &e, const double *pi) {
-    unsigned mask = s.lower_mask[k];
-    int x = s.upper_state[k];
-    double w = 0;
-    for (int q = 0; q < 4; q++) {
-        double top = x < 0 ? pi[q] : e.upper[4*x + q];
-        double down = masked_sum(e.lower + 4*q, mask);
-        double query = 0;
-        for (int a = 0; a < 4; a++) {
-            query += e.query[4*q + a]*s.nu[a];
-        }
-        w += top*down*query;
+static double split_value(const Site_model &m, const Site_messages &s, const Edge_matrices &e, int b) {
+    if (m.continuous_gamma()) {
+        double A = m.alpha - m.rate(b, b)*(s.T - e.upper_length - e.lower_length);
+        return (double) m.node_expectation(b, A, e.upper_length, e.lower_length, e.query_length, 0.0);
     }
-    return w/s.old_factor[k];
+    double v = 0;
+    for (int y = 0; y < 4; y++) {
+        v += e.upper[4*b + y]*e.lower[4*y + b]*e.query[4*y + b];
+    }
+    return v;
+}
+
+static double pattern_value(const Site_model &m, const Site_messages &s, int k, const Edge_matrices &e, int b) {
+    if (s.kind[k] == E2) {
+        return s.fixed[4*k + b];
+    }
+    if (s.kind[k] == E1) {
+        return split_value(m, s, e, b)/s.fixed[4*k + b];
+    }
+    if (m.continuous_gamma()) {
+        return m.rate_integrated_entry(b, m.alpha - m.rate(b, b)*s.T, e.root_length);
+    }
+    return e.upper[5*b];
+}
+
+static double pattern_mixture(const Site_model &m, const Site_messages &s, int k, const Edge_matrices &e) {
+    double v = 0, w = 0;
+    if (s.kind[k] == E1) {
+        for (int b = 0; b < 4; b++) {
+            v += s.fixed[4*k + b]*split_value(m, s, e, b);
+        }
+        return v;
+    }
+    for (int b = 0; b < 4; b++) {
+        v += s.weight[b]*pattern_value(m, s, k, e, b);
+        w += s.weight[b];
+    }
+    return v/w;
+}
+
+static double history_value(const Site_model &m, const Site_messages &s, int k, const Edge_matrices &e, bool unknown) {
+    if (s.base >= 0) {
+        return unknown ? pattern_mixture(m, s, k, e) : pattern_value(m, s, k, e, s.base);
+    }
+    if (s.kind[k] == E1) {
+        int x = s.upper_state[k], xl = s.lower_state[k];
+        if (m.continuous_gamma()) {
+            return m.node_sum(s.rate*e.upper_length, s.rate*e.lower_length, s.rate*e.query_length, x, xl, s.nu.data())/s.fixed[k];
+        }
+        double v = 0;
+        for (int y = 0; y < 4; y++) {
+            const double *q = e.query + 4*y;
+            v += e.upper[4*x + y]*e.lower[4*y + xl]*(q[0]*s.nu[0] + q[1]*s.nu[1] + q[2]*s.nu[2] + q[3]*s.nu[3]);
+        }
+        return v/s.fixed[k];
+    }
+    if (s.kind[k] == ROOT) {
+        int x = s.upper_state[k];
+        if (m.continuous_gamma()) {
+            return m.transition_dot(s.rate*e.root_length, x, s.nu.data());
+        }
+        const double *row = e.upper + 4*x;
+        return row[0]*s.nu[0] + row[1]*s.nu[1] + row[2]*s.nu[2] + row[3]*s.nu[3];
+    }
+    return s.fixed[k];
 }
 
 static double mixture_with(int S, const Site_messages &s, int k, const Edge_matrices *edge) {
@@ -92,6 +143,26 @@ static double mixture_unknown(int S, const array<const Site_messages *, 4> &set,
 }
 
 void Emission::edge_matrices(Branch &branch, double time, Node *node, Edge_matrices *out) {
+    if (augment) {
+        Edge_matrices &e = out[0];
+        e.at_root = branch.upper_node->index == -1;
+        e.time = time;
+        e.query_length = unit*(time - node->time);
+        e.lower_length = unit*(time - branch.lower_node->time);
+        e.upper_length = e.at_root ? 0.0 : unit*(branch.upper_node->time - time);
+        e.root_length = unit*(2*time - branch.lower_node->time - node->time);
+        if (model->continuous_gamma()) {
+            return;
+        }
+        model->transition(e.query_length, e.query);
+        if (e.at_root) {
+            model->transition(e.root_length, e.upper);
+        } else {
+            model->transition(e.lower_length, e.lower);
+            model->transition(e.upper_length, e.upper);
+        }
+        return;
+    }
     int K = (int) model->rates.size();
     for (int c = 0; c < K; c++) {
         double u = unit*model->rates[c];
@@ -108,8 +179,30 @@ void Emission::edge_matrices(Branch &branch, double time, Node *node, Edge_matri
 double Emission::mut_emit(Branch &branch, double norm, const Edge_matrices *cached) {
     double emit = norm;
     int S = model->states, k = branch.lower_node->flat_index;
+    if (augment) {
+        for (const Site_messages *site : sites) {
+            if (!site->silent) {
+                emit *= history_value(*model, *site, k, cached[0], unknown);
+            }
+        }
+        for (auto &[p, n] : patterns) {
+            if (p->silent) {
+                continue;
+            }
+            if (unknown) {
+                emit *= pow(pattern_mixture(*model, *p, k, cached[0]), n[4]);
+                continue;
+            }
+            for (int b = 0; b < 4; b++) {
+                if (n[b] > 0) {
+                    emit *= pow(pattern_value(*model, *p, k, cached[0], b), n[b]);
+                }
+            }
+        }
+        return emit;
+    }
     for (const Site_messages *site : sites) {
-        emit *= site->augmented ? state_ratio(*site, k, cached[site->category], model->pi.data()) : mixture_with(S, *site, k, cached);
+        emit *= mixture_with(S, *site, k, cached);
     }
     for (size_t i = 0; i < groups.size(); i++) {
         emit *= pow(mixture_with(S, *groups[i], k, cached), group_weights[i]);
@@ -130,6 +223,14 @@ double Emission::mut_emit(Branch &branch, double time, Node *node, double norm) 
 
 void Emission::null_logs_base(Branch &branch, const Edge_matrices *cached, double *out) {
     int S = model->states, k = branch.lower_node->flat_index;
+    if (augment) {
+        const Site_messages &m = *main_pattern;
+        for (int b = 0; b < 4; b++) {
+            out[b] = m.silent or unknown ? 0.0 : -log(pattern_value(*model, m, k, cached[0], b));
+        }
+        out[4] = unknown and !m.silent ? -log(pattern_mixture(*model, m, k, cached[0])) : 0.0;
+        return;
+    }
     for (int b = 0; b < 4; b++) {
         out[b] = -log(mixture_with(S, *base_groups[b], k, cached));
     }
