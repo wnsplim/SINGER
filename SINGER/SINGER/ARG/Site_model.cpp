@@ -14,31 +14,31 @@ void Site_model::set(const string &model, const vector<double> &frequencies, con
     stamp = ++stamps;
     name = model;
     kappa = kappa_in;
-    exchangeabilities = exchangeabilities_in.empty() ? vector<double>(6, 1.0) : exchangeabilities_in;
-    if (model == "CFN") {
-        states = 2;
-        pi = {0.5, 0.5};
-        return;
+    states = model == "CFN" ? 2 : 4;
+    int S = states, pairs = S*(S - 1)/2;
+    exchangeabilities = exchangeabilities_in.empty() ? vector<double>(pairs, 1.0) : exchangeabilities_in;
+    if (model == "CFN" or model == "JC" or model == "K80") {
+        pi.assign(S, 1.0/S);
+    } else {
+        pi = frequencies;
     }
-    states = 4;
-    pi = (model == "JC" or model == "K80") ? vector<double>{0.25, 0.25, 0.25, 0.25} : frequencies;
-    vector<double> s(6, 1.0);
+    vector<double> s(pairs, 1.0);
     if (model == "K80" or model == "HKY") {
         s[1] = s[4] = kappa;
     } else if (model == "GTR") {
         s = exchangeabilities;
     }
-    vector<double> Q(16, 0.0);
-    int pair_index[4][4] = {{-1, 0, 1, 2}, {0, -1, 3, 4}, {1, 3, -1, 5}, {2, 4, 5, -1}};
+    vector<double> Q(S*S, 0.0);
     double total = 0;
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
+    for (int i = 0; i < S; i++) {
+        for (int j = 0; j < S; j++) {
             if (i != j) {
-                Q[4*i + j] = s[pair_index[i][j]]*pi[j];
-                Q[4*i + i] -= Q[4*i + j];
+                int lo = min(i, j), hi = max(i, j);
+                Q[S*i + j] = s[lo*S - lo*(lo + 1)/2 + hi - lo - 1]*pi[j];
+                Q[S*i + i] -= Q[S*i + j];
             }
         }
-        total -= pi[i]*Q[4*i + i];
+        total -= pi[i]*Q[S*i + i];
     }
     for (double &q : Q) {
         q /= total;
@@ -104,7 +104,7 @@ void Site_model::find_h_max() {
 
 double Site_model::transition_dot(double x, int i, const double *w) const {
     int G = (int) distinct.size();
-    double e[4];
+    double e[max_states];
     for (int g = 0; g < G; g++) {
         e[g] = exp(distinct[g]*x);
     }
@@ -152,7 +152,7 @@ long double Site_model::node_expectation(int b, double A, double l1, double l2, 
     const double *c = cijg.data() + states*G*b + G*b, *w = split_terms.data() + G*G*G*b;
     long double v = 0;
     if (!continuous_gamma()) {
-        long double e1[4], e2[4], e3[4], p = 0;
+        long double e1[max_states], e2[max_states], e3[max_states], p = 0;
         for (int g = 0; g < G; g++) {
             e1[g] = expl((long double) distinct[g]*l1);
             e2[g] = expl((long double) distinct[g]*l2);
@@ -224,7 +224,7 @@ double Site_model::node_rate(int b, double A, double l1, double l2, double l3, d
 
 double Site_model::node_sum(double x1, double x2, double x3, int xu, int xl, const double *w) const {
     int G = (int) distinct.size();
-    double e1[4], e2[4], e3[4], total = 0;
+    double e1[max_states], e2[max_states], e3[max_states], total = 0;
     for (int g = 0; g < G; g++) {
         e1[g] = exp(distinct[g]*x1);
         e2[g] = exp(distinct[g]*x2);
@@ -254,14 +254,14 @@ double Site_model::node_sum(double x1, double x2, double x3, int xu, int xl, con
 
 void Site_model::sample_path(int a, int b, double x, double P_ab, vector<pair<double, int>> &path, bool change) const {
     path.clear();
-    if (states == 2) {
+    if (branch_product) {
         if (a != b) {
             path.push_back({uniform_random()*x, b});
         }
         return;
     }
     int n = states;
-    double Pbuf[16], J[4], p[4];
+    double Pbuf[max_states*max_states], J[max_states], p[max_states];
     double done = 0;
     int s = a;
     bool first = true;
@@ -334,7 +334,7 @@ void Site_model::sample_path(int a, int b, double x, double P_ab, vector<pair<do
 }
 
 void Site_model::count_matrix(double x, double *M) const {
-    if (states == 2) {
+    if (branch_product) {
         M[0] = 0;
         M[1] = x;
         M[2] = x;
@@ -342,7 +342,7 @@ void Site_model::count_matrix(double x, double *M) const {
         return;
     }
     int n = states;
-    double e[4], J[16];
+    double e[max_states], J[max_states*max_states];
     for (int m = 0; m < n; m++) {
         e[m] = exp(eigenvalues[m]*x);
     }
@@ -505,7 +505,7 @@ double Site_model::transition_entry(double x, int i, int j) const {
 
 void Site_model::transition_eigen(double x, double *T) const {
     int n = states, G = (int) distinct.size();
-    double e[4];
+    double e[max_states];
     for (int g = 0; g < G; g++) {
         e[g] = exp(distinct[g]*x);
     }

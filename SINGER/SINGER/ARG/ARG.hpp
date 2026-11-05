@@ -20,10 +20,12 @@
 #include <unordered_map>
 #include <functional>
 
-typedef array<double, 4> Msg;
+typedef array<double, max_states> Msg;
 
-inline void push_up(const double *T, int S, const Msg &m, Msg &parent) {
-    if (S == 2) {
+const Msg ones = [] { Msg m; m.fill(1.0); return m; }();
+
+inline void push_up(const double *T, int S, bool product, const Msg &m, Msg &parent) {
+    if (product) {
         parent[0] *= m[0] + T[1]*m[1];
         parent[1] *= m[1] + T[2]*m[0];
         return;
@@ -37,8 +39,8 @@ inline void push_up(const double *T, int S, const Msg &m, Msg &parent) {
     }
 }
 
-inline void transmit(const double *T, int S, const Msg &m, Msg &out) {
-    if (S == 2) {
+inline void transmit(const double *T, int S, bool product, const Msg &m, Msg &out) {
+    if (product) {
         out[0] = m[0] + T[1]*m[1];
         out[1] = m[1] + T[2]*m[0];
         return;
@@ -52,8 +54,8 @@ inline void transmit(const double *T, int S, const Msg &m, Msg &out) {
     }
 }
 
-inline void transmit_up(const double *T, int S, const Msg &a, Msg &out) {
-    if (S == 2) {
+inline void transmit_up(const double *T, int S, bool product, const Msg &a, Msg &out) {
+    if (product) {
         out[0] = a[0] + T[2]*a[1];
         out[1] = a[1] + T[1]*a[0];
         return;
@@ -90,10 +92,10 @@ struct Bin_gaps {
     bool uniform = false;
     vector<int> full = {};
     double count = 0;
-    vector<array<double, 4>> bases = {};
-    array<double, 4> tail_bases = {0, 0, 0, 0};
-    array<double, 4> all_bases = {0, 0, 0, 0};
-    array<double, 4> count_bases = {0, 0, 0, 0};
+    vector<array<double, max_states>> bases = {};
+    array<double, max_states> tail_bases = {};
+    array<double, max_states> all_bases = {};
+    array<double, max_states> count_bases = {};
     double all_count = 0;
 };
 
@@ -111,7 +113,7 @@ struct Tree_order {
 
 inline double masked_sum(const double *row, unsigned mask) {
     double v = 0;
-    for (int a = 0; a < 4; a++) {
+    for (int a = 0; a < max_states; a++) {
         if (mask >> a & 1) {
             v += row[a];
         }
@@ -130,7 +132,7 @@ struct Peel {
     vector<char> missing = {};
     vector<Msg> msg = {};
     vector<Msg> empty = {};
-    int count[4] = {0, 0, 0, 0};
+    int count[max_states] = {};
     int leaf[2] = {-1, -1};
     vector<int> path = {};
     vector<char> in_path = {};
@@ -145,7 +147,7 @@ struct Site_messages {
     double unit = 0;
     vector<Msg> in = {};
     vector<Msg> above = {};
-    Msg nu = {1.0, 1.0, 1.0, 1.0};
+    Msg nu = ones;
     int top = -1;
     int tree = -1;
     double empty_term = 0;
@@ -157,7 +159,7 @@ struct Site_messages {
     vector<signed char> upper_state = {};
     vector<signed char> lower_state = {};
     vector<double> fixed = {};
-    array<double, 4> weight = {1.0, 1.0, 1.0, 1.0};
+    array<double, max_states> weight = ones;
     double rate = 1;
     double T = 0;
     int base = -1;
@@ -175,32 +177,32 @@ struct Join_case {
 struct Pattern_group {
     vector<char> forced = {};
     vector<pair<double, double>> ranges = {};
-    array<double, 4> count = {0, 0, 0, 0};
+    array<double, max_states> count = {};
     double unknown = 0;
 };
 
 struct Joint_terms {
     double fwd[4] = {0, 0, 0, 0};
     double T = 0;
-    double A[4] = {0, 0, 0, 0};
-    long double log_c[4] = {0, 0, 0, 0};
-    long double F[4] = {0, 0, 0, 0};
-    long double Fc[4] = {0, 0, 0, 0};
-    long double R[4] = {0, 0, 0, 0};
+    double A[max_states] = {};
+    long double log_c[max_states] = {};
+    long double F[max_states] = {};
+    long double Fc[max_states] = {};
+    long double R[max_states] = {};
 };
 
 struct Column_statistics {
     double pos = 0;
     int changes = 0;
-    array<double, 4> time = {0, 0, 0, 0};
+    array<double, max_states> time = {};
 };
 
 struct History_statistics {
-    array<array<double, 4>, 4> changes = {};
-    array<double, 4> time = {0, 0, 0, 0};
-    array<double, 4> root = {0, 0, 0, 0};
+    array<array<double, max_states>, max_states> changes = {};
+    array<double, max_states> time = {};
+    array<double, max_states> root = {};
     vector<Column_statistics> columns = {};
-    map<double, array<double, 5>> groups = {};
+    map<double, array<double, max_states + 1>> groups = {};
 };
 
 const double *edge_transitions(const Site_model &model, const Flat_tree &flat, double unit, const Peel &p);
@@ -225,6 +227,7 @@ public:
     bool augment = false;
     vector<vector<pair<double, int>>> exception_sites = {};
     vector<char> column_base = {};
+    bool unknown_base() const { return column_base.empty() and model.states > 2; }
     bool any_missing = false;
     vector<double> unassayed_sites = {};
     double sequence_length = 0;
@@ -380,7 +383,7 @@ public:
 
     double data_length(const Flat_tree &flat, const Tree_order &t, const vector<int> &below) const;
 
-    void pattern_weights(const Flat_tree &flat, const Tree_order &t, const vector<int> &below, double unit, array<double, 4> &w) const;
+    void pattern_weights(const Flat_tree &flat, const Tree_order &t, const vector<int> &below, double unit, array<double, max_states> &w) const;
 
     map<double, double> site_rate = {};
 
@@ -439,7 +442,7 @@ public:
 
     void mixture_counts(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<Msg> &above, vector<double> &differs, vector<char> &informed_msg, vector<char> &informed_tip, int base = -1, const vector<char> *forced_missing = nullptr);
 
-    void base_counts(double s, double t, array<double, 4> &n) const;
+    void base_counts(double s, double t, array<double, max_states> &n) const;
 
     void entry_weights(const Flat_tree &flat, const Tree_order &t, double unit, double pos, const Genotype_likelihood &g, Peel &p, double *w);
 

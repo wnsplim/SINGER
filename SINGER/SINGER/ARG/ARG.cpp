@@ -530,7 +530,7 @@ void ARG::check_incompatibility() {
 }
 
 int ARG::count_flipping() {
-    if (model.states != 2) {
+    if (!model.branch_product) {
         return 0;
     }
     int count = 0;
@@ -697,7 +697,7 @@ void ARG::site_missing(const Flat_tree &flat, double pos, vector<char> &missing)
 }
 
 void ARG::root_prior(double *prior) const {
-    if (model.states == 2) {
+    if (model.branch_product) {
         prior[0] = ancestral_prob;
         prior[1] = 1 - ancestral_prob;
         return;
@@ -708,19 +708,19 @@ void ARG::root_prior(double *prior) const {
 }
 
 Msg ARG::leaf_message(int code) const {
-    Msg m = {0.0, 0.0, 0.0, 0.0};
-    if (model.states == 2) {
+    Msg m = {};
+    if (model.branch_product) {
         m[0] = code == 0 ? 1.0 : 0.0;
         m[1] = code == 1 ? 1.0 : 0.0;
         return m;
     }
-    for (int s = 0; s < 4; s++) {
+    for (int s = 0; s < model.states; s++) {
         m[s] = (code >> s) & 1 ? 1.0 : 0.0;
     }
     return m;
 }
 
-void ARG::base_counts(double s, double t, array<double, 4> &n) const {
+void ARG::base_counts(double s, double t, array<double, max_states> &n) const {
     long long lo = (long long) max(0.0, ceil(s)), hi = (long long) min((double) column_base.size(), ceil(t));
     for (long long x = lo; x < hi; x++) {
         if (column_base[x] >= 0) {
@@ -747,16 +747,17 @@ const double *edge_transitions(const Site_model &model, const Flat_tree &flat, d
     e.stamp = flat.stamp;
     e.model = model.stamp;
     e.unit = unit;
-    e.P.resize(16*flat.lengths.size());
+    int SS = model.states*model.states;
+    e.P.resize(SS*flat.lengths.size());
     for (size_t k = 0; k < flat.lengths.size(); k++) {
-        model.transition(unit*flat.lengths[k], &e.P[16*k]);
+        model.transition(unit*flat.lengths[k], &e.P[SS*k]);
     }
     return e.P.data();
 }
 
 static inline const double *edge_matrix(const Site_model &model, const double *P, double x, int k, double *T) {
     if (P != nullptr) {
-        return P + 16*k;
+        return P + model.states*model.states*k;
     }
     model.transition(x, T);
     return T;
@@ -773,24 +774,25 @@ void ARG::peel_site(const Flat_tree &flat, const Tree_order &t, double unit, dou
     } else {
         site_missing(flat, pos, p.missing);
     }
-    p.msg.assign(nb, {1.0, 1.0, 1.0, 1.0});
-    p.empty.assign(nb, {1.0, 1.0, 1.0, 1.0});
-    fill(p.count, p.count + 4, 0);
-    double T[16];
-    const double *P = S == 2 ? nullptr : edge_transitions(model, flat, unit, p);
+    p.msg.assign(nb, ones);
+    p.empty.assign(nb, ones);
+    fill(p.count, p.count + max_states, 0);
+    bool product = model.branch_product;
+    double T[max_states*max_states];
+    const double *P = product ? nullptr : edge_transitions(model, flat, unit, p);
     for (int k = 0; k < nb; k++) {
         Node *l = flat.parents[k].first;
         if (l->is_sample and !p.missing[k]) {
-            int code = base >= 0 ? (S == 2 ? base : 1 << base) : (int) l->get_state(pos);
+            int code = base >= 0 ? (product ? base : 1 << base) : (int) l->get_state(pos);
             p.msg[k] = leaf_message(code);
             p.empty[k] = p.msg[k];
-            int h = S == 2 ? code : ((code & (code - 1)) == 0 ? __builtin_ctz(code) : -1);
+            int h = product ? code : ((code & (code - 1)) == 0 ? __builtin_ctz(code) : -1);
             if (h >= 0) {
                 p.count[h] += 1;
             }
         }
         if (t.up[k] >= 0) {
-            push_up(edge_matrix(model, P, unit*flat.lengths[k], k, T), S, p.msg[k], p.msg[t.up[k]]);
+            push_up(edge_matrix(model, P,unit*flat.lengths[k], k, T), S, product, p.msg[k], p.msg[t.up[k]]);
             for (int s = 0; s < S; s++) {
                 p.empty[t.up[k]][s] *= p.empty[k][s];
             }
@@ -799,12 +801,12 @@ void ARG::peel_site(const Flat_tree &flat, const Tree_order &t, double unit, dou
 }
 
 double ARG::root_value(const Msg &top, bool seen0, bool seen1) const {
-    double prior[4] = {0, 0, 0, 0};
+    double prior[max_states] = {};
     root_prior(prior);
     bool seen[2] = {seen0, seen1};
     double v = 0;
     for (int s = 0; s < model.states; s++) {
-        double missing_term = model.states == 2 and !seen[1 - s] ? 1 - penalty : 0.0;
+        double missing_term = model.branch_product and !seen[1 - s] ? 1 - penalty : 0.0;
         v += prior[s]*(top[s] - missing_term);
     }
     return v/penalty;
@@ -837,14 +839,15 @@ void ARG::emission_single(const Flat_tree &flat, const Tree_order &t, double uni
     int nb = (int) flat.parents.size(), S = model.states;
     s.parts.clear();
     peel_site(flat, t, unit, pos, p, base, forced_missing);
-    double prior[4] = {0, 0, 0, 0};
-    root_prior(prior);
-    double T[16];
-    const double *P = S == 2 ? nullptr : edge_transitions(model, flat, unit, p);
+    Msg prior = {};
+    root_prior(prior.data());
+    double T[max_states*max_states];
+    bool product = model.branch_product;
+    const double *P = product ? nullptr : edge_transitions(model, flat, unit, p);
     s.unit = unit;
     s.top = t.top;
     s.above.resize(nb);
-    s.above[t.top] = {prior[0], prior[1], prior[2], prior[3]};
+    s.above[t.top] = prior;
     vector<Msg> &outside = p.outside;
     outside.resize(nb);
     outside[t.top] = s.above[t.top];
@@ -857,13 +860,13 @@ void ARG::emission_single(const Flat_tree &flat, const Tree_order &t, double uni
                 continue;
             }
             main[v] = 1;
-            transmit_up(edge_matrix(model, P, unit*flat.lengths[v], v, T), S, s.above[v], outside[v]);
+            transmit_up(edge_matrix(model, P,unit*flat.lengths[v], v, T), S, product, s.above[v], outside[v]);
         }
         for (int c : t.children[v]) {
             Msg a = outside[v];
             for (int d : t.children[v]) {
                 if (d != c) {
-                    push_up(edge_matrix(model, P, unit*flat.lengths[d], d, T), S, p.msg[d], a);
+                    push_up(edge_matrix(model, P,unit*flat.lengths[d], d, T), S, product, p.msg[d], a);
                 }
             }
             s.above[c] = a;
@@ -879,12 +882,12 @@ void ARG::emission_single(const Flat_tree &flat, const Tree_order &t, double uni
         int code;
         if (forced_missing != nullptr) {
             missing = (*forced_missing)[query->index];
-            code = S == 2 ? base : 1 << base;
+            code = model.branch_product ? base : 1 << base;
         } else {
             missing = any_missing and query->has_missing() and query->missing_at(Node::site_index(pos), pos);
             code = (int) query->get_state(pos);
         }
-        s.nu = missing ? Msg{1.0, 1.0, 1.0, 1.0} : leaf_message(code);
+        s.nu = missing ? ones : leaf_message(code);
         nu_empty = s.nu;
     } else {
         s.nu = p.msg[query->flat_index];
@@ -904,13 +907,14 @@ void ARG::emission_single(const Flat_tree &flat, const Tree_order &t, double uni
 
 static void path_peel(const Site_model &model, const Flat_tree &flat, const Tree_order &t, double unit, Peel &p, vector<Msg> &out) {
     int S = model.states;
-    double T[16];
-    const double *P = S == 2 ? nullptr : edge_transitions(model, flat, unit, p);
+    bool product = model.branch_product;
+    double T[max_states*max_states];
+    const double *P = product ? nullptr : edge_transitions(model, flat, unit, p);
     for (int q : p.path) {
-        Msg m = {1.0, 1.0, 1.0, 1.0};
+        Msg m = ones;
         for (int k : t.children[q]) {
             const Msg &s = p.in_path[k] ? out[k] : p.msg[k];
-            push_up(edge_matrix(model, P, unit*flat.lengths[k], k, T), S, s, m);
+            push_up(edge_matrix(model, P,unit*flat.lengths[k], k, T), S, product, s, m);
         }
         out[q] = m;
     }
@@ -1115,7 +1119,8 @@ void ARG::draw_mutations(const function<double(Node *)> *time_of, map<double, ve
             draw_site_states(flat, t, unit, pos, p, state, category);
         }
         double u = unit*model.rates[category];
-        const double *P = model.states == 2 ? nullptr : edge_transitions(model, flat, u, p);
+        int S = model.states;
+        const double *P = model.branch_product ? nullptr : edge_transitions(model, flat, u, p);
         vector<Mutation_row> &rows = out[pos];
         for (int k = 0; k < (int) flat.parents.size(); k++) {
             if (chain_state ? data[k] == 0 : p.missing[k]) {
@@ -1126,12 +1131,12 @@ void ARG::draw_mutations(const function<double(Node *)> *time_of, map<double, ve
                 lower->set_site(pos, 1 << state[k]);
             }
             if (k == t.top) {
-                if (model.states != 2) {
+                if (!model.branch_product) {
                     rows.push_back({Branch(lower, upper), state[k], 1, time_at(lower)});
                 }
                 continue;
             }
-            model.sample_path(state[t.up[k]], state[k], u*flat.lengths[k], P == nullptr ? 0.0 : P[16*k + 4*state[t.up[k]] + state[k]], path);
+            model.sample_path(state[t.up[k]], state[k], u*flat.lengths[k], P == nullptr ? 0.0 : P[S*S*k + S*state[t.up[k]] + state[k]], path);
             double top_time = time_at(upper);
             for (auto &[tau, s] : path) {
                 rows.push_back({Branch(lower, upper), s, chain_state ? (char) 0 : informed_tip[k], top_time - tau/u});
@@ -1141,7 +1146,7 @@ void ARG::draw_mutations(const function<double(Node *)> *time_of, map<double, ve
             out.erase(pos);
         }
     }
-    if (model.states == 2) {
+    if (model.branch_product) {
         return;
     }
     Flat_tree flat2;
@@ -1155,8 +1160,8 @@ void ARG::draw_mutations(const function<double(Node *)> *time_of, map<double, ve
     vector<int> below;
     auto r2 = recombinations.begin();
     bool stale2 = true;
-    int K = (int) model.rates.size();
-    bool unknown = column_base.empty();
+    int K = (int) model.rates.size(), S = model.states;
+    bool unknown = unknown_base();
     for (int b2 = 0; b2 < bin_num and coordinates[b2] < sequence_length; b2++) {
         double x0 = coordinates[b2], x1 = coordinates[b2 + 1];
         while (r2 != recombinations.end() and r2->first <= x0) {
@@ -1186,7 +1191,7 @@ void ARG::draw_mutations(const function<double(Node *)> *time_of, map<double, ve
                 }
             }
             int total = below[t2.top];
-            array<double, 4> weight = {0, 0, 0, 0};
+            array<double, max_states> weight = {};
             double weight_total = 0;
             bool have_weight = false;
             for (double x = ceil(s); x < t; x += 1) {
@@ -1209,7 +1214,7 @@ void ARG::draw_mutations(const function<double(Node *)> *time_of, map<double, ve
                 int base;
                 if (unknown) {
                     if (!have_weight) {
-                        for (int b = 0; b < 4; b++) {
+                        for (int b = 0; b < S; b++) {
                             double v = 0;
                             for (int k = 0; k < K; k++) {
                                 peel_site(flat2, t2, unit*model.rates[k], 0.0, p2, b, &forced);
@@ -1222,12 +1227,12 @@ void ARG::draw_mutations(const function<double(Node *)> *time_of, map<double, ve
                     }
                     double w = uniform_random()*weight_total;
                     base = 0;
-                    while (base < 3 and w >= weight[base]) {
+                    while (base < S - 1 and w >= weight[base]) {
                         w -= weight[base];
                         base++;
                     }
                 } else {
-                    base = column_base[(size_t) x];
+                    base = column_base.empty() ? 0 : column_base[(size_t) x];
                     if (base < 0) {
                         continue;
                     }
@@ -1241,7 +1246,7 @@ void ARG::draw_mutations(const function<double(Node *)> *time_of, map<double, ve
                     if (k == t2.top or (chain_state ? below[k] == 0 : p2.missing[k])) {
                         continue;
                     }
-                    model.sample_path(state[t2.up[k]], state[k], u*flat2.lengths[k], P[16*k + 4*state[t2.up[k]] + state[k]], path);
+                    model.sample_path(state[t2.up[k]], state[k], u*flat2.lengths[k], P[S*S*k + S*state[t2.up[k]] + state[k]], path);
                     if (path.empty()) {
                         continue;
                     }
@@ -1290,23 +1295,24 @@ void ARG::draw_mutations(const function<double(Node *)> *time_of, map<double, ve
 
 void ARG::outside_messages(const Flat_tree &flat, const Tree_order &t, double unit, const Peel &p, vector<Msg> &above) {
     int nb = (int) flat.parents.size(), S = model.states;
-    double prior[4] = {0, 0, 0, 0};
-    root_prior(prior);
-    double T[16];
-    const double *P = S == 2 ? nullptr : edge_transitions(model, flat, unit, p);
-    above.assign(nb, {0.0, 0.0, 0.0, 0.0});
-    above[t.top] = {prior[0], prior[1], prior[2], prior[3]};
+    bool product = model.branch_product;
+    Msg prior = {};
+    root_prior(prior.data());
+    double T[max_states*max_states];
+    const double *P = product ? nullptr : edge_transitions(model, flat, unit, p);
+    above.assign(nb, Msg{});
+    above[t.top] = prior;
     vector<Msg> outside(nb);
     outside[t.top] = above[t.top];
     for (int v = nb - 1; v >= 0; v--) {
         if (v != t.top) {
-            transmit_up(edge_matrix(model, P, unit*flat.lengths[v], v, T), S, above[v], outside[v]);
+            transmit_up(edge_matrix(model, P,unit*flat.lengths[v], v, T), S, product, above[v], outside[v]);
         }
         for (int c : t.children[v]) {
             Msg a = outside[v];
             for (int d : t.children[v]) {
                 if (d != c) {
-                    push_up(edge_matrix(model, P, unit*flat.lengths[d], d, T), S, p.msg[d], a);
+                    push_up(edge_matrix(model, P,unit*flat.lengths[d], d, T), S, product, p.msg[d], a);
                 }
             }
             above[c] = a;
@@ -1316,14 +1322,14 @@ void ARG::outside_messages(const Flat_tree &flat, const Tree_order &t, double un
 
 void ARG::site_counts(const Flat_tree &flat, const Tree_order &t, double unit, const Peel &p, const vector<Msg> &above, vector<double> &differs, vector<char> &informed_msg, vector<char> &informed_tip) {
     int nb = (int) flat.parents.size(), S = model.states;
-    double prior[4] = {0, 0, 0, 0};
+    double prior[max_states] = {};
     root_prior(prior);
     double Z = 0;
     for (int s = 0; s < S; s++) {
         Z += prior[s]*p.msg[t.top][s];
     }
     double factor = 1.0;
-    if (S == 2) {
+    if (model.branch_product) {
         int observed = p.count[0] + p.count[1];
         int same = observed == 0 ? -1 : p.count[1] == 0 ? 0 : p.count[0] == 0 ? 1 : -2;
         factor = same >= 0 ? Z/(Z - prior[same]*(1 - penalty)) : 1.0;
@@ -1348,7 +1354,7 @@ void ARG::site_counts(const Flat_tree &flat, const Tree_order &t, double unit, c
         }
         return hi - lo <= flat_tol*hi;
     };
-    double T[16];
+    double T[max_states*max_states];
     differs.assign(nb, 0.0);
     informed_msg.assign(nb, 0);
     informed_tip.assign(nb, 0);
@@ -1597,7 +1603,7 @@ void ARG::expected_counts(const function<double(Node *)> *time_of, const functio
             }
         }
     }
-    if (model.states == 2) {
+    if (model.branch_product) {
         return;
     }
     Flat_tree flat2;
@@ -1623,8 +1629,8 @@ void ARG::expected_counts(const function<double(Node *)> *time_of, const functio
         }
         const Bin_gaps &g = gaps_of(b2);
         double unit = penalty*thetas[b2]/(coordinates[b2 + 1] - coordinates[b2]);
-        bool unknown = column_base.empty();
-        int K = (int) model.rates.size();
+        bool unknown = unknown_base();
+        int K = (int) model.rates.size(), S = model.states;
         auto add_counts = [&](double weight) {
             for (int k = 0; k < (int) flat2.parents.size(); k++) {
                 if (k == t2.top or !informed_tip2[k]) {
@@ -1641,14 +1647,14 @@ void ARG::expected_counts(const function<double(Node *)> *time_of, const functio
                 }
             }
         };
-        auto score = [&](const array<double, 4> &n, double count) {
+        auto score = [&](const array<double, max_states> &n, double count) {
             if (unknown) {
                 if (count == 0) {
                     return;
                 }
-                array<double, 4> weight = {0, 0, 0, 0};
+                array<double, max_states> weight = {};
                 double total = 0;
-                for (int base = 0; base < 4; base++) {
+                for (int base = 0; base < S; base++) {
                     double v = 0;
                     for (int k = 0; k < K; k++) {
                         peel_site(flat2, t2, unit*model.rates[k], 0.0, p2, base, &forced);
@@ -1657,13 +1663,13 @@ void ARG::expected_counts(const function<double(Node *)> *time_of, const functio
                     weight[base] = v;
                     total += weight[base];
                 }
-                for (int base = 0; base < 4; base++) {
+                for (int base = 0; base < S; base++) {
                     mixture_counts(flat2, t2, unit, 0.0, p2, above2, differs2, informed_msg2, informed_tip2, base, &forced);
                     add_counts(count*weight[base]/total);
                 }
                 return;
             }
-            for (int base = 0; base < 4; base++) {
+            for (int base = 0; base < S; base++) {
                 if (n[base] == 0) {
                     continue;
                 }
@@ -1672,12 +1678,12 @@ void ARG::expected_counts(const function<double(Node *)> *time_of, const functio
             }
         };
         fill(forced.begin(), forced.end(), 0);
-        array<double, 4> rest = g.all_bases;
+        array<double, max_states> rest = g.all_bases;
         double rest_unknown = g.all_count;
         for (size_t j = 0; j < g.sample.size(); j++) {
             if (g.before[j] > 0) {
                 score(g.bases[j], g.before[j]);
-                for (int base = 0; base < 4; base++) {
+                for (int base = 0; base < S; base++) {
                     rest[base] -= g.bases[j][base];
                 }
                 rest_unknown -= g.before[j];
@@ -1686,7 +1692,7 @@ void ARG::expected_counts(const function<double(Node *)> *time_of, const functio
         }
         if (g.tail > 0) {
             score(g.tail_bases, g.tail);
-            for (int base = 0; base < 4; base++) {
+            for (int base = 0; base < S; base++) {
                 rest[base] -= g.tail_bases[base];
             }
             rest_unknown -= g.tail;
@@ -1751,11 +1757,11 @@ void ARG::draw_states(const Flat_tree &flat, const Tree_order &t, double unit, c
     int nb = (int) flat.parents.size();
     int top = t.top;
     const vector<Msg> &msg = p.msg;
-    double prior[4] = {0, 0, 0, 0};
+    double prior[max_states] = {};
     root_prior(prior);
-    if (model.states != 2) {
+    if (!model.branch_product) {
         int S = model.states;
-        double T[16], w[4];
+        double T[max_states*max_states], w[max_states];
         const double *P = edge_transitions(model, flat, unit, p);
         state.assign(nb, 0);
         auto draw = [&](const double *weights) {
@@ -1780,7 +1786,7 @@ void ARG::draw_states(const Flat_tree &flat, const Tree_order &t, double unit, c
                 continue;
             }
             int parent = state[t.up[k]];
-            const double *Tk = edge_matrix(model, P, unit*flat.lengths[k], k, T);
+            const double *Tk = edge_matrix(model, P,unit*flat.lengths[k], k, T);
             for (int s = 0; s < S; s++) {
                 w[s] = Tk[S*parent + s]*msg[k][s];
             }
@@ -1847,7 +1853,7 @@ void ARG::resample_site(const Flat_tree &flat, const Tree_order &t, int bin, dou
     int nb = (int) flat.parents.size();
     int top = t.top;
     double unit = penalty*thetas[bin]/(coordinates[bin + 1] - coordinates[bin]);
-    double prior[4];
+    double prior[max_states];
     root_prior(prior);
     peel_site(flat, t, unit, pos, p);
     const vector<char> &missing = p.missing;
@@ -1967,29 +1973,31 @@ void ARG::resample_site(const Flat_tree &flat, const Tree_order &t, int bin, dou
 
 void ARG::reference_peel(const Flat_tree &flat, const Tree_order &t, double unit, vector<Msg> &msg, int base) const {
     int S = model.states;
-    double T[16];
-    Msg leaf = leaf_message(S == 2 ? base : 1 << base);
+    bool product = model.branch_product;
+    double T[max_states*max_states];
+    Msg leaf = leaf_message(product ? base : 1 << base);
     int nb = (int) flat.parents.size();
-    msg.assign(nb, {1.0, 1.0, 1.0, 1.0});
+    msg.assign(nb, ones);
     for (int k = 0; k < nb; k++) {
         if (flat.parents[k].first->is_sample) {
             msg[k] = leaf;
         }
         if (t.up[k] >= 0) {
             model.transition(unit*flat.lengths[k], T);
-            push_up(T, S, msg[k], msg[t.up[k]]);
+            push_up(T, S, product, msg[k], msg[t.up[k]]);
         }
     }
 }
 
 void ARG::repeel_path(const Flat_tree &flat, const Tree_order &t, double unit, int k, vector<Msg> &msg) const {
     int S = model.states;
-    double T[16];
+    bool product = model.branch_product;
+    double T[max_states*max_states];
     for (int q = t.up[k]; q >= 0; q = t.up[q]) {
-        Msg m = {1.0, 1.0, 1.0, 1.0};
+        Msg m = ones;
         for (int c : t.children[q]) {
             model.transition(unit*flat.lengths[c], T);
-            push_up(T, S, msg[c], m);
+            push_up(T, S, product, msg[c], m);
         }
         msg[q] = m;
     }
@@ -2008,13 +2016,14 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
     Tree_order &t = likelihood_order;
     Peel &peel = likelihood_peel;
     bool order_stale = true;
-    int S = model.states, nbase = S == 2 ? 1 : 4, K = (int) model.rates.size();
+    int S = model.states, nbase = S == 2 ? 1 : S, K = (int) model.rates.size();
+    bool product = model.branch_product;
     reference_msg.resize(nbase*K);
     pattern_msg.resize(nbase*K);
     double ref_unit = -1;
-    array<double, 4> log_ref = {0, 0, 0, 0};
+    array<double, max_states> log_ref = {};
     double log_ref_u = 0, log_pattern_u = 0;
-    bool unknown = S != 2 and column_base.empty();
+    bool unknown = unknown_base();
     double ll = 0;
     double crho = -1;
     double p = 1.0;
@@ -2025,9 +2034,8 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
     vector<char> missing(samples, 0), target(samples, 0), seen(samples, 0);
     vector<int> missing_list, touched;
     bool pattern_valid = false;
-    array<double, 4> log_pattern = {0, 0, 0, 0};
+    array<double, max_states> log_pattern = {};
     int observed = samples;
-    Msg ones = {1.0, 1.0, 1.0, 1.0};
     auto apply_pattern = [&](double c) {
         bool changed = false;
         if (!pattern_valid) {
@@ -2047,7 +2055,7 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
                 missing[s] = target[s];
                 int k = t.leaf[s];
                 for (int i = 0; i < nbase*K; i++) {
-                    pattern_msg[i][k] = missing[s] ? ones : leaf_message(S == 2 ? 0 : 1 << (i/K));
+                    pattern_msg[i][k] = missing[s] ? ones : leaf_message(product ? 0 : 1 << (i/K));
                     repeel_path(tree, t, c*model.rates[i % K], k, pattern_msg[i]);
                 }
                 observed += missing[s] ? -1 : 1;
@@ -2078,7 +2086,7 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
             tree.forward_update(r);
             recomb_it++;
             order_stale = true;
-            if (S == 2 and c == crho and since_full < 256) {
+            if (product and c == crho and since_full < 256) {
                 for (const Branch &b : r.deleted_branches) {
                     if (b.upper_node != root.get()) p /= 1 + crho*(b.upper_node->time - b.lower_node->time);
                 }
@@ -2090,7 +2098,7 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
                 crho = -1;
             }
         }
-        if (S == 2) {
+        if (product) {
             if (c != crho) {
                 crho = c;
                 p = 1.0;
@@ -2129,7 +2137,7 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
             pattern_valid = false;
         }
         double rest = assayed[i];
-        array<double, 4> rest_b = {0, 0, 0, 0};
+        array<double, max_states> rest_b = {};
         const Bin_gaps *gp = (any_missing or S != 2) ? &gaps_of(i) : nullptr;
         if (S != 2) {
             rest_b = gp->all_bases;
@@ -2142,7 +2150,7 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
                     target[s] = 0;
                     seen[s] = 1;
                 }
-                auto score = [&](double count, const array<double, 4> &bases) {
+                auto score = [&](double count, const array<double, max_states> &bases) {
                     apply_pattern(c);
                     if (S == 2) {
                         ll += count*log_pattern[0];
@@ -2151,7 +2159,7 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
                         ll += count*log_pattern_u;
                         rest -= count;
                     } else {
-                        for (int b = 0; b < 4; b++) {
+                        for (int b = 0; b < S; b++) {
                             ll += bases[b]*log_pattern[b];
                             rest_b[b] -= bases[b];
                         }
@@ -2194,7 +2202,7 @@ double ARG::mutation_log_likelihood(map<double, Branch> &lineage, double x, doub
         } else if (unknown) {
             ll += rest*log_ref_u;
         } else {
-            for (int b = 0; b < 4; b++) {
+            for (int b = 0; b < S; b++) {
                 ll += rest_b[b]*log_ref[b];
             }
         }
@@ -2225,6 +2233,9 @@ const Bin_gaps &ARG::gaps_of(int bin) const {
         return count;
     };
     g.all_count = invariant_in(x0, x1);
+    if (model.states == 2) {
+        g.all_bases[0] = g.all_count;
+    }
     vector<tuple<double, int, Node *>> events;
     for (Node *s : sample_nodes) {
         vector<pair<double, double>> segs;
@@ -2266,19 +2277,22 @@ const Bin_gaps &ARG::gaps_of(int bin) const {
     sort(events.begin(), events.end());
     int gaps = 0;
     double prev = x0;
-    auto count_of = [&](double s, double t, array<double, 4> &bases) {
+    auto count_of = [&](double s, double t, array<double, max_states> &bases) {
         if (gaps == 0) {
             return 0.0;
         }
+        double n = invariant_in(s, t);
         if (!column_base.empty()) {
             base_counts(s, t, bases);
+        } else if (model.states == 2) {
+            bases[0] = n;
         }
-        return invariant_in(s, t);
+        return n;
     };
     for (auto &e : events) {
         double x = get<0>(e);
         double before = 0;
-        array<double, 4> bases = {0, 0, 0, 0};
+        array<double, max_states> bases = {};
         if (x > prev) {
             before = count_of(prev, x, bases);
             prev = x;
@@ -2291,7 +2305,7 @@ const Bin_gaps &ARG::gaps_of(int bin) const {
         gaps -= get<1>(e);
     }
     g.tail = x1 > prev ? count_of(prev, x1, g.tail_bases) : 0.0;
-    for (int b = 0; b < 4; b++) {
+    for (int b = 0; b < model.states; b++) {
         g.count_bases[b] = g.tail_bases[b];
         for (auto &v : g.bases) {
             g.count_bases[b] += v[b];

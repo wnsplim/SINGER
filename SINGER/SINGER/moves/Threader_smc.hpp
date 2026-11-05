@@ -126,7 +126,7 @@ public:
     vector<Msg> ratio_cell = {};
     vector<Site_messages> group_pool = {};
     vector<char> group_missing = {};
-    Site_messages base_pool[4];
+    Site_messages base_pool[max_states];
     int base_tree = -1;
     Node *base_query = nullptr;
     double base_unit = -1;

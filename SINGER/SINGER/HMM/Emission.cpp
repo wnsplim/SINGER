@@ -25,8 +25,8 @@ static double site_ratio_two(const Site_messages &s, Branch &branch, double time
 
 static double ratio_with(int S, const Site_messages &s, int k, const Edge_matrices &e) {
     Msg d, nu, m, up;
-    transmit(e.lower, S, s.in[k], d);
-    transmit(e.query, S, s.nu, nu);
+    transmit(e.lower, S, false, s.in[k], d);
+    transmit(e.query, S, false, s.nu, nu);
     for (int q = 0; q < S; q++) {
         m[q] = d[q]*nu[q];
     }
@@ -37,7 +37,7 @@ static double ratio_with(int S, const Site_messages &s, int k, const Edge_matric
             w += a[q]*m[q];
         }
     } else {
-        transmit(e.upper, S, m, up);
+        transmit(e.upper, S, false, m, up);
         for (int q = 0; q < S; q++) {
             w += a[q]*up[q];
         }
@@ -45,59 +45,71 @@ static double ratio_with(int S, const Site_messages &s, int k, const Edge_matric
     return (w - s.empty_term)/s.scale;
 }
 
+template <int N>
 static double split_value(const Site_model &m, const Site_messages &s, const Edge_matrices &e, int b) {
     if (m.continuous_gamma()) {
         double A = m.alpha - m.rate(b, b)*(s.T - e.upper_length - e.lower_length);
         return (double) m.node_expectation(b, A, e.upper_length, e.lower_length, e.query_length, 0.0);
     }
+    const int S = N > 0 ? N : m.states;
     double v = 0;
-    for (int y = 0; y < 4; y++) {
-        v += e.upper[4*b + y]*e.lower[4*y + b]*e.query[4*y + b];
+    for (int y = 0; y < S; y++) {
+        v += e.upper[S*b + y]*e.lower[S*y + b]*e.query[S*y + b];
     }
     return v;
 }
 
+template <int N>
 static double pattern_value(const Site_model &m, const Site_messages &s, int k, const Edge_matrices &e, int b) {
+    const int S = N > 0 ? N : m.states;
     if (s.kind[k] == E2) {
-        return s.fixed[4*k + b];
+        return s.fixed[S*k + b];
     }
     if (s.kind[k] == E1) {
-        return split_value(m, s, e, b)/s.fixed[4*k + b];
+        return split_value<N>(m, s, e, b)/s.fixed[S*k + b];
     }
     if (m.continuous_gamma()) {
         return m.rate_integrated_entry(b, m.alpha - m.rate(b, b)*s.T, e.root_length);
     }
-    return e.upper[5*b];
+    return e.upper[(S + 1)*b];
 }
 
+template <int N>
 static double pattern_mixture(const Site_model &m, const Site_messages &s, int k, const Edge_matrices &e) {
+    const int S = N > 0 ? N : m.states;
     double v = 0, w = 0;
     if (s.kind[k] == E1) {
-        for (int b = 0; b < 4; b++) {
-            v += s.fixed[4*k + b]*split_value(m, s, e, b);
+        for (int b = 0; b < S; b++) {
+            v += s.fixed[S*k + b]*split_value<N>(m, s, e, b);
         }
         return v;
     }
-    for (int b = 0; b < 4; b++) {
-        v += s.weight[b]*pattern_value(m, s, k, e, b);
+    for (int b = 0; b < S; b++) {
+        v += s.weight[b]*pattern_value<N>(m, s, k, e, b);
         w += s.weight[b];
     }
     return v/w;
 }
 
+template <int N>
 static double history_value(const Site_model &m, const Site_messages &s, int k, const Edge_matrices &e, bool unknown) {
     if (s.base >= 0) {
-        return unknown ? pattern_mixture(m, s, k, e) : pattern_value(m, s, k, e, s.base);
+        return unknown ? pattern_mixture<N>(m, s, k, e) : pattern_value<N>(m, s, k, e, s.base);
     }
+    const int S = N > 0 ? N : m.states;
     if (s.kind[k] == E1) {
         int x = s.upper_state[k], xl = s.lower_state[k];
         if (m.continuous_gamma()) {
             return m.node_sum(s.rate*e.upper_length, s.rate*e.lower_length, s.rate*e.query_length, x, xl, s.nu.data())/s.fixed[k];
         }
         double v = 0;
-        for (int y = 0; y < 4; y++) {
-            const double *q = e.query + 4*y;
-            v += e.upper[4*x + y]*e.lower[4*y + xl]*(q[0]*s.nu[0] + q[1]*s.nu[1] + q[2]*s.nu[2] + q[3]*s.nu[3]);
+        for (int y = 0; y < S; y++) {
+            const double *q = e.query + S*y;
+            double d = 0;
+            for (int a = 0; a < S; a++) {
+                d += q[a]*s.nu[a];
+            }
+            v += e.upper[S*x + y]*e.lower[S*y + xl]*d;
         }
         return v/s.fixed[k];
     }
@@ -106,8 +118,12 @@ static double history_value(const Site_model &m, const Site_messages &s, int k, 
         if (m.continuous_gamma()) {
             return m.transition_dot(s.rate*e.root_length, x, s.nu.data());
         }
-        const double *row = e.upper + 4*x;
-        return row[0]*s.nu[0] + row[1]*s.nu[1] + row[2]*s.nu[2] + row[3]*s.nu[3];
+        const double *row = e.upper + S*x;
+        double d = 0;
+        for (int a = 0; a < S; a++) {
+            d += row[a]*s.nu[a];
+        }
+        return d;
     }
     return s.fixed[k];
 }
@@ -132,9 +148,9 @@ static double total_z(const Site_messages &s) {
     return z;
 }
 
-static double mixture_unknown(int S, const array<const Site_messages *, 4> &set, int k, const Edge_matrices *cached) {
+static double mixture_unknown(int S, const array<const Site_messages *, max_states> &set, int k, const Edge_matrices *cached) {
     double with = 0, without = 0;
-    for (int b = 0; b < 4; b++) {
+    for (int b = 0; b < S; b++) {
         double z = total_z(*set[b]);
         with += z*mixture_with(S, *set[b], k, cached);
         without += z;
@@ -176,30 +192,37 @@ void Emission::edge_matrices(Branch &branch, double time, Node *node, Edge_matri
     }
 }
 
+template <int N>
+static double history_emit(const Emission &h, int k, double emit, const Edge_matrices &e) {
+    const Site_model &m = *h.model;
+    const int S = N > 0 ? N : m.states;
+    for (const Site_messages *site : h.sites) {
+        if (!site->silent) {
+            emit *= history_value<N>(m, *site, k, e, h.unknown);
+        }
+    }
+    for (auto &[p, n] : h.patterns) {
+        if (p->silent) {
+            continue;
+        }
+        if (h.unknown) {
+            emit *= pow(pattern_mixture<N>(m, *p, k, e), n[S]);
+            continue;
+        }
+        for (int b = 0; b < S; b++) {
+            if (n[b] > 0) {
+                emit *= pow(pattern_value<N>(m, *p, k, e, b), n[b]);
+            }
+        }
+    }
+    return emit;
+}
+
 double Emission::mut_emit(Branch &branch, double norm, const Edge_matrices *cached) {
     double emit = norm;
     int S = model->states, k = branch.lower_node->flat_index;
     if (augment) {
-        for (const Site_messages *site : sites) {
-            if (!site->silent) {
-                emit *= history_value(*model, *site, k, cached[0], unknown);
-            }
-        }
-        for (auto &[p, n] : patterns) {
-            if (p->silent) {
-                continue;
-            }
-            if (unknown) {
-                emit *= pow(pattern_mixture(*model, *p, k, cached[0]), n[4]);
-                continue;
-            }
-            for (int b = 0; b < 4; b++) {
-                if (n[b] > 0) {
-                    emit *= pow(pattern_value(*model, *p, k, cached[0], b), n[b]);
-                }
-            }
-        }
-        return emit;
+        return S == 4 ? history_emit<4>(*this, k, emit, cached[0]) : S == 2 ? history_emit<2>(*this, k, emit, cached[0]) : history_emit<0>(*this, k, emit, cached[0]);
     }
     for (const Site_messages *site : sites) {
         emit *= mixture_with(S, *site, k, cached);
@@ -225,18 +248,19 @@ void Emission::null_logs_base(Branch &branch, const Edge_matrices *cached, doubl
     int S = model->states, k = branch.lower_node->flat_index;
     if (augment) {
         const Site_messages &m = *main_pattern;
-        for (int b = 0; b < 4; b++) {
-            out[b] = m.silent or unknown ? 0.0 : -log(pattern_value(*model, m, k, cached[0], b));
+        for (int b = 0; b < S; b++) {
+            out[b] = m.silent or unknown ? 0.0 : -log(pattern_value<0>(*model, m, k, cached[0], b));
         }
-        out[4] = unknown and !m.silent ? -log(pattern_mixture(*model, m, k, cached[0])) : 0.0;
+        out[S] = unknown and !m.silent ? -log(pattern_mixture<0>(*model, m, k, cached[0])) : 0.0;
         return;
     }
-    for (int b = 0; b < 4; b++) {
+    for (int b = 0; b < S; b++) {
         out[b] = -log(mixture_with(S, *base_groups[b], k, cached));
     }
-    out[4] = 0;
+    out[S] = 0;
     if (unknown_count > 0) {
-        array<const Site_messages *, 4> set = {base_groups[0], base_groups[1], base_groups[2], base_groups[3]};
-        out[4] = -log(mixture_unknown(S, set, k, cached));
+        array<const Site_messages *, max_states> set;
+        copy(base_groups, base_groups + max_states, set.begin());
+        out[S] = -log(mixture_unknown(S, set, k, cached));
     }
 }

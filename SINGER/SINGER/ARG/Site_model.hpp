@@ -11,18 +11,22 @@
 #include <utility>
 using namespace std;
 
+const int max_states = 4;
+
 class Site_model {
 
 public:
 
     int states = 2;
     string name = "CFN";
+    // true when CFN runs the landed chain: transition [1, x; x, 1], at most one change at a uniform time, the HMM's branch-product emission
+    bool branch_product = true;
     vector<double> pi = {0.5, 0.5};
     vector<double> rates = {1.0};
     double alpha = 0;
     int categories = 1;
     double kappa = 1;
-    vector<double> exchangeabilities = vector<double>(6, 1.0);
+    vector<double> exchangeabilities = {1.0};
     int stamp = 0;
 
     void set(const string &model, const vector<double> &frequencies, const vector<double> &exchangeabilities, double kappa);
@@ -43,7 +47,7 @@ public:
     bool continuous_gamma() const { return categories == 0; }
 
     void transition(double x, double *T) const {
-        if (states == 2) {
+        if (branch_product) {
             T[0] = 1;
             T[1] = x;
             T[2] = x;

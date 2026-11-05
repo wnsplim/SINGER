@@ -136,12 +136,13 @@ int ARG::branch_state(const vector<Mutation_row> &rows, const Branch &b, double 
 }
 
 double ARG::node_weights(const Branch &b, double time, double t_d, int xu, int xl, unsigned mask, double unit, double *w) const {
-    double U[16], L[16], Q[16], total = 0;
+    double U[max_states*max_states], L[max_states*max_states], Q[max_states*max_states], total = 0;
+    int S = model.states;
     model.transition(unit*(b.upper_node->time - time), U);
     model.transition(unit*(time - b.lower_node->time), L);
     model.transition(unit*(time - t_d), Q);
-    for (int s = 0; s < 4; s++) {
-        w[s] = U[4*xu + s]*L[4*s + xl]*masked_sum(Q + 4*s, mask);
+    for (int s = 0; s < S; s++) {
+        w[s] = U[S*xu + s]*L[S*s + xl]*masked_sum(Q + S*s, mask);
         total += w[s];
     }
     return total;
@@ -200,7 +201,7 @@ const Joint_terms &ARG::joint_terms(const Join_case &cn, const Join_case &co, co
     j.T = rest;
     bool gamma = model.continuous_gamma();
     long double al = model.alpha, Lf = (long double) fwd[0] + fwd[1] + fwd[2] + fwd[3];
-    for (int b = 0; b < 4; b++) {
+    for (int b = 0; b < model.states; b++) {
         long double q = -(long double) model.rate(b, b);
         j.A[b] = (double) (al + q*rest);
         j.log_c[b] = logl(model.pi[b]) + (gamma ? al*(logl(al) - logl(al + q*rest)) : -q*rest);
@@ -215,8 +216,8 @@ long double ARG::joint_log_mix(const Joint_terms &j, const long double *v, int b
     if (base >= 0) {
         return logl(v[base]);
     }
-    long double top = *max_element(j.log_c, j.log_c + 4), total = 0;
-    for (int b = 0; b < 4; b++) {
+    long double top = *max_element(j.log_c, j.log_c + model.states), total = 0;
+    for (int b = 0; b < model.states; b++) {
         total += expl(j.log_c[b] - top)*v[b];
     }
     return top + logl(total);
@@ -230,7 +231,7 @@ double ARG::join_value(const Join_case &c, int s, unsigned mask) const {
         return model.transition_dot(c.length, s, leaf_message((int) mask).data());
     }
     double v = 0;
-    for (int a = 0; a < 4; a++) {
+    for (int a = 0; a < model.states; a++) {
         if (mask >> a & 1) {
             v += model.pi[a];
         }
@@ -267,10 +268,10 @@ double ARG::data_length(const Flat_tree &flat, const Tree_order &t, const vector
     return T;
 }
 
-void ARG::pattern_weights(const Flat_tree &flat, const Tree_order &t, const vector<int> &below, double unit, array<double, 4> &w) const {
+void ARG::pattern_weights(const Flat_tree &flat, const Tree_order &t, const vector<int> &below, double unit, array<double, max_states> &w) const {
     double T = data_length(flat, t, below);
-    double x[4], top = -numeric_limits<double>::infinity();
-    for (int b = 0; b < 4; b++) {
+    double x[max_states], top = -numeric_limits<double>::infinity();
+    for (int b = 0; b < model.states; b++) {
         if (model.continuous_gamma()) {
             x[b] = model.alpha*log(model.alpha/(model.alpha - model.rate(b, b)*(unit*T)));
         } else {
@@ -279,7 +280,7 @@ void ARG::pattern_weights(const Flat_tree &flat, const Tree_order &t, const vect
         x[b] += below[t.top] > 0 ? log(model.pi[b]) : 0.0;
         top = max(top, x[b]);
     }
-    for (int b = 0; b < 4; b++) {
+    for (int b = 0; b < model.states; b++) {
         w[b] = exp(x[b] - top);
     }
 }
@@ -301,7 +302,7 @@ void ARG::pattern_groups(int bin, vector<Pattern_group> &out) {
     int gaps = 0;
     size_t used = 1;
     double prev = x0;
-    auto segment = [&](double lo, double hi, double count, const array<double, 4> &bases) {
+    auto segment = [&](double lo, double hi, double count, const array<double, max_states> &bases) {
         if (hi <= lo) {
             return;
         }
@@ -320,7 +321,7 @@ void ARG::pattern_groups(int bin, vector<Pattern_group> &out) {
         p.ranges.assign(1, {lo, hi});
         p.count = bases;
         p.unknown = count;
-        for (int b = 0; b < 4; b++) {
+        for (int b = 0; b < model.states; b++) {
             out[0].count[b] -= bases[b];
         }
         out[0].unknown -= count;
@@ -372,7 +373,7 @@ void ARG::history_site(const Flat_tree &flat, const Tree_order &t, double unit, 
     s.fixed.assign(nb, 0.0);
     if (below[t.top] == 0) {
         double v = 0;
-        for (int a = 0; a < 4; a++) {
+        for (int a = 0; a < model.states; a++) {
             v += (mask >> a & 1) ? model.pi[a] : 0.0;
         }
         fill(s.fixed.begin(), s.fixed.end(), v);
@@ -436,17 +437,17 @@ void ARG::history_pattern(const Flat_tree &flat, const Tree_order &t, double uni
 }
 
 void ARG::pattern_fill(const Flat_tree &flat, const Tree_order &t, double unit, const vector<int> &below, Node *query, Site_messages &s) {
-    int nb = (int) flat.parents.size();
+    int nb = (int) flat.parents.size(), S = model.states;
     s.parts.clear();
     s.unit = unit;
     s.top = t.top;
     s.kind.assign(nb, E2);
-    s.fixed.assign(4*nb, 0.0);
+    s.fixed.assign(S*nb, 0.0);
     pattern_weights(flat, t, below, unit, s.weight);
     s.T = unit*data_length(flat, t, below);
     if (below[t.top] == 0) {
         for (int k = 0; k < nb; k++) {
-            copy(model.pi.begin(), model.pi.end(), s.fixed.begin() + 4*k);
+            copy(model.pi.begin(), model.pi.end(), s.fixed.begin() + S*k);
         }
         return;
     }
@@ -459,7 +460,7 @@ void ARG::pattern_fill(const Flat_tree &flat, const Tree_order &t, double unit, 
         }
     }
     double t_d = query->time, al = model.alpha;
-    bool gamma = model.continuous_gamma(), unknown = column_base.empty();
+    bool gamma = model.continuous_gamma(), unknown = unknown_base();
     for (int k = 0; k < nb; k++) {
         if (!main[k]) {
             continue;
@@ -469,18 +470,18 @@ void ARG::pattern_fill(const Flat_tree &flat, const Tree_order &t, double unit, 
         } else if (below[k] > 0) {
             s.kind[k] = E1;
             double l0 = unit*flat.lengths[k], total = 0;
-            for (int b = 0; b < 4; b++) {
+            for (int b = 0; b < S; b++) {
                 double q = -model.rate(b, b), D = gamma ? model.rate_integrated_entry(b, al + q*(s.T - l0), l0) : model.transition_entry(l0, b, b);
                 if (!unknown) {
-                    s.fixed[4*k + b] = D;
+                    s.fixed[S*k + b] = D;
                     continue;
                 }
                 double w = s.weight[b]*(gamma ? exp(al*(log(al + q*s.T) - log(al + q*(s.T - l0)))) : exp(q*l0));
-                s.fixed[4*k + b] = w;
+                s.fixed[S*k + b] = w;
                 total += w*D;
             }
-            for (int b = 0; unknown and b < 4; b++) {
-                s.fixed[4*k + b] /= total;
+            for (int b = 0; unknown and b < S; b++) {
+                s.fixed[S*k + b] /= total;
             }
         } else {
             int w = t.up[k];
@@ -488,8 +489,8 @@ void ARG::pattern_fill(const Flat_tree &flat, const Tree_order &t, double unit, 
                 w = t.up[w];
             }
             double L = unit*(flat.parents[w].first->time - t_d);
-            for (int b = 0; b < 4; b++) {
-                s.fixed[4*k + b] = pattern_entry(b, s.T, L);
+            for (int b = 0; b < S; b++) {
+                s.fixed[S*k + b] = pattern_entry(b, s.T, L);
             }
         }
     }
@@ -706,7 +707,8 @@ void ARG::attach_histories(map<double, Branch> &joins, map<double, Branch> &adde
     auto mut_it = mutation_sites.lower_bound(start);
     auto nn = added.begin(), nj = joins.begin(), on = removed_branches.begin(), oj = joining_branches.begin();
     Branch rn, bn, ro, bo;
-    bool stale = true, unknown = column_base.empty();
+    bool stale = true, unknown = unknown_base();
+    int S = model.states;
     vector<pair<double, int>> path, path_u, path_l, listed, replaced;
     vector<Node *> chain;
     vector<double> chosen;
@@ -814,13 +816,13 @@ void ARG::attach_histories(map<double, Branch> &joins, map<double, Branch> &adde
     auto exception = [&](int b, const Join_case &c, bool change) {
         vector<Mutation_row> &rows = journal_rows(pos);
         mark_states(b);
-        double L = c.length, stay = exp(model.rate(b, b)*L), w[4];
+        double L = c.length, stay = exp(model.rate(b, b)*L), w[max_states];
         Node *top = flat.parents[t.top].first;
         if (!c.query or c.anchor < 0) {
-            for (int s = 0; s < 4; s++) {
+            for (int s = 0; s < S; s++) {
                 w[s] = model.transition_entry(L, b, s) - (s == b ? stay : 0.0);
             }
-            int x = draw_from(w, 4);
+            int x = draw_from(w, S);
             if (!c.query) {
                 free_root(rows, b, x, L, x == b);
             } else {
@@ -874,14 +876,14 @@ void ARG::attach_histories(map<double, Branch> &joins, map<double, Branch> &adde
     auto node_join = [&](vector<Mutation_row> &rows, unsigned mask) {
         Node *ln = bn.lower_node, *un = bn.upper_node;
         int xu = node_state(un, pos), xl = branch_state(rows, bn, ln->time, pos);
-        double Lu = unit*(un->time - tn), Ll = unit*(tn - ln->time), Lq = unit*(tn - d->time), w[4];
+        double Lu = unit*(un->time - tn), Ll = unit*(tn - ln->time), Lq = unit*(tn - d->time), w[max_states];
         drop_branch(rows, bn);
         node_weights(bn, tn, d->time, xu, xl, mask, unit, w);
-        int s = draw_from(w, 4);
-        for (int a = 0; a < 4; a++) {
+        int s = draw_from(w, S);
+        for (int a = 0; a < S; a++) {
             w[a] = (mask >> a & 1) ? model.transition_entry(Lq, s, a) : 0.0;
         }
-        int a = draw_from(w, 4);
+        int a = draw_from(w, S);
         model.sample_path(xu, s, Lu, model.transition_entry(Lu, xu, s), path_u);
         model.sample_path(s, xl, Ll, model.transition_entry(Ll, s, xl), path_l);
         model.sample_path(s, a, Lq, w[a], path);
@@ -904,10 +906,10 @@ void ARG::attach_histories(map<double, Branch> &joins, map<double, Branch> &adde
             p->clear();
         }
         if (change_n) {
-            double w[4];
+            double w[max_states];
             node_weights(bn, tn, d->time, b, b, 1u << b, unit, w);
             w[b] -= exp(model.rate(b, b)*(L[0] + L[1] + L[2]));
-            s = draw_from(w, 4);
+            s = draw_from(w, S);
             int ends[3][2] = {{b, s}, {s, b}, {s, b}};
             double P[3], stay[3], pattern[8] = {0};
             for (int i = 0; i < 3; i++) {
@@ -950,7 +952,7 @@ void ARG::attach_histories(map<double, Branch> &joins, map<double, Branch> &adde
                 if (e != ex.end() and e->first == x) {
                     continue;
                 }
-                if (!unknown) {
+                if (!column_base.empty()) {
                     if (column_base[(size_t) x] != b) {
                         continue;
                     }
@@ -972,14 +974,14 @@ void ARG::attach_histories(map<double, Branch> &joins, map<double, Branch> &adde
         }
     };
     auto joint_column = [&](const Joint_terms &J, const Join_case &c, int b) {
-        double w[4];
+        double w[max_states];
         int beta = b;
         if (b < 0) {
-            long double top = *max_element(J.log_c, J.log_c + 4);
-            for (int a = 0; a < 4; a++) {
+            long double top = *max_element(J.log_c, J.log_c + S);
+            for (int a = 0; a < S; a++) {
                 w[a] = (double) (expl(J.log_c[a] - top)*(J.F[a] - J.Fc[a]));
             }
-            beta = draw_from(w, 4);
+            beta = draw_from(w, S);
         }
         bool gamma = model.continuous_gamma(), whole = J.fwd[3] > 0;
         double nu = gamma ? model.node_rate(beta, J.A[beta], J.fwd[0], J.fwd[1], J.fwd[2], J.fwd[3]) : 1.0;
@@ -1083,7 +1085,7 @@ void ARG::attach_histories(map<double, Branch> &joins, map<double, Branch> &adde
                 old_whole(rows, xu, xl, false);
             }
             int s = c.anchor >= 0 ? join_state(c, flat, rows, bn, tn, pos) : -1;
-            double w[4];
+            double w[max_states];
             bool node = c.query and c.kind == E1 and c.anchor >= 0;
             if (node) {
                 node_join(rows, mask);
@@ -1091,26 +1093,26 @@ void ARG::attach_histories(map<double, Branch> &joins, map<double, Branch> &adde
                 split(rows);
                 journal_state(pn, pos, s);
             } else if (!c.query) {
-                for (int a = 0; a < 4; a++) {
+                for (int a = 0; a < S; a++) {
                     w[a] = model.transition_entry(c.length, s, a);
                 }
-                free_root(rows, s, draw_from(w, 4), c.length, false);
+                free_root(rows, s, draw_from(w, S), c.length, false);
             } else if (c.anchor < 0) {
-                for (int a = 0; a < 4; a++) {
+                for (int a = 0; a < S; a++) {
                     w[a] = (mask >> a & 1) ? model.pi[a] : 0.0;
                 }
-                int a = draw_from(w, 4);
-                for (int y = 0; y < 4; y++) {
+                int a = draw_from(w, S);
+                for (int y = 0; y < S; y++) {
                     w[y] = model.transition_entry(c.length, a, y);
                 }
-                int y = draw_from(w, 4);
+                int y = draw_from(w, S);
                 model.sample_path(y, a, c.length, model.transition_entry(c.length, y, a), path);
                 join_top(rows, y);
             } else {
-                for (int a = 0; a < 4; a++) {
+                for (int a = 0; a < S; a++) {
                     w[a] = (mask >> a & 1) ? model.transition_entry(c.length, s, a) : 0.0;
                 }
-                int a = draw_from(w, 4);
+                int a = draw_from(w, S);
                 model.sample_path(s, a, c.length, w[a], path);
                 if (c.kind == ROOT) {
                     join_root(rows, s);
@@ -1132,7 +1134,7 @@ void ARG::attach_histories(map<double, Branch> &joins, map<double, Branch> &adde
             double uT = unit*data_length(flat, t, below);
             if (c.query and c.anchor >= 0) {
                 const Joint_terms &J = joint_terms(c, join_case(flat, t, below, bo, to, d, true, unit), bn, tn, bo, to, uT, unit);
-                for (int b = unknown ? -1 : 0; b < (unknown ? 0 : 4); b++) {
+                for (int b = unknown ? -1 : 0; b < (unknown ? 0 : S); b++) {
                     long long n = llround(b < 0 ? g.unknown : g.count[b]);
                     if (n == 0) {
                         continue;
@@ -1144,10 +1146,10 @@ void ARG::attach_histories(map<double, Branch> &joins, map<double, Branch> &adde
                 if (n == 0) {
                     continue;
                 }
-                array<double, 4> cw;
+                array<double, max_states> cw;
                 pattern_weights(flat, t, below, unit, cw);
-                double e[4], cs[4], te = 0, tc = 0, w[4];
-                for (int b = 0; b < 4; b++) {
+                double e[max_states], cs[max_states], te = 0, tc = 0, w[max_states];
+                for (int b = 0; b < S; b++) {
                     e[b] = group_entry(c, b);
                     cs[b] = group_constant(c, b, uT);
                     te += cw[b]*e[b];
@@ -1160,14 +1162,14 @@ void ARG::attach_histories(map<double, Branch> &joins, map<double, Branch> &adde
                 choose(g, -1, n, k);
                 for (double y : chosen) {
                     pos = y;
-                    for (int b = 0; b < 4; b++) {
+                    for (int b = 0; b < S; b++) {
                         w[b] = cw[b]*(e[b] - cs[b]);
                     }
-                    int b = draw_from(w, 4);
+                    int b = draw_from(w, S);
                     one_entry_exception(b, data, uT);
                 }
             } else {
-                for (int b = 0; b < 4; b++) {
+                for (int b = 0; b < S; b++) {
                     long long n = llround(g.count[b]);
                     if (n == 0) {
                         continue;
@@ -1252,6 +1254,7 @@ void ARG::redraw_histories(map<double, vector<Mutation_row>> &out, bool state) {
     auto r_it = recombinations.begin();
     auto mut_it = mutation_sites.lower_bound(0);
     bool stale = true;
+    int S = model.states;
     for (int i = 0; i < bin_num; i++) {
         double x0 = coordinates[i], x1 = coordinates[i + 1];
         while (r_it != recombinations.end() and r_it->first <= x0) {
@@ -1290,7 +1293,7 @@ void ARG::redraw_histories(map<double, vector<Mutation_row>> &out, bool state) {
                     rows.push_back({Branch(lower, upper), st[k], 1, lower->time});
                     continue;
                 }
-                model.sample_path(st[t.up[k]], st[k], u*flat.lengths[k], P[16*k + 4*st[t.up[k]] + st[k]], path);
+                model.sample_path(st[t.up[k]], st[k], u*flat.lengths[k], P[S*S*k + S*st[t.up[k]] + st[k]], path);
                 for (auto &[tau, next] : path) {
                     rows.push_back({Branch(lower, upper), next, 0, upper->time - tau/u});
                 }
@@ -1323,6 +1326,7 @@ void ARG::history_statistics(History_statistics &s) {
     auto r_it = recombinations.begin();
     auto mut_it = mutation_sites.lower_bound(0);
     bool stale = true;
+    int S = model.states;
     for (int i = 0; i < bin_num; i++) {
         double x0 = coordinates[i], x1 = coordinates[i + 1];
         while (r_it != recombinations.end() and r_it->first <= x0) {
@@ -1341,11 +1345,11 @@ void ARG::history_statistics(History_statistics &s) {
             if (below[t.top] == 0) {
                 continue;
             }
-            array<double, 5> &n = s.groups[unit*data_length(flat, t, below)];
-            for (int b = 0; b < 4; b++) {
+            array<double, max_states + 1> &n = s.groups[unit*data_length(flat, t, below)];
+            for (int b = 0; b < S; b++) {
                 n[b] += g.count[b];
             }
-            n[4] += g.unknown;
+            n[S] += g.unknown;
         }
         auto column = [&](double pos) {
             column_below(flat, t, pos, nullptr, below);
@@ -1354,7 +1358,7 @@ void ARG::history_statistics(History_statistics &s) {
             }
             Column_statistics c;
             c.pos = pos;
-            array<double, 4> credit = {0, 0, 0, 0};
+            array<double, max_states> credit = {};
             pieces.clear();
             for (const Mutation_row &r : mutations.at(pos)) {
                 if (is_root_row(r)) {
@@ -1383,7 +1387,7 @@ void ARG::history_statistics(History_statistics &s) {
             }
             c.changes = (int) pieces.size();
             double rate = column_rate(pos);
-            for (int a = 0; a < 4; a++) {
+            for (int a = 0; a < S; a++) {
                 c.time[a] = unit*credit[a];
                 s.time[a] += rate*c.time[a];
             }
@@ -1401,19 +1405,20 @@ void ARG::history_statistics(History_statistics &s) {
 
 static double group_statistics_term(const Site_model &m, const History_statistics &s, bool unknown) {
     double v = 0;
+    int S = m.states;
     for (auto &[uT, n] : s.groups) {
-        double term[4];
-        for (int b = 0; b < 4; b++) {
+        double term[max_states];
+        for (int b = 0; b < S; b++) {
             term[b] = m.continuous_gamma() ? m.alpha*log(m.alpha/(m.alpha - m.rate(b, b)*uT)) : m.rate(b, b)*uT;
         }
         if (unknown) {
             double total = 0;
-            for (int b = 0; b < 4; b++) {
+            for (int b = 0; b < S; b++) {
                 total += m.pi[b]*exp(term[b]);
             }
-            v += n[4]*log(total);
+            v += n[S]*log(total);
         } else {
-            for (int b = 0; b < 4; b++) {
+            for (int b = 0; b < S; b++) {
                 if (n[b] > 0) {
                     v += n[b]*(log(m.pi[b]) + term[b]);
                 }
@@ -1424,9 +1429,9 @@ static double group_statistics_term(const Site_model &m, const History_statistic
 }
 
 double ARG::statistics_log_density(const History_statistics &s) const {
-    double v = group_statistics_term(model, s, column_base.empty());
-    for (int a = 0; a < 4; a++) {
-        for (int b = 0; b < 4; b++) {
+    double v = group_statistics_term(model, s, unknown_base());
+    for (int a = 0; a < model.states; a++) {
+        for (int b = 0; b < model.states; b++) {
             if (a != b and s.changes[a][b] > 0) {
                 v += s.changes[a][b]*log(model.rate(a, b));
             }
@@ -1437,11 +1442,11 @@ double ARG::statistics_log_density(const History_statistics &s) const {
 }
 
 double ARG::alpha_log_density(const History_statistics &s) const {
-    double v = group_statistics_term(model, s, column_base.empty()), al = model.alpha;
+    double v = group_statistics_term(model, s, unknown_base()), al = model.alpha;
     double shared = al*log(al) - lgamma(al);
     for (const Column_statistics &c : s.columns) {
         double T = 0;
-        for (int a = 0; a < 4; a++) {
+        for (int a = 0; a < model.states; a++) {
             T -= model.rate(a, a)*c.time[a];
         }
         v += shared + lgamma(al + c.changes) - (al + c.changes)*log(al + T);
@@ -1452,7 +1457,7 @@ double ARG::alpha_log_density(const History_statistics &s) const {
 void ARG::redraw_rates(const History_statistics &s) {
     for (const Column_statistics &c : s.columns) {
         double T = 0;
-        for (int a = 0; a < 4; a++) {
+        for (int a = 0; a < model.states; a++) {
             T -= model.rate(a, a)*c.time[a];
         }
         site_rate[c.pos] = draw_rate(model.alpha + c.changes, model.alpha + T);

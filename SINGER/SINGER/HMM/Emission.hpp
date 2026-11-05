@@ -19,9 +19,9 @@ struct Edge_matrices {
     double lower_length = 0;
     double upper_length = 0;
     double root_length = 0;
-    double lower[16];
-    double query[16];
-    double upper[16];
+    double lower[max_states*max_states];
+    double query[max_states*max_states];
+    double upper[max_states*max_states];
 };
 
 class Emission {
@@ -33,17 +33,17 @@ public:
     double bin_width = 1.0;
     const Site_model *model = nullptr;
     double unit = 0;
-    double base_counts[4] = {0, 0, 0, 0};
-    const Site_messages *base_groups[4] = {nullptr, nullptr, nullptr, nullptr};
+    double base_counts[max_states] = {};
+    const Site_messages *base_groups[max_states] = {};
     double unknown_count = 0;
     vector<const Site_messages *> sites = {};
     vector<const Site_messages *> groups = {};
     vector<double> group_weights = {};
-    vector<pair<array<const Site_messages *, 4>, double>> unknown_groups = {};
+    vector<pair<array<const Site_messages *, max_states>, double>> unknown_groups = {};
     bool augment = false;
     bool unknown = false;
     const Site_messages *main_pattern = nullptr;
-    vector<pair<const Site_messages *, array<double, 5>>> patterns = {};
+    vector<pair<const Site_messages *, array<double, max_states + 1>>> patterns = {};
 
     double mut_emit(Branch &branch, double time, Node *node, double norm);
 

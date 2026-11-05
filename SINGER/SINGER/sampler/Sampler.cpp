@@ -64,6 +64,7 @@ void Sampler::load_data(double start_pos, double end_pos) {
 void Sampler::set_model() {
     model.set(model_name, model_name == "CFN" ? vector<double>{} : data.base_frequencies(), {}, 1.0);
     model.set_gamma(gamma_k, 1.0);
+    model.branch_product = model_name == "CFN" and gamma_k == 1 and !augment;
 }
 
 static double log_dirichlet(const vector<double> &x, const vector<double> &a) {
@@ -110,12 +111,13 @@ void Sampler::update_model(const function<double()> &log_likelihood, int repeats
         decide(2*log1p(k) - 2*log1p(k2) + log(k2/k));
     }
     for (int n = 0; n < repeats and substitution and model.has_frequencies(); n++) {
-        vector<double> a(4), b(4);
-        for (int i = 0; i < 4; i++) {
+        int S = model.states;
+        vector<double> a(S), b(S);
+        for (int i = 0; i < S; i++) {
             a[i] = concentration_pi*model.pi[i];
         }
         vector<double> p2 = dirichlet_draw(a);
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < S; i++) {
             b[i] = concentration_pi*p2[i];
         }
         arg.model.pi = p2;
@@ -123,15 +125,16 @@ void Sampler::update_model(const function<double()> &log_likelihood, int repeats
         decide(log_dirichlet(model.pi, b) - log_dirichlet(p2, a));
     }
     for (int n = 0; n < repeats and substitution and model.has_exchangeabilities(); n++) {
-        vector<double> s(6), a(6), b(6);
-        for (int i = 0; i < 6; i++) {
-            s[i] = model.exchangeabilities[i]/6;
+        int m = (int) model.exchangeabilities.size();
+        vector<double> s(m), a(m), b(m);
+        for (int i = 0; i < m; i++) {
+            s[i] = model.exchangeabilities[i]/m;
             a[i] = concentration_r*s[i];
         }
         vector<double> s2 = dirichlet_draw(a);
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < m; i++) {
             b[i] = concentration_r*s2[i];
-            arg.model.exchangeabilities[i] = 6*s2[i];
+            arg.model.exchangeabilities[i] = m*s2[i];
         }
         arg.model.refresh();
         decide(log_dirichlet(s, b) - log_dirichlet(s2, a));
@@ -145,7 +148,7 @@ void Sampler::update_model(const function<double()> &log_likelihood, int repeats
 }
 
 void Sampler::update_model() {
-    if (model.states != 4) {
+    if (model.branch_product) {
         return;
     }
     if (arg.augment) {
@@ -169,7 +172,7 @@ void Sampler::set_augment() {
 }
 
 void Sampler::write_model() {
-    if (model.states != 4) {
+    if (model.branch_product) {
         return;
     }
     ofstream file(output_prefix + "_subst_model.txt", ios::out|ios::app);
@@ -184,7 +187,7 @@ void Sampler::write_model() {
 }
 
 void Sampler::read_model() {
-    if (model.states != 4) {
+    if (model.branch_product) {
         return;
     }
     string filename = output_prefix + "_subst_model.txt";
@@ -202,11 +205,11 @@ void Sampler::read_model() {
             continue;
         }
         iss >> model.kappa;
-        for (int i = 0; i < 4; i++) {
-            iss >> model.pi[i];
+        for (double &p : model.pi) {
+            iss >> p;
         }
-        for (int i = 0; i < 6; i++) {
-            iss >> model.exchangeabilities[i];
+        for (double &r : model.exchangeabilities) {
+            iss >> r;
         }
         iss >> model.alpha;
         found = true;
@@ -224,9 +227,9 @@ void Sampler::load_states(vector<Node *> &leaves) {
         for (double x : data.derived_sites[i]) {
             leaves[i]->add_mutation(x);
         }
-        if (model.states != 2) {
+        if (!model.branch_product) {
             for (auto &q : data.site_states[i]) {
-                leaves[i]->set_site(q.first, q.second);
+                leaves[i]->set_site(q.first, model.states == 2 ? 1 << (int) leaves[i]->get_state(q.first) : q.second);
             }
         }
     }

@@ -48,6 +48,7 @@ int main(int argc, const char * argv[]) {
     string model_name = "CFN";
     int gamma_k = 1;
     bool augment = false;
+    bool pruning = false;
     int scaling_rep = -1;
     int scaling_bin = 100;
     int mapping_rep = -1;
@@ -397,6 +398,13 @@ int main(int argc, const char * argv[]) {
             }
             augment = true;
         }
+        else if (arg == "-pruning") {
+            if (i + 1 < n_args && args[i+1][0] != '-') {
+                cerr << "Error: -pruning flag doesn't take any value. " << endl;
+                exit(1);
+            }
+            pruning = true;
+        }
         else if (arg == "-output") {
             if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -output flag cannot be empty. " << endl;
@@ -572,24 +580,43 @@ int main(int argc, const char * argv[]) {
         cerr << "Error: -penalty applies to the CFN model only. " << endl;
         exit(1);
     }
-    if (gamma_k != 1 and model_name == "CFN") {
-        cerr << "Warning: under CFN the gamma shape is identified only by sites with more than one mutation, which the two-state model does not represent. " << endl;
-        cerr << "Error: -gamma is refused under CFN; use -subst_model JC, K80, F81, HKY or GTR. " << endl;
-        exit(1);
-    }
-    if (augment and model_name == "CFN") {
-        cerr << "Warning: under CFN the mutation history of a site is one change at most, and the pruned chain is the exact and cheaper sampler for it. " << endl;
-        cerr << "Error: -augment is refused under CFN; use -subst_model JC, K80, F81, HKY or GTR. " << endl;
+    if (augment and pruning) {
+        cerr << "Error: -augment and -pruning select different chains; give one of them. " << endl;
         exit(1);
     }
     if (augment and gamma_k > 1) {
         cerr << "Error: -gamma above 1 is not available under -augment; -gamma 0 runs the continuous gamma. " << endl;
         exit(1);
     }
-    if (!augment and gamma_k == 0) {
-        cerr << "Error: -gamma 0 (the continuous gamma) is available under -augment only. " << endl;
+    if (pruning and gamma_k == 0) {
+        cerr << "Error: -gamma 0 (the continuous gamma) runs the full-history chain only and is refused under -pruning. " << endl;
         exit(1);
     }
+    if (model_name == "CFN" and (gamma_k != 1 or augment)) {
+        if (gamma_k != 1) {
+            cerr << "Warning: under CFN the gamma shape is identified only by sites with more than one mutation, which the two-state model does not represent. " << endl;
+        }
+        if (augment) {
+            cerr << "Warning: under -augment CFN runs the two-state matrix model, which costs more per rethread than the default CFN chain." << endl;
+        }
+        if (penalty != 1) {
+            cerr << "Error: -penalty other than 1 is refused on the CFN matrix path under -gamma or -augment. " << endl;
+            exit(1);
+        }
+        if (polar_given) {
+            cerr << "Error: -polar is refused on the CFN matrix path under -gamma or -augment. " << endl;
+            exit(1);
+        }
+        if (genotype_lik) {
+            cerr << "Error: -genotype_lik is refused on the CFN matrix path under -gamma or -augment. " << endl;
+            exit(1);
+        }
+        if (phase) {
+            cerr << "Error: -phase is refused on the CFN matrix path under -gamma or -augment. " << endl;
+            exit(1);
+        }
+    }
+    augment = gamma_k == 0 or (gamma_k == 1 and !pruning and (augment or model_name != "CFN"));
     if (!resume and !output_prefix.empty()) {
         ofstream ckp(output_prefix + ".ckp");
         for (auto &g : given) {
