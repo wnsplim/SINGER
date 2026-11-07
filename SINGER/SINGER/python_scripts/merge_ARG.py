@@ -87,8 +87,9 @@ def main():
     args = parser.parse_args()
 
     node_files, branch_files, mutation_files, counts_files, block_coordinates = load_file_lists(args.file_table)
-    tables = read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, counts_files)
-    arg_io.add_provenance(tables, 'merge_ARG.py', [f.rsplit('_nodes_', 1)[0] for f in node_files], None, None, None)
+    prefixes = [f.rsplit('_branches_', 1)[0] for f in branch_files]
+    tables = read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, counts_files, arg_io.uses_bases(prefixes[0]))
+    arg_io.add_provenance(tables, 'merge_ARG.py', prefixes, None, None, None)
     sorted_ts = sort_nodes_by_time(tables.tree_sequence())
     if args.vcf is not None:
         sorted_ts = vcf_io.add_individuals_from_vcf(sorted_ts, args.vcf)
