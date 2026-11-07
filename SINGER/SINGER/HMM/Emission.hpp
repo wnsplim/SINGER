@@ -14,7 +14,6 @@
 
 struct Edge_matrices {
     bool at_root = false;
-    double time = 0;
     double query_length = 0;
     double lower_length = 0;
     double upper_length = 0;
@@ -45,9 +44,9 @@ public:
     const Site_messages *main_pattern = nullptr;
     vector<pair<const Site_messages *, array<double, max_states + 1>>> patterns = {};
 
-    double mut_emit(Branch &branch, double time, Node *node, double norm);
+    double mut_emit(Branch &branch, double time, Node *node, double emit);
 
-    double mut_emit(Branch &branch, double norm, const Edge_matrices *cached);
+    double mut_emit(Branch &branch, double emit, const Edge_matrices *cached);
 
     void null_logs_base(Branch &branch, const Edge_matrices *cached, double *out);
 
@@ -60,11 +59,9 @@ public:
     }
 
     double null_log(Branch &branch, double time, Node *node) {
-        double ll = time - branch.lower_node->time;
         double lu = branch.upper_node->time - time;
-        double l0 = time - node->time;
-        double a = crho*ll;
-        double d = crho*l0;
+        double a = crho*(time - branch.lower_node->time);
+        double d = crho*(time - node->time);
         double km1;
         if (isinf(lu)) {
             km1 = a + d + a*d;

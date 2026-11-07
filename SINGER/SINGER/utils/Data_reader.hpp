@@ -65,7 +65,7 @@ public:
 
     void read_positive_mask(std::string filename, double start, double end);
 
-    void read(double start_pos, double end_pos, bool with_sites);
+    void read(double start_pos, double end_pos);
 
     bool in_mask(double x);
 
@@ -122,13 +122,13 @@ private:
 
     bool sample_likelihood(const Record_likelihood &r, int sample, const std::string &field, double *G, bool &from_calls, bool &flat);
 
-    bool state_likelihoods(int n, int *calls, bool unphased, bool het, const double *likelihoods, double *L, int &alleles);
+    bool state_likelihoods(int n, int *calls, bool unphased, bool het, const double *G, double *L, int &alleles);
 
     bool variant_site(int alt_count, int haplotypes, int alleles);
 
     bool sample_masked(int sample, double x);
 
-    void add_call_sites(double start_pos, double end_pos, bool with_sites);
+    void add_call_sites(double start_pos);
 
     void print_missing_summary();
 

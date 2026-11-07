@@ -21,7 +21,6 @@ public:
 
     double cut_time;
     int extra = 0;
-    double rho = 0;
 
     coalescent_calculator(double t);
 

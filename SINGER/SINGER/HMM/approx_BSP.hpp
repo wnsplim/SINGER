@@ -152,9 +152,7 @@ public:
     void process_target_interval(Recombination &r, int i);
     
     void process_other_interval(Recombination &r, int i);
-    
-    double random();
-    
+
     int get_prev_breakpoint(int x);
     
     vector<Interval_ptr> &get_state_space(int x);

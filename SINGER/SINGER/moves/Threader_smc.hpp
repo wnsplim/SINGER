@@ -135,8 +135,6 @@ public:
 
     map<double, Recombination> redrawn_records = {};
 
-    double random();
-
 };
 
 #endif /* Threader_smc_hpp */

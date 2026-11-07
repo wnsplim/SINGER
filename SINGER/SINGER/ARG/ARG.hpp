@@ -301,8 +301,6 @@ public:
 
     void write_coordinates(string filename);
 
-    void write(string node_file, string branch_file, string recomb_file, string mutation_file);
-
     void read(string node_file, string branch_file, string recomb_file);
 
     double get_arg_length();
@@ -342,8 +340,6 @@ public:
     void emission_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s, int base = -1, const vector<char> *forced_missing = nullptr);
 
     void emission_single(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s, int base, const vector<char> *forced_missing);
-
-    void draw_site_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<int> &state);
 
     void draw_site_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<int> &state, int &category, int base = -1, const vector<char> *forced_missing = nullptr);
 

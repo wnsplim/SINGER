@@ -6,23 +6,7 @@ import subprocess
 import argparse
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), d) for d in ("", "python_scripts")]
 import vcf_io
-# import uuid
 import numpy as np
-# import pysam
-
-def random_string():
-    unique_id = uuid.uuid4().hex
-    return unique_id
-
-'''
-def write_rate_map(output_prefix, rate, x, y):
-    rate_table = np.array([[0, y, rate]])
-    rand_suffix = random_string()
-    map_filename = f"{output_prefix}_{rand_suffix}.txt"
-    print(rate_table)
-    np.savetxt(map_filename, rate_table, delimiter=' ')
-    return map_filename
-'''
 
 def compute_average_rate(map_file, x, y):
     data = np.loadtxt(map_file, ndmin=2)
@@ -41,68 +25,12 @@ def compute_average_rate(map_file, x, y):
 
     if total_length == 0:
         return 0
-    average_rate = weighted_sum / total_length
-    return average_rate
-
-'''
-def calculate_diversity_with_filter(vcf_file, start, end):
-    # Open the VCF file using pysam
-    vcf = pysam.VariantFile(vcf_file)
-    
-    num_variants = 0
-    total_diversity = 0.0
-    snp_positions = []
-    
-    # Iterate through all records and filter based on position
-    for record in vcf:
-        if record.pos < start:
-            continue
-        if record.pos > end:
-            break
-        snp_positions.append(record.pos)
-        allele_counts = [0] * len(record.alleles)
-        num_samples = 0
-
-        for sample in record.samples.values():
-            gt = sample['GT']
-            if gt is None:
-                continue
-            num_samples += 1
-            for allele in gt:
-                if allele is not None:
-                    allele_counts[allele] += 1
-        
-        allele_freqs = [ac / (2 * num_samples) for ac in allele_counts]
-        
-        variant_diversity = sum(f * (1 - f) for f in allele_freqs if f > 0 and f < 1)
-        
-        total_diversity += variant_diversity
-        num_variants += 1
-
-    # Calculate SNP distances
-    snp_distances = np.diff(snp_positions)
-    
-    if len(snp_distances) == 0:
-        return 0.0
-    
-    # Append the distances to the start and end positions
-    snp_distances = np.append(snp_positions[0] - start, snp_distances)
-    snp_distances = np.append(snp_distances, end - snp_positions[-1])
-    
-    # Sort the distances and filter out the longest 5 distances
-    sorted_snp_distances = np.sort(snp_distances)
-    filtered_length = np.sum(sorted_snp_distances[:-5])
-    
-    # Calculate nucleotide diversity
-    nucleotide_diversity = total_diversity / filtered_length
-    
-    return nucleotide_diversity
-'''
+    return weighted_sum / total_length
 
 def is_alignment(path):
     with open(path, 'rb') as f:
         head = f.read(64).lstrip()
-    return len(head) > 0 and (head[:1] == b'>' or head[:1].isdigit() or head[:6].upper() == b'#NEXUS')
+    return head[:1] == b'>' or head[:1].isdigit() or head[:6].upper() == b'#NEXUS'
 
 
 def read_alignment(path):
@@ -169,7 +97,6 @@ def calculate_diversity_alignment(seqs, start, end, mask_n=None, mask_p=None, ch
             sys.exit("Error: a mask with an alignment needs -chrom_n or -chrom_p.")
         masked = [(lo - 1, hi - 1) for lo, hi in read_masks(mask_n, mask_p, chrom_n, chrom_p, start, end)]
     masked_columns = sum(hi - lo + 1 for lo, hi in masked)
-    total = 0.0
     index = {'A': 0, 'C': 1, 'G': 2, 'T': 3, 'U': 3}
     columns = np.array([[index.get(c.upper(), -1) for c in s[start:end]] for s in seqs], dtype=np.int8)
     for lo, hi in masked:
@@ -245,7 +172,6 @@ def read_masks(mask_n, mask_p, chrom_n, chrom_p, start, end):
 def calculate_diversity(vcf_prefix, start, end, mask_n=None, mask_p=None, chrom=None, chrom_n=None, chrom_p=None):
     total_diversity = 0.0
     segment_length = end - start
-    num_variants = 0
     masked = []
 
     # Open the VCF file and read it line by line
@@ -273,7 +199,6 @@ def calculate_diversity(vcf_prefix, start, end, mask_n=None, mask_p=None, chrom=
             # Extract genotype information for each sample (after the 9th column)
             alleles = [fields[3]] + fields[4].split(",")  # REF and ALT alleles
             allele_counts = [0] * len(alleles)
-            num_samples = 0
 
             # Iterate over the genotype columns to count allele occurrences
             for sample_field in fields[9:]:
@@ -283,7 +208,6 @@ def calculate_diversity(vcf_prefix, start, end, mask_n=None, mask_p=None, chrom=
                 
                 # Genotype fields are usually formatted like "0/1", "1/1", etc.
                 gt_alleles = gt.replace('|', '/').split('/')  # Handle phased/unphased
-                num_samples += 1
                 for allele in gt_alleles:
                     allele_counts[int(allele)] += 1
 
@@ -292,14 +216,9 @@ def calculate_diversity(vcf_prefix, start, end, mask_n=None, mask_p=None, chrom=
                 continue
             allele_freqs = [ac / k for ac in allele_counts]
 
-            variant_diversity = sum(f * (1 - f) for f in allele_freqs if f > 0 and f < 1) * k / (k - 1)
-            
-            # Add to total diversity
-            total_diversity += variant_diversity
-            num_variants += 1
+            total_diversity += sum(f * (1 - f) for f in allele_freqs if f > 0 and f < 1) * k / (k - 1)
 
-    nucleotide_diversity = total_diversity / segment_length
-    return nucleotide_diversity
+    return total_diversity / segment_length
 
 def read_tip_ages(tip_ages_file, vcf_prefix, ploidy):
     names = read_alignment(vcf_prefix)[0] if is_alignment(vcf_prefix) else vcf_io.sample_names(vcf_prefix)

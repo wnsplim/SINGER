@@ -18,10 +18,10 @@ void RSP_smc::set_tree(Tree &tree) {
         }
     }
     sort(events.begin(), events.end());
-    set_levels(events);
+    set_levels();
 }
 
-void RSP_smc::set_levels(const vector<pair<double, int>> &events) {
+void RSP_smc::set_levels() {
     int n = (int) events.size();
     level_times.assign(1, 0.0);
     level_lambda.assign(1, 0.0);
@@ -67,8 +67,7 @@ double RSP_smc::exp_lambda_integral(double lo, double hi) {
     double a = lo;
     while (a < hi) {
         double b = (j + 1 < (int) level_times.size()) ? min(level_times[j+1], hi) : hi;
-        double k = level_rates[j];
-        total += (exp(lambda(b) - lam_hi) - exp(lambda(a) - lam_hi))/k;
+        total += (exp(lambda(b) - lam_hi) - exp(lambda(a) - lam_hi))/level_rates[j];
         a = b;
         j += 1;
     }
@@ -82,8 +81,7 @@ double RSP_smc::sister_mass(double lo, double hi) {
     double a = lo;
     while (a < hi) {
         double b = (j + 1 < (int) level_times.size()) ? min(level_times[j+1], hi) : hi;
-        double k = level_rates[j] + 1;
-        total += (exp(lambda(b) + b - lam_hi) - exp(lambda(a) + a - lam_hi))/k;
+        total += (exp(lambda(b) + b - lam_hi) - exp(lambda(a) + a - lam_hi))/(level_rates[j] + 1);
         a = b;
         j += 1;
     }
@@ -97,10 +95,9 @@ double RSP_smc::draw_start_time(double lo, double hi) {
     double a = lo;
     while (a < hi) {
         double b = (j + 1 < (int) level_times.size()) ? min(level_times[j+1], hi) : hi;
-        double k = level_rates[j];
         piece_lo.push_back(a);
         piece_hi.push_back(b);
-        piece_mass.push_back((exp(lambda(b) - lam_hi) - exp(lambda(a) - lam_hi))/k);
+        piece_mass.push_back((exp(lambda(b) - lam_hi) - exp(lambda(a) - lam_hi))/level_rates[j]);
         a = b;
         j += 1;
     }
@@ -133,9 +130,6 @@ double RSP_smc::start_lower_bound(const Branch &candidate, double cut_time, cons
 }
 
 void RSP_smc::sample_recombination(Recombination &r, double cut_time, Tree &tree, const Branch &own) {
-    if (r.pos == 0) {
-        return;
-    }
     if (r.start_time > 0) {
         return;
     }
@@ -202,7 +196,7 @@ void RSP_smc::set_tree(const Flat_tree &tree) {
             events.push_back({x.first->time, x.first->is_sample ? -1 : 1});
         }
     }
-    set_levels(events);
+    set_levels();
 }
 
 double RSP_smc::unchanged_recomb_length(const Flat_tree &tree) {
@@ -216,16 +210,13 @@ double RSP_smc::unchanged_recomb_length(const Flat_tree &tree) {
     a_sum.resize(m);
     e_sum.resize(m);
     eg_sum.resize(m);
-    g_tail.resize(m + 1);
+    g_tail.resize(m);
     e_lev.resize(m);
     g_lev.resize(m);
     a_sum[0] = 0;
     e_sum[0] = 0;
     eg_sum[0] = 0;
-    e_lev[m-1] = 0;
-    g_lev[m-1] = 0;
     g_tail[m-1] = 0;
-    g_tail[m] = 0;
     for (int j = j0; j + 1 < m; j++) {
         double k = level_rates[j];
         double d = level_times[j+1] - level_times[j];
@@ -260,9 +251,6 @@ double RSP_smc::unchanged_recomb_length(const Flat_tree &tree) {
 }
 
 void RSP_smc::approx_sample_recombination(Recombination &r, double cut_time) {
-    if (r.pos == 0) {
-        return;
-    }
     if (r.start_time > 0) {
         return;
     }
@@ -272,8 +260,7 @@ void RSP_smc::approx_sample_recombination(Recombination &r, double cut_time) {
     vector<Branch> source_candidates;
     for (Branch b : r.deleted_branches) {
         if (b.upper_node == r.deleted_node and b.lower_node->time < r.inserted_node->time) {
-            Branch candidate_recombined_branch = Branch(b.lower_node, r.inserted_node);
-            if (r.create(candidate_recombined_branch)) {
+            if (r.create(Branch(b.lower_node, r.inserted_node))) {
                 source_candidates.push_back(b);
             }
         }
@@ -289,9 +276,7 @@ void RSP_smc::approx_sample_recombination(Recombination &r, double cut_time) {
         lb2 = max(cut_time, source_candidates[1].lower_node->time);
         ub1 = min(source_candidates[0].upper_node->time, r.inserted_node->time);
         ub2 = min(source_candidates[1].upper_node->time, r.inserted_node->time);
-        double q = (ub1 - lb1)/(ub1 + ub2 - lb1 - lb2);
-        double p = 0.5;
-        if (p <= q) {
+        if (0.5 <= (ub1 - lb1)/(ub1 + ub2 - lb1 - lb2)) {
             r.source_branch = source_candidates[0];
             r.start_time = choose_time(lb1, ub1);
         } else {
@@ -314,15 +299,11 @@ void RSP_smc::approx_sample_recombination(Recombination &r, double cut_time) {
     if (r.start_time >= ub) {
         r.start_time = nextafter(ub, -numeric_limits<double>::infinity());
     }
-    assert(r.start_time <= ub);
 }
 
 double RSP_smc::choose_time(double lb, double ub) {
     assert(!isinf(ub));
-    double l = exp(lb);
-    double u = exp(ub);
-    double m = 0.5*(l + u);
-    double mt = log(m);
+    double mt = log(0.5*(exp(lb) + exp(ub)));
     if (ub - lb < 0.01) {
         mt = 0.5*(lb + ub);
     }

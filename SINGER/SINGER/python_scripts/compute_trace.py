@@ -19,39 +19,11 @@ def count_incompatibility(ts):
                     unmapped_sites += 1
     return unmapped_sites
 
-def incompatibility_trace(prefix, indices):
-    counts = []
-    for index in indices:
-        file_name = f"{prefix}_{index}.trees"
-        try:
-            ts = tskit.load(file_name)
-            count = count_incompatibility(ts)
-            counts.append(count)
-        except FileNotFoundError:
-            print(f"File not found: {file_name}")
-            counts.append(None)
-    return counts
-
 def diversity_fit_mse(ts, m):
     windows = np.append(np.arange(0, ts.sequence_length, 1e6), ts.sequence_length)
     site_diversity = ts.diversity(windows=windows, mode='site')
     branch_diversity = ts.diversity(windows=windows, mode='branch')*m
-    fit_mse = mse(site_diversity, branch_diversity)
-    return fit_mse
-
-def diversity_fit_trace(prefix, m, indices):
-    fit_mses = []
-    for index in indices:
-        file_name = f"{prefix}_{index}.trees"
-        try:
-            ts = tskit.load(file_name)
-            fit_mse = diversity_fit_mse(ts, m)
-            fit_mses.append(fit_mse)
-        except FileNotFoundError:
-            print(f"File not found: {file_name}")
-            fit_mses.append(None)
-    return fit_mses
-
+    return mse(site_diversity, branch_diversity)
 
 def main():
     parser = argparse.ArgumentParser(description='Compute traces for MCMC samples from SINGER.')

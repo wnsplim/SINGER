@@ -44,7 +44,7 @@ private:
     vector<double> level_rates = {};
     vector<double> level_lambda = {};
 
-    void set_levels(const vector<pair<double, int>> &events);
+    void set_levels();
 
     int level_of(double s);
 

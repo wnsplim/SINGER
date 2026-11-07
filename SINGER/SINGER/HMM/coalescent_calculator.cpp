@@ -74,7 +74,7 @@ void coalescent_calculator::refresh() {
     if (rebuild_from >= m - 1 and (int) Lam.size() == m) {
         return;
     }
-    int j0 = max(0, rebuild_from);
+    int j0 = rebuild_from;
     if ((int) Lam.size() != m) {
         Lam.resize(m);
         E.resize(m);
@@ -92,9 +92,8 @@ void coalescent_calculator::refresh() {
         kk[j+1] = kk[j] + sgn[j+1];
         double k = kk[j] + extra;
         double dt = t[j+1] - t[j];
-        double ea = E[j];
         if (k == 0) {
-            E[j+1] = ea;
+            E[j+1] = E[j];
             Lam[j+1] = Lam[j];
             B[j+1] = B[j] + W[j]*dt + 0.5*dt*dt;
             W[j+1] = W[j] + dt;
@@ -174,8 +173,7 @@ double coalescent_calculator::prob_inv(double x, double y, double u) {
     int j = (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
     double k0 = kk[j] + extra;
     if (k0 > 0 and (j + 1 >= m or y <= t[j+1])) {
-        double target = u*((-expm1(-k0*(y - x)))/k0);
-        return min(y, x - log1p(-min(1.0, target*k0))/k0);
+        return min(y, x - log1p(-min(1.0, u*((-expm1(-k0*(y - x)))/k0)*k0))/k0);
     }
     double target = u*rel_prob(x, y);
     double dl = 0, a = x;
@@ -200,9 +198,7 @@ double coalescent_calculator::log_density(double x, double y, double s) {
     double p = rel_prob(x, y);
     int jx = (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
     int js = (int) (upper_bound(t.begin(), t.end(), s) - t.begin()) - 1;
-    double lx = Lam[jx] + (kk[jx] + extra)*(x - t[jx]);
-    double ls = Lam[js] + (kk[js] + extra)*(s - t[js]);
-    return p > 0 ? lx - ls - log(p) : -numeric_limits<double>::infinity();
+    return p > 0 ? Lam[jx] + (kk[jx] + extra)*(x - t[jx]) - (Lam[js] + (kk[js] + extra)*(s - t[js])) - log(p) : -numeric_limits<double>::infinity();
 }
 
 double coalescent_calculator::surv(double x) {
@@ -219,9 +215,8 @@ double coalescent_calculator::surv_inv(double p) {
         return numeric_limits<double>::infinity();
     }
     refresh();
-    int m = (int) t.size();
     double l = -log(p);
-    int j = (int) (upper_bound(Lam.begin(), Lam.begin() + m, l) - Lam.begin()) - 1;
+    int j = (int) (upper_bound(Lam.begin(), Lam.end(), l) - Lam.begin()) - 1;
     j = max(j, 0);
     return t[j] + (l - Lam[j])/(kk[j] + extra);
 }
@@ -237,9 +232,7 @@ double coalescent_calculator::recomb_mass(double s, double v) {
     if (s > v) {
         return b2;
     }
-    double wx = W[jx]*(1 - ex) + ex/kx;
-    double lx = Lam[jx] + kx*dx;
-    return b2 + wx*(tail(x) - tail(v))*exp(lx);
+    return b2 + (W[jx]*(1 - ex) + ex/kx)*(tail(x) - tail(v))*exp(Lam[jx] + kx*dx);
 }
 
 double coalescent_calculator::find_median(double x, double y) {

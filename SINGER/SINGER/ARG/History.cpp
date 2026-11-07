@@ -33,13 +33,6 @@ static double draw_rate(double shape, double rate) {
     return nu;
 }
 
-static long double log_stay(const Site_model &m, const Join_case &c, int b, double uT) {
-    if (m.continuous_gamma()) {
-        return m.log_rate_integrated_stay(b, m.alpha - m.rate(b, b)*uT, c.length);
-    }
-    return (long double) m.rate(b, b)*c.length;
-}
-
 static bool is_root_row(const Mutation_row &r) {
     return r.branch.upper_node->index == -1;
 }
@@ -251,7 +244,7 @@ double ARG::group_entry(const Join_case &c, int b) const {
 }
 
 double ARG::group_constant(const Join_case &c, int b, double uT) const {
-    double stay = model.continuous_gamma() ? exp((double) log_stay(model, c, b, uT)) : exp(model.rate(b, b)*c.length);
+    double stay = model.continuous_gamma() ? exp((double) model.log_rate_integrated_stay(b, model.alpha - model.rate(b, b)*uT, c.length)) : exp(model.rate(b, b)*c.length);
     if (!c.query) {
         return c.kind == ROOT and c.anchor >= 0 ? stay : 1.0;
     }
@@ -293,11 +286,10 @@ void ARG::pattern_groups(int bin, vector<Pattern_group> &out) {
     }
     double x0 = coordinates[bin], x1 = coordinates[bin + 1];
     out.resize(1);
-    Pattern_group &m = out[0];
-    m.forced.assign(n, 0);
-    m.ranges.clear();
-    m.count = g.all_bases;
-    m.unknown = g.all_count;
+    out[0].forced.assign(n, 0);
+    out[0].ranges.clear();
+    out[0].count = g.all_bases;
+    out[0].unknown = g.all_count;
     vector<char> forced(n, 0);
     int gaps = 0;
     size_t used = 1;
@@ -637,17 +629,16 @@ void ARG::detach_histories() {
                 }
             } else if (c.kind == ROOT and c.anchor >= 0) {
                 Branch lp(lo, p);
-                int xl = xp;
                 double lowest = numeric_limits<double>::infinity();
                 for (const Mutation_row &r : rows) {
                     if (r.branch == lp and r.time < lowest) {
                         lowest = r.time;
-                        xl = r.state;
+                        xp = r.state;
                     }
                 }
                 drop.push_back(lp);
                 rows.erase(remove_if(rows.begin(), rows.end(), is_root_row), rows.end());
-                rows.push_back({Branch(lo, root.get()), xl, 1, lo->time});
+                rows.push_back({Branch(lo, root.get()), xp, 1, lo->time});
             } else {
                 vector<Node *> chain;
                 if (up != root.get()) {
@@ -702,7 +693,6 @@ void ARG::attach_histories(map<double, Branch> &joins, map<double, Branch> &adde
     Tree_order t;
     flat.assign(start_tree);
     vector<int> &below = history_below;
-    vector<Pattern_group> &groups = history_groups;
     auto recomb_it = recombinations.upper_bound(start);
     auto mut_it = mutation_sites.lower_bound(start);
     auto nn = added.begin(), nj = joins.begin(), on = removed_branches.begin(), oj = joining_branches.begin();
@@ -774,8 +764,7 @@ void ARG::attach_histories(map<double, Branch> &joins, map<double, Branch> &adde
         }
     };
     auto join_root = [&](vector<Mutation_row> &rows, int s) {
-        Node *l = bn.lower_node;
-        double up = unit*(tn - l->time);
+        double up = unit*(tn - bn.lower_node->time);
         size_t m = 0;
         while (m < path.size() and path[m].first < up) {
             m++;
@@ -1123,8 +1112,8 @@ void ARG::attach_histories(map<double, Branch> &joins, map<double, Branch> &adde
             }
         }
         unit = unit_bin;
-        pattern_groups(bin, groups);
-        for (Pattern_group &g : groups) {
+        pattern_groups(bin, history_groups);
+        for (Pattern_group &g : history_groups) {
             column_below(flat, t, x, &g.forced, below);
             bool data = d->is_sample ? !g.forced[d->index] : below[d->flat_index] > 0;
             Join_case c = join_case(flat, t, below, bn, tn, d, data, unit);
@@ -1321,7 +1310,6 @@ void ARG::history_statistics(History_statistics &s) {
     Flat_tree flat;
     Tree_order t;
     vector<int> below;
-    vector<Pattern_group> &groups = history_groups;
     vector<tuple<int, double, int>> pieces;
     auto r_it = recombinations.begin();
     auto mut_it = mutation_sites.lower_bound(0);
@@ -1339,8 +1327,8 @@ void ARG::history_statistics(History_statistics &s) {
             stale = false;
         }
         double unit = penalty*thetas[i]/(x1 - x0);
-        pattern_groups(i, groups);
-        for (Pattern_group &g : groups) {
+        pattern_groups(i, history_groups);
+        for (Pattern_group &g : history_groups) {
             column_below(flat, t, x0, &g.forced, below);
             if (below[t.top] == 0) {
                 continue;

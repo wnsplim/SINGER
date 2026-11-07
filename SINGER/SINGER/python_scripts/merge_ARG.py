@@ -28,9 +28,8 @@ def load_file_lists(file_list_path):
 
 def sort_nodes_by_time(ts):
     tables = ts.dump_tables()
-    times = tables.nodes.time
     is_sample = (tables.nodes.flags & tskit.NODE_IS_SAMPLE) > 0
-    sort_order = np.lexsort((np.where(is_sample, np.arange(ts.num_nodes, dtype=float), times), ~is_sample))
+    sort_order = np.lexsort((np.where(is_sample, np.arange(ts.num_nodes, dtype=float), tables.nodes.time), ~is_sample))
 
     # Remap all references
     node_map = np.full(ts.num_nodes, tskit.NULL, dtype=int)

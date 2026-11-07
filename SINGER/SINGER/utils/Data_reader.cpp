@@ -13,7 +13,6 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
-#include <numeric>
 #include <sstream>
 #include <sys/stat.h>
 #include <zlib.h>
@@ -1052,13 +1051,8 @@ bool Data_reader::sample_likelihood(const Record_likelihood &r, int sample, cons
     return false;
 }
 
-bool Data_reader::state_likelihoods(int n, int *calls, bool unphased, bool het, const double *likelihoods, double *L, int &alleles) {
+bool Data_reader::state_likelihoods(int n, int *calls, bool unphased, bool het, const double *G, double *L, int &alleles) {
     int nc = ploidy == 1 ? 2 : 4;
-    int ng = ploidy == 1 ? 2 : 3;
-    double G[3] = {0, 0, 0};
-    for (int g = 0; g < ng; g++) {
-        G[g] = likelihoods[g];
-    }
     int start = 0;
     if (ploidy == 1) {
         L[0] = G[0];
@@ -1224,7 +1218,7 @@ bool Data_reader::in_mask(double x) {
     return it != masked.begin() and prev(it)->second > x;
 }
 
-void Data_reader::read(double start_pos, double end_pos, bool with_sites) {
+void Data_reader::read(double start_pos, double end_pos) {
     entries.clear();
     entry_sites.clear();
     if (is_alignment()) {
@@ -1239,16 +1233,14 @@ void Data_reader::read(double start_pos, double end_pos, bool with_sites) {
     }
     read_calls(start_pos, end_pos);
     mask_deletions(start_pos, end_pos);
-    if (with_sites) {
-        ifstream index(input + ".index");
-        if (ploidy == 2 and index.is_open() and !Vcf_reader::is_bcf(input)) {
-            guide_read_sites(start_pos, end_pos);
-        } else {
-            naive_read_sites(start_pos, end_pos);
-        }
+    ifstream index(input + ".index");
+    if (ploidy == 2 and index.is_open() and !Vcf_reader::is_bcf(input)) {
+        guide_read_sites(start_pos, end_pos);
+    } else {
+        naive_read_sites(start_pos, end_pos);
     }
     scan_missing(start_pos, end_pos);
-    add_call_sites(start_pos, end_pos, with_sites);
+    add_call_sites(start_pos);
     print_missing_summary();
     if (genotype_lik and !likelihood_seen) {
         cerr << "Warning: -genotype_lik is set but no usable GL or PL was found in the input"
@@ -1257,19 +1249,19 @@ void Data_reader::read(double start_pos, double end_pos, bool with_sites) {
     }
 }
 
-void Data_reader::add_call_sites(double start_pos, double end_pos, bool with_sites) {
+void Data_reader::add_call_sites(double start_pos) {
     if (call_records.empty()) {
         return;
     }
     int haplotypes = ploidy*(int) call_column.size();
-    if (with_sites and (int) derived_sites.size() < haplotypes) {
+    if ((int) derived_sites.size() < haplotypes) {
         derived_sites.resize(haplotypes);
     }
     bool added = false;
     for (auto &p : call_records) {
         long long pos = p.first;
         double x = pos - start_pos;
-        if (pos < start_pos or pos >= end_pos or input_positions.count(pos) > 0 or in_mask(x)) {
+        if (input_positions.count(pos) > 0 or in_mask(x)) {
             continue;
         }
         string ref = p.second.front().ref, alt = single_alt(p.second.front().alts);
@@ -1306,7 +1298,7 @@ void Data_reader::add_call_sites(double start_pos, double end_pos, bool with_sit
         entries.insert(entries.end(), found.begin(), found.end());
         entry_sites.push_back(x);
         for (int h = 0; h < haplotypes; h++) {
-            if (state[h] == 1 and with_sites) {
+            if (state[h] == 1) {
                 derived_sites[h].push_back(x);
             } else if (state[h] < 0 and !sample_masked(h/ploidy, x)) {
                 missing_sites[h].push_back(x);
@@ -1346,7 +1338,7 @@ void Data_reader::print_missing_summary() {
 void Data_reader::mask_deletions(double start_pos, double end_pos) {
     Vcf_reader file(input, selected_chrom());
     string line;
-    double deleted = 0;
+    deleted_bases = 0;
     while (file.next(line)) {
         if (line[0] == '#') {
             continue;
@@ -1365,12 +1357,11 @@ void Data_reader::mask_deletions(double start_pos, double end_pos) {
             double hi = !first and pos == 1 and padding_last(ref, alt) ? x + ref.size() - 1 : x + ref.size();
             if (hi > lo) {
                 masked.push_back({lo, hi});
-                deleted += hi - lo;
+                deleted_bases += hi - lo;
             }
         }
     }
     merge_intervals(masked);
-    deleted_bases = deleted;
 }
 
 void Data_reader::naive_read_sites(double start_pos, double end_pos) {
@@ -1380,7 +1371,6 @@ void Data_reader::naive_read_sites(double start_pos, double end_pos) {
     long long prev_pos = -1;
     int valid_mutation = 0;
     int removed_mutation = 0;
-    vector<double> genotypes = {};
     vector<int> calls = {};
     while (file.next(line)) {
         if (line.substr(0, 6) == "#CHROM") {
@@ -1393,7 +1383,6 @@ void Data_reader::naive_read_sites(double start_pos, double end_pos) {
             num_individuals = (int) fields.size() - 9;
             derived_sites.assign(ploidy*num_individuals, {});
             site_states.assign(ploidy*num_individuals, {});
-            genotypes.resize(ploidy*num_individuals);
             calls.assign(ploidy*num_individuals, -1);
             continue;
         } else if (line[0] == '#') {
@@ -1428,17 +1417,16 @@ void Data_reader::naive_read_sites(double start_pos, double end_pos) {
         while (iss >> genotype) {
             Genotype_read g = read_genotype(genotype, individual_index, pos - start_pos, pos, genotype_lik ? &r : nullptr);
             for (int k = 0; k < ploidy; k++) {
-                genotypes[ploidy*individual_index + k] = (k < g.n and g.calls[k] == 1) ? 1 : 0;
                 calls[ploidy*individual_index + k] = k < g.n ? g.calls[k] : -1;
             }
             individual_index += 1;
         }
-        int genotype_sum = accumulate(genotypes.begin(), genotypes.end(), 0.0);
-        if (genotype_sum >= 1 and genotype_sum < genotypes.size()) {
+        int genotype_sum = count(calls.begin(), calls.end(), 1);
+        if (genotype_sum >= 1 and genotype_sum < calls.size()) {
             valid_mutation += 1;
             int masks[2] = {base_mask(ref[0]), base_mask(alt[0])};
-            for (int i = 0; i < genotypes.size(); i++) {
-                if (genotypes[i] == 1) {
+            for (int i = 0; i < calls.size(); i++) {
+                if (calls[i] == 1) {
                     derived_sites[i].push_back(pos - start_pos);
                 }
                 if (calls[i] >= 0) {
@@ -1483,7 +1471,6 @@ void Data_reader::guide_read_sites(double start, double end) {
     long long prev_pos = -1;
     int valid_mutation = 0;
     int removed_mutation = 0;
-    vector<double> genotypes = {};
     vector<int> calls = {};
     while (vcf_stream.next(line)) {
         istringstream iss(line);
@@ -1512,31 +1499,29 @@ void Data_reader::guide_read_sites(double start, double end) {
         }
         int individual_index = 0;
         while (iss >> genotype) {
-            if (genotypes.size() < 2*individual_index + 2) {
-                genotypes.resize(2*individual_index + 2);
+            if (calls.size() < 2*individual_index + 2) {
                 calls.resize(2*individual_index + 2, -1);
             }
             Genotype_read g = read_genotype(genotype, individual_index, pos - start, pos, genotype_lik ? &r : nullptr);
             for (int k = 0; k < 2; k++) {
-                genotypes[2*individual_index + k] = (k < g.n and g.calls[k] == 1) ? 1 : 0;
                 calls[2*individual_index + k] = k < g.n ? g.calls[k] : -1;
             }
             individual_index += 1;
         }
         if (derived_sites.size() == 0) {
-            derived_sites.assign(genotypes.size(), {});
+            derived_sites.assign(calls.size(), {});
         } else {
-            assert(derived_sites.size() == genotypes.size());
+            assert(derived_sites.size() == calls.size());
         }
-        if (site_states.size() != genotypes.size()) {
-            site_states.assign(genotypes.size(), {});
+        if (site_states.size() != calls.size()) {
+            site_states.assign(calls.size(), {});
         }
-        int genotype_sum = accumulate(genotypes.begin(), genotypes.end(), 0.0);
-        if (genotype_sum >= 1 and genotype_sum < genotypes.size()) {
+        int genotype_sum = count(calls.begin(), calls.end(), 1);
+        if (genotype_sum >= 1 and genotype_sum < calls.size()) {
             valid_mutation += 1;
             int masks[2] = {base_mask(ref[0]), base_mask(alt[0])};
-            for (int i = 0; i < genotypes.size(); i++) {
-                if (genotypes[i] == 1) {
+            for (int i = 0; i < calls.size(); i++) {
+                if (calls[i] == 1) {
                     derived_sites[i].push_back(pos - start);
                 }
                 if (calls[i] >= 0) {

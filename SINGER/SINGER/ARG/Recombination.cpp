@@ -258,7 +258,6 @@ void Recombination::find_target_branch() {
         }
     }
     target_branch = Branch();
-    return;
 }
 
 void Recombination::find_recomb_info() {

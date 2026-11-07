@@ -101,8 +101,7 @@ void Tree::forward_update(Recombination &r) {
     for (const Branch &b : r.inserted_branches) {
         insert_branch(b);
     }
-    int after_size = (int) parents.size();
-    assert(prev_size == after_size or r.pos == 0);
+    assert(prev_size == (int) parents.size() or r.pos == 0);
 }
 
 void Tree::backward_update(Recombination &r) {
@@ -119,26 +118,20 @@ void Tree::remove(Branch b, Node *n) {
     Branch joining_branch = find_joining_branch(b);
     Node *sibling = find_sibling(b.lower_node);
     Node *parent = parents[b.upper_node];
-    Branch sibling_branch = Branch(sibling, b.upper_node);
-    Branch parent_branch = Branch(b.upper_node, parent);
-    Branch cut_branch = Branch(b.lower_node, n);
     delete_branch(b);
-    delete_branch(sibling_branch);
-    delete_branch(parent_branch);
+    delete_branch(Branch(sibling, b.upper_node));
+    delete_branch(Branch(b.upper_node, parent));
     insert_branch(joining_branch);
-    insert_branch(cut_branch);
+    insert_branch(Branch(b.lower_node, n));
 }
 
 void Tree::add(Branch added_branch, Branch joining_branch, Node *n) {
-    Branch lower_branch = Branch(joining_branch.lower_node, added_branch.upper_node);
-    Branch upper_branch = Branch(added_branch.upper_node, joining_branch.upper_node);
     if (n != nullptr) {
-        Branch cut_branch = Branch(added_branch.lower_node, n);
-        delete_branch(cut_branch);
+        delete_branch(Branch(added_branch.lower_node, n));
     }
     delete_branch(joining_branch);
-    insert_branch(lower_branch);
-    insert_branch(upper_branch);
+    insert_branch(Branch(joining_branch.lower_node, added_branch.upper_node));
+    insert_branch(Branch(added_branch.upper_node, joining_branch.upper_node));
     insert_branch(added_branch);
 }
 
@@ -163,8 +156,7 @@ Branch Tree::find_joining_branch(Branch removed_branch) {
 }
 
 pair<Branch, double> Tree::sample_cut_point() {
-    double root_time = parents.rbegin()->first->time;
-    double cut_time = random()*root_time;
+    double cut_time = uniform_random()*parents.rbegin()->first->time;
     vector<Branch> candidates = {};
     for (auto &x : parents) {
         if (x.second->time > cut_time and x.first->time <= cut_time) {
@@ -209,9 +201,4 @@ double Tree::prior_likelihood() {
         prev = e.first;
     }
     return log_likelihood;
-}
-
-double Tree::random() {
-    double p = uniform_random();
-    return p;
 }

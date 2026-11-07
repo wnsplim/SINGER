@@ -215,15 +215,9 @@ void TSP::transfer(Recombination &r, Branch &prev_branch, Branch &next_branch) {
             }
         }
     } else {
-        double lb;
-        double ub;
-        lb = next_branch.lower_node->time;
-        ub = max(prev_branch.lower_node->time, next_branch.lower_node->time);
-        generate_intervals(next_branch, lb, ub);
+        generate_intervals(next_branch, next_branch.lower_node->time, max(prev_branch.lower_node->time, next_branch.lower_node->time));
         transfer_intervals(r, prev_branch, next_branch);
-        lb = min(curr_intervals.back()->ub, next_branch.upper_node->time);
-        ub = next_branch.upper_node->time;
-        generate_intervals(next_branch, lb, ub);
+        generate_intervals(next_branch, min(curr_intervals.back()->ub, next_branch.upper_node->time), next_branch.upper_node->time);
     }
     set_state_space(curr_index);
     push_row(temp);
@@ -277,19 +271,16 @@ vector<double> TSP::generate_grid(double lb, double ub) {
     double us = cc->surv(ub);
     double q = ls - us;
     int n = max((int) ceil((1 - us/ls)/gap), min_num);
-    double l;
     for (int i = 1; i < n; i++) {
-        l = cc->surv_inv(ls - i*q/n);
-        points.emplace_back(l);
+        points.emplace_back(cc->surv_inv(ls - i*q/n));
     }
     points.emplace_back(ub);
     return points;
 }
 
 void TSP::forward(double rho) {
-    bool fresh = rho != prev_rho;
     compute_diagonals(rho);
-    if (fresh) {
+    if (rho != prev_rho) {
         if (n_kernels == (int) kernels.size()) {
             kernels.emplace_back();
         }
@@ -402,16 +393,13 @@ map<double, Node *> TSP::sample_joining_nodes(int start_index, vector<double> &c
     time_log_q = 0;
     map<double, Node *> joining_nodes = {};
     int x = curr_index;
-    double pos = coordinates[x + start_index + 1];
     pin_active = false;
     Interval *interval = sample_curr_interval(x);
     Node *n = sample_joining_node(interval);
-    joining_nodes[pos] = nullptr;
-    while (x >= 0) {
+    joining_nodes[coordinates[x + start_index + 1]] = nullptr;
+    while (true) {
         x = trace_back_helper(interval, x);
-        pos = coordinates[x + start_index];
-        joining_nodes[pos] = n;
-        assert(x >= interval->start_pos);
+        joining_nodes[coordinates[x + start_index]] = n;
         if (x == 0) {
             break;
         } if (x == interval->start_pos) {
@@ -466,8 +454,7 @@ double TSP::own_mass(double t, double lb, double ub) {
     if (ub > t) {
         double den = cc1->prob(t, ub);
         if (den > 0) {
-            double w = (cc1->recomb_mass(t, ub) - cc1->recomb_mass(t, t))/den*cc1->surv(t);
-            m += w*cc->prob(max(lb, t), ub)/cc->surv(t);
+            m += (cc1->recomb_mass(t, ub) - cc1->recomb_mass(t, t))/den*cc1->surv(t)*cc->prob(max(lb, t), ub)/cc->surv(t);
         }
     }
     return m;
@@ -490,12 +477,8 @@ void TSP::generate_intervals(Branch &next_branch, double lb, double ub) {
         }
     }
     vector<double> points = generate_grid(lb, ub);
-    double l;
-    double u;
     for (int i = 0; i < points.size() - 1; i++) {
-        l = points[i];
-        u = points[i+1];
-        new_interval = make_interval(next_branch, l, u, curr_index);
+        new_interval = make_interval(next_branch, points[i], points[i+1], curr_index);
         fill_interval_time(new_interval);
         curr_intervals.emplace_back(new_interval);
         temp.emplace_back(0);
@@ -532,10 +515,8 @@ void TSP::transfer_intervals(Recombination &r, Branch &prev_branch, Branch &next
             } else {
                 p = 0;
             }
-            assert(!isnan(p));
             new_interval = make_interval(next_branch, lb, ub, curr_index);
             fill_interval_time(new_interval);
-            new_interval->node = interval->node;
             new_interval->node = interval->node;
             new_interval->source_interval = interval;
             curr_intervals.emplace_back(new_interval);
@@ -558,21 +539,11 @@ void TSP::set_dimensions() {
     selfs.assign(dim, 0);
 }
 
-double TSP::random() {
-    double p = uniform_random();
-    return p;
-}
-
 double TSP::get_prop(double lb1, double ub1, double lb2, double ub2) {
-    double p;
     if (ub2 - lb2 < 1e-6) {
-        p = 1;
-    } else {
-        double p1 = cc->prob(lb1, ub1);
-        double p2 = cc->prob(lb2, ub2);
-        p = p1/p2;
+        return 1;
     }
-    return p;
+    return cc->prob(lb1, ub1)/cc->prob(lb2, ub2);
 }
 
 void TSP::compute_null_emit_probs(double theta, Node *query_node) {
@@ -710,7 +681,6 @@ void TSP::compute_diagonals(double rho) {
         }
     }
     double top = Bv[dim-1];
-    double a0 = A[0];
     for (int i = 0; i < dim; i++) {
         double t = curr_intervals[i]->time;
         double stay;
@@ -726,8 +696,7 @@ void TSP::compute_diagonals(double rho) {
             if (den > 0) W = (cc1->recomb_mass(t, top) - cc1->recomb_mass(t, t))/den*cc1->surv(t);
         }
         bool small = t - cut_time < 0.005;
-        double pref = small ? 0 : per_length(rho, t - cut_time);
-        double pref0 = per_length(rho, t - cut_time)*(t - cut_time);
+        double pref = small ? per_length(rho, t - cut_time)*(t - cut_time) : per_length(rho, t - cut_time);
         double sis = exp(-(t - cut_time));
         auto jump = [&](double a, double b, double Ba, double Bb, double Ga, double Gb, double Ha, double Hb, double Sa, double Sb) {
             if (rho == 0) return 0.0;
@@ -735,7 +704,7 @@ void TSP::compute_diagonals(double rho) {
             double tb = min(b, t);
             double p;
             if (small) {
-                p = fs*pref0*(Sa - Sb);
+                p = fs*pref*(Sa - Sb);
             } else {
                 double m = 0;
                 if (tb > a) m += (tb == b ? Bb : Bt) - Ba;
@@ -750,8 +719,7 @@ void TSP::compute_diagonals(double rho) {
             }
             return max(p, epsilon);
         };
-        double full = jump(a0, top, BA[0], BB[dim-1], GA[0], GB[dim-1], HA[0], HB[dim-1], SA[0], SB[dim-1]);
-        double base = stay + full;
+        double base = stay + jump(A[0], top, BA[0], BB[dim-1], GA[0], GB[dim-1], HA[0], HB[dim-1], SA[0], SB[dim-1]);
         double self = jump(A[i], Bv[i], BA[i], BB[i], GA[i], GB[i], HA[i], HB[i], SA[i], SB[i]);
         diagonals[i] = (stay + self)/base;
         stays[i] = stay/base;
@@ -760,9 +728,8 @@ void TSP::compute_diagonals(double rho) {
             lower_diagonals[i-1] = jump(A[i-1], Bv[i-1], BA[i-1], BB[i-1], GA[i-1], GB[i-1], HA[i-1], HB[i-1], SA[i-1], SB[i-1])/base;
         }
         if (i + 1 < dim) {
-            double a = max(Bv[i], cut_time);
             double m = GB[i] - GB[dim-1];
-            factors[i] = (m > 0) ? jump(a, top, BB[i], BB[dim-1], GB[i], GB[dim-1], HB[i], HB[dim-1], SB[i], SB[dim-1])/base/m : 0;
+            factors[i] = (m > 0) ? jump(max(Bv[i], cut_time), top, BB[i], BB[dim-1], GB[i], GB[dim-1], HB[i], HB[dim-1], SB[i], SB[dim-1])/base/m : 0;
         }
         assert(!isnan(diagonals[i]));
     }
@@ -854,9 +821,7 @@ vector<Interval *> &TSP::get_state_space(int x) {
 }
 
 int TSP::get_interval_index(Interval *interval, vector<Interval *> &intervals) {
-    auto it = find(intervals.begin(), intervals.end(), interval);
-    int index = (int) distance(intervals.begin(), it);
-    return index;
+    return (int) distance(intervals.begin(), find(intervals.begin(), intervals.end(), interval));
 }
 
 int TSP::get_prev_breakpoint(int x) {
@@ -869,8 +834,7 @@ int TSP::get_prev_breakpoint(int x) {
 Interval *TSP::sample_curr_interval(int x) {
     vector<Interval *> &intervals = get_state_space(x);
     double ws = accumulate(forward_probs[x].begin(), forward_probs[x].end(), 0.0);
-    double q = random();
-    double w = ws*q;
+    double w = ws*uniform_random();
     int i = 0;
     for (; i + 1 < (int) intervals.size(); i++) {
         w -= forward_probs[x][i];
@@ -887,8 +851,7 @@ Interval *TSP::sample_prev_interval(Interval *interval, int x) {
     compute_trace_back_probs(x + 1, interval, intervals);
     vector<double> &probs = forward_probs[x];
     ws = jump_mass(interval, intervals, probs);
-    double q = random();
-    double w = ws*q;
+    double w = ws*uniform_random();
     assert(ws > 0);
     int i = 0;
     for (; i + 1 < (int) intervals.size(); i++) {
@@ -902,8 +865,7 @@ Interval *TSP::sample_prev_interval(Interval *interval, int x) {
 
 Interval *TSP::sample_source_interval(Interval *interval, int x) {
     Interval *sample_interval = interval->source_interval;
-    vector<Interval *> &intervals = get_state_space(x);
-    sample_index = get_interval_index(sample_interval, intervals);
+    sample_index = get_interval_index(sample_interval, get_state_space(x));
     return sample_interval;
 }
 
@@ -917,8 +879,7 @@ Interval *TSP::sample_recomb_interval(Interval *interval, int x) {
         ws += max(own_mass(intervals[i]->time, interval->lb, interval->ub), epsilon)*forward_probs[x][i];
     }
     assert(ws > 0);
-    double q = random();
-    double w = ws*q;
+    double w = ws*uniform_random();
     int i = 0;
     for (; i + 1 < (int) intervals.size(); i++) {
         w -= max(own_mass(intervals[i]->time, interval->lb, interval->ub), epsilon)*forward_probs[x][i];
@@ -933,7 +894,7 @@ int TSP::trace_back_helper(Interval *interval, int x) {
     int y = get_prev_breakpoint(x);
     double non_recomb_prob = 0;
     double all_prob = 0;
-    double q = random();
+    double q = uniform_random();
     double p = 1;
     double shrinkage;
     vector<Interval *> &intervals = get_state_space(x);
@@ -1026,8 +987,7 @@ bool TSP::pinned(Interval *iv) {
 }
 
 double TSP::stay_mass(Interval *iv, vector<Interval *> &intervals, vector<double> &probs) {
-    int fi = get_interval_index(iv, intervals);
-    return tb_stay*probs[fi];
+    return tb_stay*probs[get_interval_index(iv, intervals)];
 }
 
 double TSP::jump_mass(Interval *iv, vector<Interval *> &intervals, vector<double> &probs) {
@@ -1046,9 +1006,8 @@ double TSP::ffbs_stay_logq(int x, Interval *iv) {
 double TSP::ffbs_jump_logq(int x, Interval *iv) {
     vector<Interval *> &pv = get_state_space(x);
     compute_trace_back_probs(x, iv, pv);
-    double nr = stay_mass(iv, pv, forward_probs[x - 1]);
     double wsj = jump_mass(iv, pv, forward_probs[x - 1]);
-    double ap = nr + wsj;
+    double ap = stay_mass(iv, pv, forward_probs[x - 1]) + wsj;
     if (ap <= 0 or wsj <= 0) return -numeric_limits<double>::infinity();
     return log(wsj) - log(ap);
 }
@@ -1078,27 +1037,21 @@ double TSP::eval_joining_nodes(map<double, Branch> &old_jb, map<double, Branch> 
     sel_log_q = 0;
     time_log_q = 0;
     auto old_branch_at = [&](int xx) {
-        double pos = coordinates[xx + start_index];
-        auto it = old_jb.upper_bound(pos);
+        auto it = old_jb.upper_bound(coordinates[xx + start_index]);
         if (it != old_jb.begin()) --it;
         return it->second;
     };
     auto old_time_at = [&](int xx) {
-        double pos = coordinates[xx + start_index];
-        auto it = old_ab.upper_bound(pos);
+        auto it = old_ab.upper_bound(coordinates[xx + start_index]);
         if (it != old_ab.begin()) --it;
         return it->second.upper_node->time;
     };
     auto old_node_at = [&](int xx) {
-        double pos = coordinates[xx + start_index];
-        auto it = old_ab.upper_bound(pos);
+        auto it = old_ab.upper_bound(coordinates[xx + start_index]);
         if (it != old_ab.begin()) --it;
         return it->second.upper_node;
     };
     double neg_inf = -numeric_limits<double>::infinity();
-    auto fail = [&]() {
-        return neg_inf;
-    };
     auto eval_curr_sel = [&](int xx, int idx) {
         double ws = accumulate(forward_probs[xx].begin(), forward_probs[xx].end(), 0.0);
         if (ws > 0 and forward_probs[xx][idx] > 0) {
@@ -1108,17 +1061,16 @@ double TSP::eval_joining_nodes(map<double, Branch> &old_jb, map<double, Branch> 
         }
     };
     int x = curr_index;
-    Branch b = old_branch_at(x);
     double t = old_time_at(x);
     find_node = old_node_at(x);
     pin_active = false;
-    int oi = find_old_interval(x, b, t);
-    if (oi < 0) return fail();
+    int oi = find_old_interval(x, old_branch_at(x), t);
+    if (oi < 0) return neg_inf;
     Interval *interval = get_state_space(x)[oi];
     eval_curr_sel(x, oi);
     sample_index = oi;
     eval_time_at(interval, t);
-    while (x >= 0) {
+    while (true) {
         int y = get_prev_breakpoint(x);
         Node *cur_node = old_node_at(x);
         int xstop = y;
@@ -1132,32 +1084,30 @@ double TSP::eval_joining_nodes(map<double, Branch> &old_jb, map<double, Branch> 
         if (x == 0) {
             break;
         }
-        Interval *from = interval;
-        if (x == from->start_pos and from->source_interval != nullptr) {
-            if (old_node_at(x - 1) != cur_node) return fail();
+        if (x == interval->start_pos and interval->source_interval != nullptr) {
+            if (old_node_at(x - 1) != cur_node) return neg_inf;
             x -= 1;
-            interval = from->source_interval;
+            interval = interval->source_interval;
             vector<Interval *> &pv = get_state_space(x);
             sample_index = get_interval_index(interval, pv);
             rewind_to(x);
-        } else if (x == from->start_pos) {
+        } else if (x == interval->start_pos) {
             x -= 1;
-            Branch nb = old_branch_at(x);
             double nt = old_time_at(x);
             find_node = old_node_at(x);
             pin_active = true;
-            int ni = find_old_interval(x, nb, nt);
-            if (ni < 0) return fail();
+            int ni = find_old_interval(x, old_branch_at(x), nt);
+            if (ni < 0) return neg_inf;
             vector<Interval *> &pv = get_state_space(x);
             pin_active = pv[ni]->node != nullptr;
-            if (!pinned(pv[ni]) and find_node == cur_node) return fail();
-            if (from->lb == from->ub) {
+            if (!pinned(pv[ni]) and find_node == cur_node) return neg_inf;
+            if (interval->lb == interval->ub) {
                 eval_curr_sel(x, ni);
             } else {
                 double ws = 0;
                 for (int i = 0; i < (int) pv.size(); i++)
-                    ws += max(own_mass(pv[i]->time, from->lb, from->ub), epsilon) * forward_probs[x][i];
-                double num = max(own_mass(pv[ni]->time, from->lb, from->ub), epsilon) * forward_probs[x][ni];
+                    ws += max(own_mass(pv[i]->time, interval->lb, interval->ub), epsilon) * forward_probs[x][i];
+                double num = max(own_mass(pv[ni]->time, interval->lb, interval->ub), epsilon) * forward_probs[x][ni];
                 if (ws > 0 and num > 0) {
                     sel_log_q += log(num / ws);
                 } else {
@@ -1169,17 +1119,16 @@ double TSP::eval_joining_nodes(map<double, Branch> &old_jb, map<double, Branch> 
             interval = pv[ni];
             eval_time_at(interval, nt);
         } else {
-            sel_log_q += ffbs_jump_logq(x, from);
+            sel_log_q += ffbs_jump_logq(x, interval);
             x -= 1;
             vector<Interval *> &pv = get_state_space(x);
-            compute_trace_back_probs(x + 1, from, pv);
-            Branch nb = old_branch_at(x);
+            compute_trace_back_probs(x + 1, interval, pv);
             double nt = old_time_at(x);
             find_node = old_node_at(x);
             pin_active = false;
-            int ni = find_old_interval(x, nb, nt);
-            if (ni < 0) return fail();
-            double ws = jump_mass(from, pv, forward_probs[x]);
+            int ni = find_old_interval(x, old_branch_at(x), nt);
+            if (ni < 0) return neg_inf;
+            double ws = jump_mass(interval, pv, forward_probs[x]);
             double num = trace_back_probs[ni] * forward_probs[x][ni];
             if (ws > 0 and num > 0) {
                 sel_log_q += log(num / ws);
@@ -1208,6 +1157,5 @@ Node *TSP::sample_joining_node(Interval *interval) {
         n->set_index(counter);
         counter += 1;
     }
-    assert(n != nullptr);
     return n;
 }

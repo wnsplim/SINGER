@@ -26,7 +26,7 @@ static bool parse_rate(const string &value, double &rate) {
 int main(int argc, const char * argv[]) {
     bool resume = false;
     bool no_data = false;
-    string mode = "exact";
+    bool exact = true;
     string tip_ages_file = "";
     string mask_file = "";
     string mask_p_file = "";
@@ -65,21 +65,19 @@ int main(int argc, const char * argv[]) {
             given.push_back({args[i], value});
         }
     }
-    bool resume_given = false;
-    string ckp_prefix = "";
     for (auto &g : given) {
         if (g.first == "-resume") {
-            resume_given = true;
+            resume = true;
         }
         if (g.first == "-output") {
-            ckp_prefix = g.second;
+            output_prefix = g.second;
         }
     }
     set<string> ckp_skip = {"-resume", "-n", "-seed", "-output"};
-    if (resume_given and !ckp_prefix.empty()) {
-        ifstream ckp(ckp_prefix + ".ckp");
+    if (resume and !output_prefix.empty()) {
+        ifstream ckp(output_prefix + ".ckp");
         if (!ckp.good()) {
-            cerr << "Error: -resume needs the checkpoint " << ckp_prefix << ".ckp, which was not found. " << endl;
+            cerr << "Error: -resume needs the checkpoint " << output_prefix << ".ckp, which was not found. " << endl;
             exit(1);
         }
         string line;
@@ -205,7 +203,7 @@ int main(int argc, const char * argv[]) {
                 cerr << "Error: --mode flag expects original or exact. " << endl;
                 exit(1);
             }
-            mode = args[++i];
+            exact = args[++i] == "exact";
         }
         else if (arg == "-Ne") {
             if (i + 1 >= n_args || args[i+1][0] == '-') {
@@ -505,7 +503,6 @@ int main(int argc, const char * argv[]) {
         cerr << "-thin flag is invalid. " << endl;
         exit(1);
     }
-    bool exact = mode == "exact";
     if (tip_ages_file.size() > 0 and g <= 0) {
         cerr << "Error: -g (generation time in years) must be provided with -tip_ages. " << endl;
         exit(1);
@@ -534,10 +531,9 @@ int main(int argc, const char * argv[]) {
         cerr << "Error: an alignment input needs -subst_model JC, K80, F81, HKY or GTR. " << endl;
         exit(1);
     }
-    bool ploidy_given = find(args.begin(), args.end(), "-ploidy") != args.end();
     bool polar_given = find(args.begin(), args.end(), "-polar") != args.end();
     if (alignment) {
-        if (!ploidy_given) {
+        if (find(args.begin(), args.end(), "-ploidy") == args.end()) {
             ploidy = 1;
         }
         if (!chrom_name.empty()) {
@@ -617,7 +613,7 @@ int main(int argc, const char * argv[]) {
         }
     }
     augment = gamma_k == 0 or (gamma_k == 1 and !pruning and (augment or model_name != "CFN"));
-    if (!resume and !output_prefix.empty()) {
+    if (!resume) {
         ofstream ckp(output_prefix + ".ckp");
         for (auto &g : given) {
             if (ckp_skip.count(g.first) == 0) {

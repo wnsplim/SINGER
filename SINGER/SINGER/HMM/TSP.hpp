@@ -180,9 +180,7 @@ public:
     void fill_interval_time(Interval *iv);
     
     vector<double> generate_grid(double lb, double ub);
-    
-    double random();
-    
+
     double get_prop(double lb1, double ub1, double lb2, double ub2);
     
     void set_dimensions();

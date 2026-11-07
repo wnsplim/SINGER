@@ -16,7 +16,6 @@ void Rate_map::load_map(string mut_map_file, double start, double end) {
     double left;
     double right;
     double rate;
-    double mut_dist;
     for (int i = 0; i + 2 < (int) v.size(); i += 3) {
         left = v[i];
         right = v[i + 1];
@@ -30,8 +29,7 @@ void Rate_map::load_map(string mut_map_file, double start, double end) {
             exit(1);
         }
         coordinates.push_back(left);
-        mut_dist = rate_distances.back() + rate*(right - left);
-        rate_distances.push_back(mut_dist);
+        rate_distances.push_back(rate_distances.back() + rate*(right - left));
         sequence_length = right;
     }
     if (v.size() % 3 != 0 or coordinates.empty()) {
@@ -49,7 +47,7 @@ int Rate_map::find_index(double x) {
     auto it = upper_bound(coordinates.begin(), coordinates.end(), x);
     it--;
     int index = (int) distance(coordinates.begin(), it);
-    assert(index >= 0 and index <= coordinates.size() - 1);
+    assert(index >= 0);
     return index;
 }
 
@@ -58,11 +56,8 @@ double Rate_map::cumulative_distance(double x) {
     if (index + 1 == (int) coordinates.size()) {
         return rate_distances[index];
     }
-    double prev_dist = rate_distances[index];
-    double next_dist = rate_distances[index+1];
     double p = (x - coordinates[index])/(coordinates[index+1] - coordinates[index]);
-    double dist = (1-p)*prev_dist + p*next_dist;
-    return dist;
+    return (1-p)*rate_distances[index] + p*rate_distances[index+1];
 }
 
 double Rate_map::segment_distance(double x, double y) {

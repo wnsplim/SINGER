@@ -93,11 +93,9 @@ void Node::write_state(double pos, double s) {
         } else {
             it = mutation_sites.begin() + (cur > at ? cur - 1 : cur);
         }
-        return;
     } else if (s == 1) {
         set_site(pos, s);
     }
-    return;
 }
 
 shared_ptr<Node> new_node(double t) {
@@ -105,20 +103,13 @@ shared_ptr<Node> new_node(double t) {
 }
 
 void Node::move_iterator(double m) {
-    if (it->first == m) {
-        return;
-    }
     if (it->first < m) {
-        double next_pos = next(it)->first;
-        if (next_pos == m) {
+        if (next(it)->first == m) {
             ++it;
-            return;
-        } else if (next_pos > m) {
             return;
         }
     } else if (it->first > m) {
-        double prev_pos = prev(it)->first;
-        if (prev_pos <= m) {
+        if (prev(it)->first <= m) {
             --it;
             return;
         }

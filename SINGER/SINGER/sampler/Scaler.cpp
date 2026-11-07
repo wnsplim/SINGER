@@ -88,21 +88,18 @@ void Scaler::compute_old_grid() {
     double unit_arg_length = accumulated_arg_length.back()/num_windows;
     double partial_arg_length = 0;
     int new_index = 0;
-    double rate = 0;
     double residue = 0;
     for (int i = 1; i <= num_windows; i++) {
         partial_arg_length = accumulated_arg_length.back()*i/num_windows;
         auto it = upper_bound(accumulated_arg_length.begin(), accumulated_arg_length.end(), partial_arg_length);
         new_index = (int) distance(accumulated_arg_length.begin(), it);
         new_index = min((int) sorted_nodes.size() - 1, new_index);
-        rate = rates[new_index - 1];
         residue = accumulated_arg_length[new_index] - partial_arg_length;
         residue = max(0.0, residue);
         expected_arg_length[i-1] = unit_arg_length;
-        old_grid.push_back(times[new_index] - residue/rate);
+        old_grid.push_back(times[new_index] - residue/rates[new_index - 1]);
     }
     old_grid.back() = nextafter(times.back(), INT_MAX);
-    assert(old_grid.size() == num_windows + 1);
 }
 
 void Scaler::compute_new_grid(double theta) {
@@ -110,12 +107,11 @@ void Scaler::compute_new_grid(double theta) {
         x /= theta;
     }
     double base_time = 0;
-    double old_window_width = 0, scaling_factor = 0;
+    double scaling_factor = 0;
     for (int i = 1; i < old_grid.size(); i++) {
-        old_window_width = old_grid[i] - old_grid[i-1];
         scaling_factor = observed_arg_length[i-1]/expected_arg_length[i-1];
         scaling_factors.push_back(scaling_factor);
-        base_time += old_window_width*scaling_factor;
+        base_time += (old_grid[i] - old_grid[i-1])*scaling_factor;
         new_grid.push_back(base_time);
     }
 }
@@ -130,16 +126,12 @@ void Scaler::add_mutation(double w, double lb, double ub) {
     if (isinf(ub)) {
         return;
     }
-    double x, y, l;
     int index;
     auto it = upper_bound(old_grid.begin(), old_grid.end(), lb);
     it--;
     index = (int) distance(old_grid.begin(), it);
     while (old_grid[index] < ub) {
-        x = old_grid[index];
-        y = old_grid[index + 1];
-        l = min(ub, y) - max(lb, x);
-        observed_arg_length[index] += w*l/(ub - lb);
+        observed_arg_length[index] += w*(min(ub, old_grid[index + 1]) - max(lb, old_grid[index]))/(ub - lb);
         index++;
     }
 }
@@ -157,7 +149,6 @@ void Scaler::rescale(ARG &a, double theta) {
         }
         while (times[i] > old_grid[k+1]) {
             k++;
-            assert(k <= num_windows);
         }
         new_t = scaling_factors[k]*(times[i] - old_grid[k]) + new_grid[k];
         assert(new_t >= old_t);

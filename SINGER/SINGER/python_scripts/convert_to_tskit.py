@@ -15,10 +15,9 @@ def read_ts(node_file, edge_file, counts_file):
     edge_span = edge_all[keep, :]
     length = max(edge_span[:, 1])
     tables = tskit.TableCollection(sequence_length=length)
-    node_table = tables.nodes
     parents = set(edge_span[:, 2].astype(int))
     for i, t in enumerate(node_time):
-        node_table.add_row(flags=0 if i in parents else tskit.NODE_IS_SAMPLE, time=t)
+        tables.nodes.add_row(flags=0 if i in parents else tskit.NODE_IS_SAMPLE, time=t)
     parent_indices = np.array(edge_span[:, 2], dtype = np.int32)
     child_indices = np.array(edge_span[:, 3], dtype = np.int32)
     arg_io.add_edges(tables, edge_span, parent_indices, child_indices, 0.0, counts_file, keep)

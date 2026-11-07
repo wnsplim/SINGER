@@ -6,8 +6,7 @@ import argparse
 def compute_pairwise_coalescence_time(ts, leaf_index, query_index, s):
     windows = np.arange(0, ts.sequence_length, s)
     windows = np.append(windows, ts.sequence_length)
-    times = ts.diversity(sample_sets=[leaf_index, query_index], windows=windows, mode='branch')/2 + (ts.node(leaf_index).time + ts.node(query_index).time)/2
-    return times
+    return ts.diversity(sample_sets=[leaf_index, query_index], windows=windows, mode='branch')/2 + (ts.node(leaf_index).time + ts.node(query_index).time)/2
 
 def compute_all_pairwise_coalescence_times(ts, leaf_index, s):
     windows = np.arange(0, ts.sequence_length, s)
@@ -32,12 +31,8 @@ def main():
     args = parser.parse_args()
     
     ts = tskit.load(args.trees_file)
-    leaf_index = args.leaf_index
-    interval_size = args.interval_size
-    output_file = args.output_file
-    
-    all_coalescence_times = compute_all_pairwise_coalescence_times(ts, leaf_index, interval_size)
-    np.savetxt(output_file, all_coalescence_times, delimiter=",")    
+    all_coalescence_times = compute_all_pairwise_coalescence_times(ts, args.leaf_index, args.interval_size)
+    np.savetxt(args.output_file, all_coalescence_times, delimiter=",")
     
  
 if __name__ == "__main__":

@@ -1,25 +1,13 @@
 import argparse
-import os
 import sys
 import numpy as np
 import tskit
 import vcf_io
 import arg_io
 
-def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, counts_files=None, bases=False):
-    if len(node_files) != len(branch_files):
-        raise ValueError("Lengths of node_files and branch_files must be the same.")
-
-    if len(node_files) != len(block_coordinates):
-        raise ValueError("Lengths of node_files and coordinates must be the same.")
-    if counts_files is None:
-        counts_files = [None] * len(node_files)
-
+def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, counts_files, bases=False):
     tables = tskit.TableCollection(sequence_length=0)
     node_table = tables.nodes
-
-    node_num = 0
-    sample_num = 0
 
     for node_file_index, (node_file, branch_file, mutation_file, counts_file) in enumerate(zip(node_files, branch_files, mutation_files, counts_files)):
         print(f"Processing segment {node_file_index}")

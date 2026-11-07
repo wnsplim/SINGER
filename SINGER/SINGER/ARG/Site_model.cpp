@@ -28,23 +28,22 @@ void Site_model::set(const string &model, const vector<double> &frequencies, con
     } else if (model == "GTR") {
         s = exchangeabilities;
     }
-    vector<double> Q(S*S, 0.0);
+    rate_matrix.assign(S*S, 0.0);
     double total = 0;
     for (int i = 0; i < S; i++) {
         for (int j = 0; j < S; j++) {
             if (i != j) {
                 int lo = min(i, j), hi = max(i, j);
-                Q[S*i + j] = s[lo*S - lo*(lo + 1)/2 + hi - lo - 1]*pi[j];
-                Q[S*i + i] -= Q[S*i + j];
+                rate_matrix[S*i + j] = s[lo*S - lo*(lo + 1)/2 + hi - lo - 1]*pi[j];
+                rate_matrix[S*i + i] -= rate_matrix[S*i + j];
             }
         }
-        total -= pi[i]*Q[S*i + i];
+        total -= pi[i]*rate_matrix[S*i + i];
     }
-    for (double &q : Q) {
+    for (double &q : rate_matrix) {
         q /= total;
     }
-    rate_matrix = Q;
-    decompose(Q);
+    decompose();
     find_h_max();
 }
 
@@ -349,8 +348,7 @@ void Site_model::count_matrix(double x, double *M) const {
     for (int m = 0; m < n; m++) {
         for (int q = 0; q < n; q++) {
             double y = (eigenvalues[m] - eigenvalues[q])*x;
-            double f = fabs(y) < 1e-8 ? 1 + y/2 : expm1(y)/y;
-            J[n*m + q] = e[q]*x*f;
+            J[n*m + q] = e[q]*x*(fabs(y) < 1e-8 ? 1 + y/2 : expm1(y)/y);
         }
     }
     const double *d = count_tensor.data();
@@ -365,13 +363,13 @@ void Site_model::count_matrix(double x, double *M) const {
     }
 }
 
-void Site_model::decompose(const vector<double> &Q) {
+void Site_model::decompose() {
     int n = states;
     vector<double> B(n*n), W(n*n, 0.0);
     for (int i = 0; i < n; i++) {
         W[n*i + i] = 1.0;
         for (int j = 0; j < n; j++) {
-            B[n*i + j] = sqrt(pi[i])*Q[n*i + j]/sqrt(pi[j]);
+            B[n*i + j] = sqrt(pi[i])*rate_matrix[n*i + j]/sqrt(pi[j]);
         }
     }
     int sweep = 0;
@@ -433,7 +431,7 @@ void Site_model::decompose(const vector<double> &Q) {
             for (int a = 0; a < n; a++) {
                 for (int b = 0; b < n; b++) {
                     if (a != b) {
-                        c += right[n*m + a]*Q[n*a + b]*left[n*b + q];
+                        c += right[n*m + a]*rate_matrix[n*a + b]*left[n*b + q];
                     }
                 }
             }

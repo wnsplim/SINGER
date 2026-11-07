@@ -57,8 +57,6 @@ public:
 
     Sampler();
 
-    Sampler(double pop_size, double r, double m);
-
     void set_precision(double c, double q);
 
     void set_input_file_prefix(string f);

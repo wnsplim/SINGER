@@ -48,8 +48,6 @@ public:
 
     double prior_likelihood();
 
-    double random();
-
 };
 
 class Flat_tree {

@@ -48,8 +48,7 @@ static double ratio_with(int S, const Site_messages &s, int k, const Edge_matric
 template <int N>
 static double split_value(const Site_model &m, const Site_messages &s, const Edge_matrices &e, int b) {
     if (m.continuous_gamma()) {
-        double A = m.alpha - m.rate(b, b)*(s.T - e.upper_length - e.lower_length);
-        return (double) m.node_expectation(b, A, e.upper_length, e.lower_length, e.query_length, 0.0);
+        return (double) m.node_expectation(b, m.alpha - m.rate(b, b)*(s.T - e.upper_length - e.lower_length), e.upper_length, e.lower_length, e.query_length, 0.0);
     }
     const int S = N > 0 ? N : m.states;
     double v = 0;
@@ -162,7 +161,6 @@ void Emission::edge_matrices(Branch &branch, double time, Node *node, Edge_matri
     if (augment) {
         Edge_matrices &e = out[0];
         e.at_root = branch.upper_node->index == -1;
-        e.time = time;
         e.query_length = unit*(time - node->time);
         e.lower_length = unit*(time - branch.lower_node->time);
         e.upper_length = e.at_root ? 0.0 : unit*(branch.upper_node->time - time);
@@ -218,8 +216,7 @@ static double history_emit(const Emission &h, int k, double emit, const Edge_mat
     return emit;
 }
 
-double Emission::mut_emit(Branch &branch, double norm, const Edge_matrices *cached) {
-    double emit = norm;
+double Emission::mut_emit(Branch &branch, double emit, const Edge_matrices *cached) {
     int S = model->states, k = branch.lower_node->flat_index;
     if (augment) {
         return S == 4 ? history_emit<4>(*this, k, emit, cached[0]) : S == 2 ? history_emit<2>(*this, k, emit, cached[0]) : history_emit<0>(*this, k, emit, cached[0]);
@@ -236,8 +233,7 @@ double Emission::mut_emit(Branch &branch, double norm, const Edge_matrices *cach
     return emit;
 }
 
-double Emission::mut_emit(Branch &branch, double time, Node *node, double norm) {
-    double emit = norm;
+double Emission::mut_emit(Branch &branch, double time, Node *node, double emit) {
     for (const Site_messages *site : sites) {
         emit *= site_ratio_two(*site, branch, time, node);
     }

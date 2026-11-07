@@ -28,8 +28,6 @@ bool Branch::operator<(const Branch &other) const {
         return false;
     } else if (cn(lower_node, other.lower_node)) {
         return true;
-    } else if (cn(other.lower_node, lower_node)) {
-        return false;
     } else {
         return false;
     }

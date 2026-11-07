@@ -102,7 +102,7 @@ private:
     vector<double> cijg = {};
     vector<double> split_terms = {};
 
-    void decompose(const vector<double> &Q);
+    void decompose();
 
     void find_h_max();
 };
