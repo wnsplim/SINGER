@@ -2638,7 +2638,13 @@ void ARG::read_recombs(string filename) {
             x.second.start_time = start_times.at(pos)/Ne - time_offset;
             x.second.source_branch = source_branches.at(pos);
             x.second.find_nodes();
-            x.second.find_target_branch();
+            if (x.second.deleted_node != nullptr and x.second.inserted_node != nullptr) {
+                x.second.find_target_branch();
+            }
+            if (x.second.target_branch == Branch()) {
+                cerr << "Error: the tree change at position " << pos << " in the input ARG (" << filename << ") is not one subtree prune and regraft. " << endl;
+                exit(1);
+            }
             x.second.find_recomb_info();
             assert(x.second.start_time <= x.second.deleted_node->time);
             assert(x.second.start_time <= x.second.inserted_node->time);
