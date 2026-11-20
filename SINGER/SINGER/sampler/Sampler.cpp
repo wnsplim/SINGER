@@ -37,6 +37,7 @@ void Sampler::read_tip_ages(string filename, double g) {
     for (double &x : tip_times) {
         x = x/(g*Ne) - tip_offset;
     }
+    approx_BSP::exact_calculator = *max_element(tip_times.begin(), tip_times.end()) > 0;
 }
 
 void Sampler::load_data(double start_pos, double end_pos) {

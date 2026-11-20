@@ -13,6 +13,7 @@
 #include <fstream>
 #include "Tree.hpp"
 #include "coalescent_calculator.hpp"
+#include "approx_coalescent_calculator.hpp"
 #include "Interval.hpp"
 #include "Emission.hpp"
 
@@ -39,7 +40,13 @@ public:
     vector<pair<int, vector<double>>> times = {{INT_MAX, {}}};
     vector<pair<int, vector<double>>> weights = {{INT_MAX, {}}};
     
+    static bool exact_calculator;
     shared_ptr<coalescent_calculator> cc;
+    shared_ptr<approx_coalescent_calculator> ca;
+
+    double prob(double x, double y) { return ca ? ca->prob(x, y) : cc->prob(x, y); }
+
+    double find_median(double x, double y) { return ca ? ca->find_median(x, y) : cc->find_median(x, y); }
 
     vector<pair<Interval_info, vector<Interval_ptr>>> transfer_intervals = {};
     vector<pair<Interval_info, vector<double>>> transfer_weights = {};

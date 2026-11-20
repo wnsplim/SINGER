@@ -43,6 +43,8 @@ static typename V::value_type::second_type &keyed_lookup(V &v, int key) {
     return it->second;
 }
 
+bool approx_BSP::exact_calculator = false;
+
 approx_BSP::approx_BSP() {}
 
 approx_BSP::~approx_BSP() {
@@ -98,6 +100,7 @@ void approx_BSP::reset() {
     weight_sum = 0;
     sample_index = -1;
     cc = nullptr;
+    ca = nullptr;
     n_arena = 0;
 }
 
@@ -117,8 +120,13 @@ void approx_BSP::start(Tree &tree, double t) {
     double lb = 0;
     double ub = 0;
     Interval_ptr new_interval = nullptr;
-    cc = make_shared<coalescent_calculator>(cut_time);
-    cc->start(valid_branches);
+    if (exact_calculator) {
+        cc = make_shared<coalescent_calculator>(cut_time);
+        cc->start(valid_branches);
+    } else {
+        ca = make_shared<approx_coalescent_calculator>(cut_time);
+        ca->start(valid_branches);
+    }
     for (auto &x : tree.parents) {
         if (x.second->time > cut_time) {
             lb = max(x.first->time, cut_time);
@@ -126,7 +134,7 @@ void approx_BSP::start(Tree &tree, double t) {
             new_interval = make_interval(Branch(x.first, x.second), lb, ub, curr_index);
             new_interval->source_pos = curr_index;
             curr_intervals.push_back(new_interval);
-            temp.push_back(cc->prob(lb, ub));
+            temp.push_back(prob(lb, ub));
         }
     }
     cutoff = min(0.01, cutoff/curr_intervals.size());
@@ -201,7 +209,11 @@ void approx_BSP::transfer(Recombination &r) {
     add_new_branches(r);
     generate_intervals(r);
     set_dimensions();
-    cc->update(r);
+    if (ca) {
+        ca->update(r);
+    } else {
+        cc->update(r);
+    }
     compute_interval_info();
     keyed_slot(state_spaces, curr_index) = curr_intervals;
 }
@@ -638,8 +650,8 @@ void approx_BSP::compute_interval_info() {
     for (int i = 0; i < curr_intervals.size(); i++) {
         const Interval_ptr &interval = curr_intervals[i];
         if (interval->start_pos == curr_index) {
-            p = cc->prob(interval->lb, interval->ub);
-            t = cc->find_median(interval->lb, interval->ub);
+            p = prob(interval->lb, interval->ub);
+            t = find_median(interval->lb, interval->ub);
             interval->weight = p;
             interval->time = t;
             raw_weights[i] = p;
@@ -714,8 +726,8 @@ double approx_BSP::get_overwrite_prob(Recombination &r, double lb, double ub) {
     if (check_points.count(r.pos) > 0) {
         return 0.0;
     }
-    double p1 = cc->prob(lb, ub);
-    double p2 = cc->prob(max(cut_time, r.start_time), r.inserted_node->time);
+    double p1 = prob(lb, ub);
+    double p2 = prob(max(cut_time, r.start_time), r.inserted_node->time);
     if (p1 == 0 and p2 == 0) {
         return 1.0;
     }
@@ -748,8 +760,8 @@ void approx_BSP::process_source_interval(Recombination &r, int i) {
         next_interval = Interval_info(r.merging_branch, point_time, point_time);
         transfer_helper(next_interval, prev_interval, p);
     } else {
-        w1 = cc->prob(prev_interval->lb, r.start_time);
-        w2 = cc->prob(r.start_time, prev_interval->ub);
+        w1 = prob(prev_interval->lb, r.start_time);
+        w2 = prob(r.start_time, prev_interval->ub);
         if (w1 == 0 and w2 == 0) {
             w1 = 1;
             w2 = 0;
@@ -781,8 +793,8 @@ void approx_BSP::process_target_interval(Recombination &r, int i) {
         transfer_helper(next_interval, prev_interval, p);
     } else {
         w0 = get_overwrite_prob(r, prev_interval->lb, prev_interval->ub);
-        w1 = cc->prob(prev_interval->lb, join_time);
-        w2 = cc->prob(join_time, prev_interval->ub);
+        w1 = prob(prev_interval->lb, join_time);
+        w2 = prob(join_time, prev_interval->ub);
         if (w1 + w2 == 0) {
             w1 = 0;
             w2 = 0;
