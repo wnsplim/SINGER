@@ -235,6 +235,49 @@ double coalescent_calculator::recomb_mass(double s, double v) {
     return b2 + (W[jx]*(1 - ex) + ex/kx)*(tail(x) - tail(v))*exp(Lam[jx] + kx*dx);
 }
 
+int coalescent_calculator::locate(double x) {
+    return (int) (upper_bound(t.begin(), t.end(), x) - t.begin()) - 1;
+}
+
+int coalescent_calculator::advance(double x, int j) {
+    assert(t[j] <= x);
+    while (j + 1 < (int) t.size() and t[j+1] <= x) {
+        j++;
+    }
+    return j;
+}
+
+double coalescent_calculator::tail(double x, int j, double &s) {
+    if (isinf(x)) {
+        s = 0;
+        return 0;
+    }
+    refresh();
+    int m = (int) t.size();
+    double k = kk[j] + extra;
+    double above = j + 1 < m ? T[j+1] : 0;
+    s = exp(-(Lam[j] + k*(x - t[j])));
+    if (k == 0) {
+        return above;
+    }
+    if (j + 1 == m) {
+        return s/k;
+    }
+    return above + s*(-expm1(-k*(t[j+1] - x)))/k;
+}
+
+double coalescent_calculator::recomb_mass(double x, int j, double d, double &m) {
+    refresh();
+    double kx = kk[j] + extra;
+    double dx = x - t[j];
+    double ex = -expm1(-kx*dx);
+    double b2 = B[j] + W[j]*ex/kx + dx/kx - ex/kx/kx;
+    if (d > 0) {
+        m = b2 + (W[j]*(1 - ex) + ex/kx)*d*exp(Lam[j] + kx*dx);
+    }
+    return b2;
+}
+
 double coalescent_calculator::find_median(double x, double y) {
     if (x == y) {
         return x;

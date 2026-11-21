@@ -156,6 +156,22 @@ public:
     vector<double> A = {}, Bv = {}, BA = {}, BB = {}, GA = {}, GB = {}, HA = {}, HB = {}, SA = {}, SB = {};
     double cc_lowest_change = numeric_limits<double>::infinity();
 
+    struct Stored {
+        Branch branch;
+        double rho, sister_mass, cut_time;
+        vector<double> key, times, diagonals, lower, factors, stays, selfs;
+        vector<int> signs;
+    };
+    struct Store {
+        vector<Stored> entries;
+        size_t n = 0;
+    };
+    Store store = {};
+    vector<double> key = {};
+    bool find_stored(double rho);
+    void keep_stored(double rho);
+    void build_diagonals(double rho);
+
     Interval *tb_interval = nullptr;
     Node *tb_keep = nullptr;
     int tb_kernel = -1;

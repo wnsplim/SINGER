@@ -52,7 +52,19 @@ public:
 
     double recomb_mass(double s, double t);
 
+    int locate(double x);
+
+    int advance(double x, int j);
+
+    double tail(double x, int j, double &s);
+
+    double recomb_mass(double x, int j, double d, double &m);
+
     size_t num_times() const { return t.size(); }
+
+    const vector<double> &times() const { return t; }
+
+    const vector<int> &signs() const { return sgn; }
 
 private:
 

@@ -6,6 +6,7 @@
 //
 
 #include "TSP.hpp"
+#include <cstring>
 
 int TSP::counter = 0;
 
@@ -102,11 +103,13 @@ void TSP::save_state(TSP &s) {
     vector<vector<double>> f;
     vector<pair<int, vector<Interval *>>> p;
     vector<Kernel> k;
+    Store st;
     auto park = [&]() {
         arena.swap(a);
         forward_probs.swap(f);
         state_spaces.swap(p);
         kernels.swap(k);
+        swap(store, st);
     };
     park();
     s = *this;
@@ -125,11 +128,13 @@ void TSP::restore_state(TSP &s) {
     vector<vector<double>> f;
     vector<pair<int, vector<Interval *>>> p;
     vector<Kernel> k;
+    Store st;
     auto park = [&]() {
         arena.swap(a);
         forward_probs.swap(f);
         state_spaces.swap(p);
         kernels.swap(k);
+        swap(store, st);
     };
     park();
     *this = s;
@@ -651,9 +656,85 @@ void TSP::compute_diagonals(double rho) {
             return;
         }
     }
+    if (!find_stored(rho)) {
+        build_diagonals(rho);
+        keep_stored(rho);
+    }
+    cd_lb.resize(dim); cd_ub.resize(dim); cd_time.resize(dim);
+    for (int i = 0; i < dim; i++) {
+        cd_lb[i] = curr_intervals[i]->lb;
+        cd_ub[i] = curr_intervals[i]->ub;
+        cd_time[i] = curr_intervals[i]->time;
+    }
+    cd_diagonals = diagonals;
+    cd_lower = lower_diagonals;
+    cd_factors = factors;
+    cd_stays = stays;
+    cd_selfs = selfs;
+    cd_rho = rho;
+    cd_sister_mass = sister_mass;
+    cd_top = curr_intervals[dim-1]->ub;
+    cc_lowest_change = numeric_limits<double>::infinity();
+    cd_valid = true;
+}
+
+static bool same_bits(double x, double y) {
+    return memcmp(&x, &y, sizeof(double)) == 0;
+}
+
+static bool same_bits(const vector<double> &x, const vector<double> &y) {
+    return x.size() == y.size() and memcmp(x.data(), y.data(), x.size()*sizeof(double)) == 0;
+}
+
+bool TSP::find_stored(double rho) {
+    key.clear();
+    for (Interval *iv : curr_intervals) {
+        key.push_back(iv->lb);
+        key.push_back(iv->ub);
+        key.push_back(iv->time);
+    }
+    for (size_t k = 0; k < store.n; k++) {
+        Stored &e = store.entries[k];
+        if (e.branch == curr_branch and same_bits(e.rho, rho) and same_bits(e.sister_mass, sister_mass)
+            and same_bits(e.cut_time, cut_time) and same_bits(e.key, key)
+            and same_bits(e.times, cc->times()) and e.signs == cc->signs()) {
+            diagonals = e.diagonals;
+            lower_diagonals = e.lower;
+            factors = e.factors;
+            stays = e.stays;
+            selfs = e.selfs;
+            return true;
+        }
+    }
+    return false;
+}
+
+void TSP::keep_stored(double rho) {
+    if (store.n == store.entries.size()) {
+        store.entries.emplace_back();
+    }
+    Stored &e = store.entries[store.n++];
+    e.branch = curr_branch;
+    e.rho = rho;
+    e.sister_mass = sister_mass;
+    e.cut_time = cut_time;
+    e.key = key;
+    e.times = cc->times();
+    e.signs = cc->signs();
+    e.diagonals = diagonals;
+    e.lower = lower_diagonals;
+    e.factors = factors;
+    e.stays = stays;
+    e.selfs = selfs;
+}
+
+void TSP::build_diagonals(double rho) {
     for (vector<double> *v : {&A, &Bv, &BA, &BB, &GA, &GB, &HA, &HB, &SA, &SB}) {
         v->assign(dim, 0.0);
     }
+    double R;
+    int p0 = cc->locate(max(curr_intervals[0]->lb, cut_time));
+    int p = p0;
     for (int j = 0; j < dim; j++) {
         A[j] = max(curr_intervals[j]->lb, cut_time);
         Bv[j] = curr_intervals[j]->ub;
@@ -663,10 +744,10 @@ void TSP::compute_diagonals(double rho) {
             HA[j] = HB[j-1];
             SA[j] = SB[j-1];
         } else {
-            BA[j] = cc1->recomb_mass(A[j] + 1, A[j]);
-            GA[j] = cc->tail(A[j]);
-            HA[j] = cc1->tail(A[j]);
-            SA[j] = cc->surv(A[j]);
+            p = cc->advance(A[j], p);
+            BA[j] = cc1->recomb_mass(A[j], p, 0, R);
+            GA[j] = cc->tail(A[j], p, SA[j]);
+            HA[j] = cc1->tail(A[j], p, R);
         }
         if (Bv[j] == A[j]) {
             BB[j] = BA[j];
@@ -674,27 +755,26 @@ void TSP::compute_diagonals(double rho) {
             HB[j] = HA[j];
             SB[j] = SA[j];
         } else {
-            BB[j] = cc1->recomb_mass(Bv[j] + 1, Bv[j]);
-            GB[j] = cc->tail(Bv[j]);
-            HB[j] = cc1->tail(Bv[j]);
-            SB[j] = cc->surv(Bv[j]);
+            p = cc->advance(Bv[j], p);
+            BB[j] = cc1->recomb_mass(Bv[j], p, 0, R);
+            GB[j] = cc->tail(Bv[j], p, SB[j]);
+            HB[j] = cc1->tail(Bv[j], p, R);
         }
     }
     double top = Bv[dim-1];
+    p = p0;
     for (int i = 0; i < dim; i++) {
         double t = curr_intervals[i]->time;
         double stay;
         stay = non_recomb_prob(rho, t);
         double fs = sister_factor(t);
-        double Bt = cc1->recomb_mass(t + 1, t);
-        double Gt = cc->tail(t);
-        double Ht = cc1->tail(t);
-        double S = cc->surv(t);
-        double W = 0;
-        if (top > t) {
-            double den = cc1->prob(t, top);
-            if (den > 0) W = (cc1->recomb_mass(t, top) - cc1->recomb_mass(t, t))/den*cc1->surv(t);
-        }
+        p = cc->advance(t, p);
+        double S, S1, Rt;
+        double Gt = cc->tail(t, p, S);
+        double Ht = cc1->tail(t, p, S1);
+        double d = top > t ? max(Ht - HB[dim-1], 0.0) : 0;
+        double Bt = cc1->recomb_mass(t, p, d, Rt);
+        double W = d > 0 ? (Rt - Bt)/d*S1 : 0;
         bool small = t - cut_time < 0.005;
         double pref = small ? per_length(rho, t - cut_time)*(t - cut_time) : per_length(rho, t - cut_time);
         double sis = exp(-(t - cut_time));
@@ -735,22 +815,6 @@ void TSP::compute_diagonals(double rho) {
     }
     lower_diagonals[dim-1] = 0;
     factors[dim-1] = 0;
-    cd_lb.resize(dim); cd_ub.resize(dim); cd_time.resize(dim);
-    for (int i = 0; i < dim; i++) {
-        cd_lb[i] = curr_intervals[i]->lb;
-        cd_ub[i] = curr_intervals[i]->ub;
-        cd_time[i] = curr_intervals[i]->time;
-    }
-    cd_diagonals = diagonals;
-    cd_lower = lower_diagonals;
-    cd_factors = factors;
-    cd_stays = stays;
-    cd_selfs = selfs;
-    cd_rho = rho;
-    cd_sister_mass = sister_mass;
-    cd_top = top;
-    cc_lowest_change = numeric_limits<double>::infinity();
-    cd_valid = true;
 }
 
 void TSP::compute_lower_sums() {
