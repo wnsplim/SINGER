@@ -439,11 +439,7 @@ double TSP::sister_factor(double s) {
 }
 
 void TSP::fill_interval_time(Interval *iv) {
-    if (iv->ub - iv->lb < 1e-3) {
-        iv->fill_time();
-        return;
-    }
-    iv->time = cc->prob_inv(iv->lb, iv->ub, 0.5);
+    iv->fill_time();
 }
 
 double TSP::own_mass(double t, double lb, double ub) {
