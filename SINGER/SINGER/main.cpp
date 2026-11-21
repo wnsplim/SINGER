@@ -53,7 +53,7 @@ int main(int argc, const char * argv[]) {
     int scaling_bin = 100;
     int mapping_rep = -1;
     double epsilon_hmm = -1;
-    double epsilon_psmc = 0.05;
+    double epsilon_psmc = 1.0/6;
     int ploidy = 2;
     int seed = 42;
     bool seed_given = false;
