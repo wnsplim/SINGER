@@ -434,10 +434,6 @@ double TSP::non_recomb_prob(double rho, double s) {
     return exp(-rho*(s - cut_time));
 }
 
-double TSP::sister_factor(double s) {
-    return 2.0;
-}
-
 void TSP::fill_interval_time(Interval *iv) {
     iv->fill_time();
 }
@@ -758,12 +754,18 @@ void TSP::build_diagonals(double rho) {
         }
     }
     double top = Bv[dim-1];
+    double lo = max(curr_branch.lower_node->time, cut_time);
+    double c = 0;
+    if (lo > cut_time) {
+        double b1, r1;
+        b1 = cc1->recomb_mass(lo, cc->locate(lo), 1.0, r1);
+        c = r1 - b1;
+    }
     p = p0;
     for (int i = 0; i < dim; i++) {
         double t = curr_intervals[i]->time;
         double stay;
         stay = non_recomb_prob(rho, t);
-        double fs = sister_factor(t);
         p = cc->advance(t, p);
         double S, S1, Rt;
         double Gt = cc->tail(t, p, S);
@@ -773,6 +775,8 @@ void TSP::build_diagonals(double rho) {
         double W = d > 0 ? (Rt - Bt)/d*S1 : 0;
         bool small = t - cut_time < 0.005;
         double pref = small ? per_length(rho, t - cut_time)*(t - cut_time) : per_length(rho, t - cut_time);
+        double pref2 = small ? per_length(rho, t - lo)*(t - lo) : per_length(rho, t - lo);
+        double W2 = W - S1*c;
         double sis = exp(-(t - cut_time));
         auto jump = [&](double a, double b, double Ba, double Bb, double Ga, double Gb, double Ha, double Hb, double Sa, double Sb) {
             if (rho == 0) return 0.0;
@@ -780,12 +784,21 @@ void TSP::build_diagonals(double rho) {
             double tb = min(b, t);
             double p;
             if (small) {
-                p = fs*pref*(Sa - Sb);
+                p = pref*(Sa - Sb);
+                p += lo == cut_time ? p : pref2*(Sa - Sb);
             } else {
                 double m = 0;
                 if (tb > a) m += (tb == b ? Bb : Bt) - Ba;
                 if (b > t) m += W*((a >= t ? Ga : Gt) - Gb)/S;
-                p = fs*pref*m;
+                p = pref*m;
+                if (lo == cut_time) {
+                    p += p;
+                } else {
+                    double m2 = 0;
+                    if (tb > a) m2 += (tb == b ? Bb : Bt) - Ba - c*(Ha - (tb == b ? Hb : Ht));
+                    if (b > t) m2 += W2*((a >= t ? Ga : Gt) - Gb)/S;
+                    p += pref2*m2;
+                }
             }
             if (sister_mass > 0) {
                 double q = 0;

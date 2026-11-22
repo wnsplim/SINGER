@@ -25,8 +25,6 @@ public:
     double epsilon = 1e-7;
     double sister_mass = 0;
 
-    double sister_factor(double s);
-
     set<double> check_points = {};
     shared_ptr<Emission> eh;
     shared_ptr<coalescent_calculator> cc;
