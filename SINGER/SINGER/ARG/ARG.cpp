@@ -212,6 +212,9 @@ void ARG::window_copy_into(ARG &c, double lo_pos) {
     while (!c.recombinations.empty()) {
         spare_records.push_back(c.recombinations.extract(c.recombinations.begin()));
     }
+    if (spare_records.size() > recombinations.size()) {
+        spare_records.resize(recombinations.size());
+    }
     auto copy_record = [&](const pair<const double, Recombination> &e) {
         if (spare_records.empty()) {
             c.recombinations.insert(c.recombinations.end(), e);
