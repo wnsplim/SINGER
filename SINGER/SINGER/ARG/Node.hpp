@@ -81,6 +81,8 @@ public:
 
     int flat_index = -1;
 
+    int level = 0;
+
     double called_width(int bin, double assayed);
 
     vector<pair<double, pair<double, double>>> likelihood_sites = {};

@@ -2317,7 +2317,7 @@ double ARG::corrected_smc_prior(map<double, Branch> &lineage, int lo, int hi, do
     }
     RSP_smc rsp = RSP_smc();
     rsp.set_tree(tree);
-    double visible_length = tree.length() - rsp.unchanged_recomb_length(tree);
+    double visible_length = rsp.visible_length(tree);
     double stay_rho = numeric_limits<double>::quiet_NaN(), stay_length = 0, stay_log = 0;
     auto recomb_it = recombinations.upper_bound(coordinates[lo]);
     for (int i = lo; i < hi; i++) {
@@ -2328,8 +2328,8 @@ double ARG::corrected_smc_prior(map<double, Branch> &lineage, int lo, int hi, do
             log_likelihood += log(rho);
             log_likelihood += (rec.start_time > 0) ? rsp.log_start_density(rec) : rsp.log_start_marginal(rec, cut_time, lineage_branch_before(lineage, rec.pos));
             tree.forward_update(rec);
-            rsp.set_tree(tree);
-            visible_length = tree.length() - rsp.unchanged_recomb_length(tree);
+            rsp.update_tree(rec);
+            visible_length = rsp.visible_length(tree);
         } else {
             if (rho*visible_length >= 1) {
                 cerr << "bin " << i << " is too wide for one record per bin: rho*visible length = " << rho*visible_length << endl;

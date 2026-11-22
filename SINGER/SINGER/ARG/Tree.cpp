@@ -38,6 +38,9 @@ void Flat_tree::forward_update(const Recombination &r) {
     touch();
     auto key_less = [](const pair<Node *, Node *> &e, Node *n) { return compare_node()(e.first, n); };
     for (const Branch &b : r.deleted_branches) {
+        if (any_of(r.inserted_branches.begin(), r.inserted_branches.end(), [&b](const Branch &c) { return c.lower_node == b.lower_node; })) {
+            continue;
+        }
         auto it = lower_bound(parents.begin(), parents.end(), b.lower_node, key_less);
         if (it != parents.end() and it->first == b.lower_node) {
             lengths.erase(lengths.begin() + (it - parents.begin()));

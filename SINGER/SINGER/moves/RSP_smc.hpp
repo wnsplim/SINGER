@@ -34,8 +34,10 @@ public:
 
     void set_tree(const Flat_tree &tree);
 
-    double unchanged_recomb_length(const Flat_tree &tree);
-    
+    void update_tree(const Recombination &r);
+
+    double visible_length(const Flat_tree &tree);
+
     void approx_sample_recombination(Recombination &r, double cut_time);
 
 private:
@@ -46,13 +48,15 @@ private:
 
     void set_levels();
 
+    void extend_levels(int i, int above);
+
     int level_of(double s);
 
     double lambda(double s);
 
-    vector<pair<double, int>> events = {};
+    vector<pair<double, Node *>> events = {};
     vector<double> a_sum = {}, e_sum = {}, eg_sum = {}, g_tail = {}, e_lev = {}, g_lev = {};
-    vector<double> prev_times = {}, prev_rates = {}, prev_lambda = {};
+    int stale = 0;
 
     double exp_lambda_integral(double lo, double hi);
 
