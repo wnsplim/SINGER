@@ -9,6 +9,8 @@
 
 bool Threader_smc::no_data = false;
 
+static const double split_prob = 1.0/16;
+
 static void check_drawn_density(double q_new, double h_new) {
     if (!(isfinite(q_new) and isfinite(h_new))) {
         cerr << "Error: the proposal density of the drawn path is not finite (branch " << q_new << ", time " << h_new << ")." << endl;
@@ -44,6 +46,7 @@ void Threader_smc::reset() {
     start_index = 0;
     end_index = 0;
     resume_index = -1;
+    splits.clear();
     site_slot.clear();
     emit_trees = 0;
 }
@@ -968,32 +971,32 @@ void Threader_smc::run_BSP(ARG &a) {
     bool stale = true;
     double curr_rho = a.thetas[start_index]/(a.coordinates[start_index + 1] - a.coordinates[start_index]);
     double p_tree = branch_product(a.start_tree, a.penalty, curr_rho, a.cut_node);
+    if (splits.empty()) {
+        splits.resize(end_index - start_index);
+        for (char &s : splits) {
+            s = uniform_random() < split_prob;
+        }
+    }
+    bool mergeable = a.model.branch_product and !a.augment and !varying;
+    bsp.bin_rhos = &a.rhos;
+    bsp.step_bin.assign(1, start_index);
+    bool open_run = false;
+    int run_first = 0;
+    double run_rho = 0, run_width = 0, run_theta = 0, run_crho = 0, run_scale = 0;
+    auto flush = [&]() {
+        if (open_run) {
+            bsp.forward(run_rho);
+            bsp.step_bin.push_back(run_first);
+            pe->crho = run_crho;
+            pe->norm_scale = run_scale;
+            pe->bin_width = run_width;
+            bsp.null_emit(run_theta, query_node);
+            open_run = false;
+        }
+    };
     for (int i = start_index; i < end_index; i++) {
-        if (a.coordinates[i] == query_it->first) {
-            query_node = query_it->second.lower_node;
-            query_it++;
-        }
-        if (a.coordinates[i] == recomb_it->first) {
-            Recombination &r = recomb_it->second;
-            recomb_it++;
-            bsp.transfer(r);
-            emit_flat.forward_update(r);
-            stale = true;
-            if (varying) {
-                tree.forward_update(r);
-                curr_rho = -1;
-            } else {
-                p_tree = update_branch_product(p_tree, r, a.penalty*curr_rho, a.cut_node);
-            }
-        } else if (a.coordinates[i] != start) {
-            bsp.forward(a.rhos[i - 1]);
-        }
-        double rho = a.thetas[i]/(a.coordinates[i + 1] - a.coordinates[i]);
-        if (varying and rho != curr_rho) {
-            p_tree = branch_product(tree, a.penalty, rho, a.cut_node);
-            curr_rho = rho;
-        }
-        pe->set_tree_product(a.penalty, no_data ? 0.0 : rho, p_tree, called_width(query_node, a, i));
+        bool query_change = a.coordinates[i] == query_it->first;
+        bool record = a.coordinates[i] == recomb_it->first;
         mut_set.clear();
         while (mut_it->first < a.coordinates[i + 1]) {
             mut_set.push_back(*mut_it);
@@ -1003,6 +1006,52 @@ void Threader_smc::run_BSP(ARG &a) {
             for (auto &e : a.exception_sites[i]) {
                 mut_set.push_back({e.first, -1});
             }
+        }
+        bool plain = mergeable and !record and a.coordinates[i] != start and (mut_set.empty() or no_data);
+        if (plain and open_run and !query_change and !splits[i - start_index]) {
+            run_rho += a.rhos[i - 1];
+            run_width += called_width(query_node, a, i);
+            run_theta += a.thetas[i];
+            continue;
+        }
+        flush();
+        if (query_change) {
+            query_node = query_it->second.lower_node;
+            query_it++;
+        }
+        if (record) {
+            Recombination &r = recomb_it->second;
+            recomb_it++;
+            bsp.transfer(r);
+            bsp.step_bin.push_back(i);
+            emit_flat.forward_update(r);
+            stale = true;
+            if (varying) {
+                tree.forward_update(r);
+                curr_rho = -1;
+            } else {
+                p_tree = update_branch_product(p_tree, r, a.penalty*curr_rho, a.cut_node);
+            }
+        } else if (plain) {
+            open_run = true;
+            run_first = i;
+            run_rho = a.rhos[i - 1];
+            run_width = called_width(query_node, a, i);
+            run_theta = a.thetas[i];
+        } else if (a.coordinates[i] != start) {
+            bsp.forward(a.rhos[i - 1]);
+            bsp.step_bin.push_back(i);
+        }
+        double rho = a.thetas[i]/(a.coordinates[i + 1] - a.coordinates[i]);
+        if (varying and rho != curr_rho) {
+            p_tree = branch_product(tree, a.penalty, rho, a.cut_node);
+            curr_rho = rho;
+        }
+        pe->set_tree_product(a.penalty, no_data ? 0.0 : rho, p_tree, called_width(query_node, a, i));
+        if (plain) {
+            run_crho = pe->crho;
+            run_scale = pe->norm_scale;
+            continue;
         }
         set_emission_groups(a, *pe, stale, i, query_node, nullptr);
         if (mut_set.size() > 0 and !no_data) {
@@ -1016,6 +1065,8 @@ void Threader_smc::run_BSP(ARG &a) {
             bsp.null_emit(a.thetas[i], query_node);
         }
     }
+    flush();
+    bsp.step_bin.push_back(end_index);
     if (bsp.check_points.count(end) > 0) {
         bsp.sanity_check(a.recombinations[end]);
     }

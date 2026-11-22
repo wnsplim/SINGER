@@ -62,6 +62,7 @@ public:
     ARG new_arg;
     ARG old_arg;
     int resume_index = -1;
+    vector<char> splits = {};
     map<double, Branch>::iterator resume_join_it;
     TSP saved_tsp;
     Tree saved_tree;

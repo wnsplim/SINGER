@@ -127,7 +127,13 @@ public:
     map<double, Branch> sample_joining_branches(int start_index, vector<double> &coordinates);
 
     double branch_log_q(map<double, Branch> &joining_branches, int start_index, vector<double> &coordinates);
-    
+
+    vector<int> step_bin = {};
+    const vector<double> *bin_rhos = nullptr;
+    vector<Branch> path_branch = {};
+
+    double path_rows(map<double, Branch> &joining_branches, vector<double> &coordinates);
+
     void set_dimensions();
     
     void compute_recomb_probs(double rho);

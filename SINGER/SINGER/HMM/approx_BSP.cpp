@@ -296,14 +296,13 @@ void approx_BSP::mut_emit(Node *query_node) {
 
 map<double, Branch> approx_BSP::sample_joining_branches(int start_index, vector<double> &coordinates) {
     prev_rho = -1;
-    map<double, Branch> joining_branches = {};
+    vector<pair<int, Branch>> segments = {};
     int x = curr_index;
     Interval_ptr interval = sample_curr_interval(x);
-    joining_branches[coordinates[x + start_index + 1]] = interval->branch;
+    Branch last = interval->branch;
     while (true) {
-        assert(get_state_space(x)[sample_index] == interval);
         x = trace_back_helper(interval, x);
-        joining_branches[coordinates[x + start_index]] = interval->branch;
+        segments.push_back({x, interval->branch});
         if (x == 0) {
             break;
         } else if (x == get_prev_breakpoint(x)) {
@@ -314,15 +313,63 @@ map<double, Branch> approx_BSP::sample_joining_branches(int start_index, vector<
             interval = sample_prev_interval(x);
         }
     }
+    map<double, Branch> joining_branches = {};
+    Branch prev_branch = Branch();
+    for (auto it = segments.rbegin(); it != segments.rend(); ++it) {
+        int r = it->first, s = step_bin[r];
+        if (r > 0 and r != get_prev_breakpoint(r) and it->second != prev_branch) {
+            int e = step_bin[r + 1];
+            double w = rhos[r - 1]*uniform_random();
+            for (; s + 1 < e; s++) {
+                w -= (*bin_rhos)[s - 1];
+                if (w <= 0) break;
+            }
+        }
+        joining_branches[coordinates[s]] = it->second;
+        prev_branch = it->second;
+    }
+    joining_branches[coordinates[step_bin[curr_index + 1]]] = last;
     simplify(joining_branches);
     return joining_branches;
 }
 
+double approx_BSP::path_rows(map<double, Branch> &joining_branches, vector<double> &coordinates) {
+    path_branch.resize(curr_index + 1);
+    double lf = 0;
+    auto it = joining_branches.begin();
+    Branch b = it->second;
+    ++it;
+    for (int x = 0; x <= curr_index; x++) {
+        double last = coordinates[step_bin[x + 1] - 1];
+        int changes = 0;
+        double c = 0;
+        while (it->first <= last) {
+            if (it->second != b) {
+                changes++;
+                c = it->first;
+                b = it->second;
+            }
+            ++it;
+        }
+        if (changes > 1) {
+            return -numeric_limits<double>::infinity();
+        }
+        if (changes == 1 and x > 0 and x != get_prev_breakpoint(x)) {
+            int cb = (int) (lower_bound(coordinates.begin(), coordinates.end(), c) - coordinates.begin());
+            lf += log((*bin_rhos)[cb - 1]/rhos[x - 1]);
+        }
+        path_branch[x] = b;
+    }
+    return lf;
+}
+
 double approx_BSP::branch_log_q(map<double, Branch> &joining_branches, int start_index, vector<double> &coordinates) {
+    double lf = path_rows(joining_branches, coordinates);
+    if (isinf(lf)) {
+        return lf;
+    }
     auto branch_at = [&](int x) {
-        auto it = joining_branches.upper_bound(coordinates[x + start_index]);
-        --it;
-        return it->second;
+        return path_branch[x];
     };
     int x = curr_index;
     vector<Interval_ptr> &last = get_state_space(x);
@@ -341,9 +388,7 @@ double approx_BSP::branch_log_q(map<double, Branch> &joining_branches, int start
         return -numeric_limits<double>::infinity();
     }
     for (double &v : mass) v /= total;
-    double lq = log(total);
-    auto jit = joining_branches.upper_bound(coordinates[x + start_index]);
-    --jit;
+    double lq = log(total) + lf;
     vector<int> on_branch;
     vector<double> on_mass;
     const vector<Interval_ptr> *on_space = nullptr;
@@ -351,10 +396,7 @@ double approx_BSP::branch_log_q(map<double, Branch> &joining_branches, int start
     while (x > 0) {
         int y = get_prev_breakpoint(x);
         vector<Interval_ptr> &curr = get_state_space(x);
-        while (jit->first > coordinates[x - 1 + start_index]) {
-            --jit;
-        }
-        if (x > y and jit->second == b) {
+        if (x > y and path_branch[x - 1] == b) {
             if (on_space != &curr or on_b != b) {
                 on_branch.clear();
                 for (int i = 0; i < (int) curr.size(); i++) {
