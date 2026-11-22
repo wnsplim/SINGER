@@ -649,7 +649,7 @@ void TSP::compute_diagonals(double rho) {
         }
     }
     if (!find_stored(rho)) {
-        build_diagonals(rho);
+        assemble(*find_masses(), rho);
         keep_stored(rho);
     }
     cd_lb.resize(dim); cd_ub.resize(dim); cd_time.resize(dim);
@@ -720,7 +720,82 @@ void TSP::keep_stored(double rho) {
     e.selfs = selfs;
 }
 
-void TSP::build_diagonals(double rho) {
+TSP::Masses *TSP::find_masses() {
+    for (size_t k = 0; k < mass_store.n; k++) {
+        Masses &e = mass_store.entries[k];
+        if (e.branch == curr_branch and same_bits(e.sister_mass, sister_mass) and same_bits(e.cut_time, cut_time)
+            and same_bits(e.key, key) and same_bits(e.times, cc->times()) and e.signs == cc->signs()) {
+            return &e;
+        }
+    }
+    if (mass_store.n == mass_store.entries.size()) {
+        mass_store.entries.emplace_back();
+    }
+    Masses &e = mass_store.entries[mass_store.n++];
+    e.branch = curr_branch;
+    e.sister_mass = sister_mass;
+    e.cut_time = cut_time;
+    e.key = key;
+    e.times = cc->times();
+    e.signs = cc->signs();
+    build_masses(e);
+    return &e;
+}
+
+void TSP::assemble(const Masses &e, double rho) {
+    double lo = max(curr_branch.lower_node->time, cut_time);
+    for (int i = 0; i < dim; i++) {
+        double t = e.time[i];
+        double stay;
+        stay = non_recomb_prob(rho, t);
+        bool small = t - cut_time < 0.005;
+        double pref = small ? per_length(rho, t - cut_time)*(t - cut_time) : per_length(rho, t - cut_time);
+        double pref2 = small ? per_length(rho, t - lo)*(t - lo) : per_length(rho, t - lo);
+        auto jump = [&](const Jump &j) {
+            if (rho == 0) return 0.0;
+            if (j.empty) return epsilon;
+            double p;
+            if (small) {
+                p = pref*j.d;
+                p += lo == cut_time ? p : pref2*j.d;
+            } else {
+                p = pref*j.m;
+                if (lo == cut_time) {
+                    p += p;
+                } else {
+                    p += pref2*j.m2;
+                }
+            }
+            if (sister_mass > 0) {
+                p += rho*sister_mass*j.q;
+            }
+            return max(p, epsilon);
+        };
+        double base = stay + jump(e.base[i]);
+        double self = jump(e.self[i]);
+        diagonals[i] = (stay + self)/base;
+        stays[i] = stay/base;
+        selfs[i] = self/base;
+        if (i > 0) {
+            lower_diagonals[i-1] = jump(e.lower[i])/base;
+        }
+        if (i + 1 < dim) {
+            double m = e.fm[i];
+            factors[i] = (m > 0) ? jump(e.factor[i])/base/m : 0;
+        }
+        assert(!isnan(diagonals[i]));
+    }
+    lower_diagonals[dim-1] = 0;
+    factors[dim-1] = 0;
+}
+
+void TSP::build_masses(Masses &e) {
+    e.time.assign(dim, 0.0);
+    e.fm.assign(dim, 0.0);
+    e.base.assign(dim, Jump());
+    e.self.assign(dim, Jump());
+    e.lower.assign(dim, Jump());
+    e.factor.assign(dim, Jump());
     for (vector<double> *v : {&A, &Bv, &BA, &BB, &GA, &GB, &HA, &HB, &SA, &SB}) {
         v->assign(dim, 0.0);
     }
@@ -764,8 +839,7 @@ void TSP::build_diagonals(double rho) {
     p = p0;
     for (int i = 0; i < dim; i++) {
         double t = curr_intervals[i]->time;
-        double stay;
-        stay = non_recomb_prob(rho, t);
+        e.time[i] = t;
         p = cc->advance(t, p);
         double S, S1, Rt;
         double Gt = cc->tail(t, p, S);
@@ -774,56 +848,45 @@ void TSP::build_diagonals(double rho) {
         double Bt = cc1->recomb_mass(t, p, d, Rt);
         double W = d > 0 ? (Rt - Bt)/d*S1 : 0;
         bool small = t - cut_time < 0.005;
-        double pref = small ? per_length(rho, t - cut_time)*(t - cut_time) : per_length(rho, t - cut_time);
-        double pref2 = small ? per_length(rho, t - lo)*(t - lo) : per_length(rho, t - lo);
         double W2 = W - S1*c;
         double sis = exp(-(t - cut_time));
-        auto jump = [&](double a, double b, double Ba, double Bb, double Ga, double Gb, double Ha, double Hb, double Sa, double Sb) {
-            if (rho == 0) return 0.0;
-            if (b <= a) return epsilon;
+        auto mass = [&](double a, double b, double Ba, double Bb, double Ga, double Gb, double Ha, double Hb, double Sa, double Sb) {
+            Jump j;
+            j.empty = b <= a;
+            if (j.empty) return j;
             double tb = min(b, t);
-            double p;
             if (small) {
-                p = pref*(Sa - Sb);
-                p += lo == cut_time ? p : pref2*(Sa - Sb);
+                j.d = Sa - Sb;
             } else {
                 double m = 0;
                 if (tb > a) m += (tb == b ? Bb : Bt) - Ba;
                 if (b > t) m += W*((a >= t ? Ga : Gt) - Gb)/S;
-                p = pref*m;
-                if (lo == cut_time) {
-                    p += p;
-                } else {
+                j.m = m;
+                if (lo != cut_time) {
                     double m2 = 0;
                     if (tb > a) m2 += (tb == b ? Bb : Bt) - Ba - c*(Ha - (tb == b ? Hb : Ht));
                     if (b > t) m2 += W2*((a >= t ? Ga : Gt) - Gb)/S;
-                    p += pref2*m2;
+                    j.m2 = m2;
                 }
             }
             if (sister_mass > 0) {
                 double q = 0;
                 if (tb > a) q += Ha - (tb == b ? Hb : Ht);
                 if (b > t) q += sis*((a >= t ? Ga : Gt) - Gb);
-                p += rho*sister_mass*q;
+                j.q = q;
             }
-            return max(p, epsilon);
+            return j;
         };
-        double base = stay + jump(A[0], top, BA[0], BB[dim-1], GA[0], GB[dim-1], HA[0], HB[dim-1], SA[0], SB[dim-1]);
-        double self = jump(A[i], Bv[i], BA[i], BB[i], GA[i], GB[i], HA[i], HB[i], SA[i], SB[i]);
-        diagonals[i] = (stay + self)/base;
-        stays[i] = stay/base;
-        selfs[i] = self/base;
+        e.base[i] = mass(A[0], top, BA[0], BB[dim-1], GA[0], GB[dim-1], HA[0], HB[dim-1], SA[0], SB[dim-1]);
+        e.self[i] = mass(A[i], Bv[i], BA[i], BB[i], GA[i], GB[i], HA[i], HB[i], SA[i], SB[i]);
         if (i > 0) {
-            lower_diagonals[i-1] = jump(A[i-1], Bv[i-1], BA[i-1], BB[i-1], GA[i-1], GB[i-1], HA[i-1], HB[i-1], SA[i-1], SB[i-1])/base;
+            e.lower[i] = mass(A[i-1], Bv[i-1], BA[i-1], BB[i-1], GA[i-1], GB[i-1], HA[i-1], HB[i-1], SA[i-1], SB[i-1]);
         }
         if (i + 1 < dim) {
-            double m = GB[i] - GB[dim-1];
-            factors[i] = (m > 0) ? jump(max(Bv[i], cut_time), top, BB[i], BB[dim-1], GB[i], GB[dim-1], HB[i], HB[dim-1], SB[i], SB[dim-1])/base/m : 0;
+            e.fm[i] = GB[i] - GB[dim-1];
+            e.factor[i] = mass(max(Bv[i], cut_time), top, BB[i], BB[dim-1], GB[i], GB[dim-1], HB[i], HB[dim-1], SB[i], SB[dim-1]);
         }
-        assert(!isnan(diagonals[i]));
     }
-    lower_diagonals[dim-1] = 0;
-    factors[dim-1] = 0;
 }
 
 void TSP::compute_lower_sums() {

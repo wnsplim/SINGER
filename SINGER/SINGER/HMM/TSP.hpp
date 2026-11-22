@@ -168,7 +168,25 @@ public:
     vector<double> key = {};
     bool find_stored(double rho);
     void keep_stored(double rho);
-    void build_diagonals(double rho);
+    struct Jump {
+        bool empty = false;
+        double m = 0, m2 = 0, q = 0, d = 0;
+    };
+    struct Masses {
+        Branch branch;
+        double sister_mass, cut_time;
+        vector<double> key, times, time, fm;
+        vector<int> signs;
+        vector<Jump> base, self, lower, factor;
+    };
+    struct Mass_store {
+        vector<Masses> entries;
+        size_t n = 0;
+    };
+    Mass_store mass_store = {};
+    Masses *find_masses();
+    void build_masses(Masses &e);
+    void assemble(const Masses &e, double rho);
 
     Interval *tb_interval = nullptr;
     Node *tb_keep = nullptr;

@@ -35,6 +35,7 @@ void Threader_smc::reset() {
     bsp.reset();
     tsp.reset();
     tsp.store.n = 0;
+    tsp.mass_store.n = 0;
     new_joining_branches.clear();
     added_branches.clear();
     cut_time = 0;
