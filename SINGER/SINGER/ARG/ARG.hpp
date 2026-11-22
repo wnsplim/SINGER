@@ -341,6 +341,12 @@ public:
 
     void emission_single(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s, int base, const vector<char> *forced_missing);
 
+    void sparse_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Node *removed, Node *joined, double cut, Peel &p, Site_messages &s, const vector<Msg> *full, const double *empty);
+
+    void sparse_single(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Node *removed, Node *joined, double cut, Peel &p, Site_messages &s, const vector<Msg> &full, double empty);
+
+    void graft_single(const Flat_tree &flat, const Tree_order &t, double unit, const vector<Msg> &in, const Branch &added, const Branch &joined, vector<Msg> &out) const;
+
     void draw_site_states(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, vector<int> &state, int &category, int base = -1, const vector<char> *forced_missing = nullptr);
 
     int node_state(Node *n, double pos) { return __builtin_ctz((unsigned) n->get_state(pos)); }

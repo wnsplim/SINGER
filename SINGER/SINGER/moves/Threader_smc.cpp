@@ -161,6 +161,7 @@ void Threader_smc::internal_rethread(ARG &a, tuple<double, Branch, double> cut_p
 
 void Threader_smc::exact_internal_rethread(ARG &a, tuple<double, Branch, double> cut_point) {
     cut_time = get<2>(cut_point);
+    sparse = !a.augment and !no_data and a.genotype_likelihoods.empty();
     a.remove(cut_point);
     if (a.augment) {
         a.detach_histories();
@@ -199,6 +200,12 @@ void Threader_smc::exact_internal_rethread(ARG &a, tuple<double, Branch, double>
         }
         a.add(new_joining_branches, added_branches);
         a.smc_sample_recombinations(added_branches);
+        int K = (int) a.model.rates.size();
+        for (int slot = 0; sparse and slot < (int) site_slot.size(); slot++) {
+            for (int c = 0; c < K; c++) {
+                full_in[slot_site[slot]*K + c].swap(next_in[slot*K + c]);
+            }
+        }
     } else {
         a.undo_journal();
         a.add(a.joining_branches, a.removed_branches);
@@ -670,7 +677,8 @@ double Threader_smc::data_log_ratio(ARG &a) {
             if (qi != qe and a.genotype_likelihoods[*qi].pos == *mut_it) {
                 ll += entry_log_ratio(a.genotype_likelihoods[*qi], *mut_it);
             } else {
-                const Site_messages &s = site_pool[site_slot.at(*mut_it)];
+                int slot = site_slot.at(*mut_it);
+                const Site_messages &s = site_pool[slot];
                 Node *query = ro.lower_node;
                 int kd_o = bo.lower_node->flat_index, kd_n = bn.lower_node->flat_index;
                 double w_o = 0, w_n = 0;
@@ -683,6 +691,18 @@ double Threader_smc::data_log_ratio(ARG &a) {
                     add(part);
                 }
                 ll += log((w_n - s.empty_term)/(w_o - s.empty_term));
+                if (sparse) {
+                    int site = slot_site[slot];
+                    for (int c = 0; c < K; c++) {
+                        const Site_messages &m = c == 0 ? s : s.parts[c - 1];
+                        if (full_stamp[site] != a.model.stamp) {
+                            a.graft_single(ratio_flat, ratio_order, m.unit, m.in, ro, bo, full_in[site*K + c]);
+                            full_empty[site*K + c] = m.empty_term;
+                        }
+                        a.graft_single(ratio_flat, ratio_order, m.unit, m.in, rn, bn, next_in[slot*K + c]);
+                    }
+                    full_stamp[site] = a.model.stamp;
+                }
             }
             rest -= 1;
             ++mut_it;
@@ -937,6 +957,23 @@ void Threader_smc::set_emission_sites(ARG &a, Emission &e, bool &stale, int bin,
             }
             if (a.augment) {
                 a.history_site(emit_flat, emit_order, unit, m.first, query_node, site_pool[slot]);
+            } else if (sparse) {
+                int K = (int) a.model.rates.size(), site = (int) (a.site_at(m.first) - a.site_list.begin());
+                if (full_stamp.size() != a.site_list.size()) {
+                    full_stamp.assign(a.site_list.size(), -1);
+                    full_in.resize(a.site_list.size()*K);
+                    full_empty.resize(a.site_list.size()*K);
+                }
+                if (slot >= (int) slot_site.size()) {
+                    slot_site.resize(slot + 1);
+                    next_in.resize((slot + 1)*K);
+                }
+                slot_site[slot] = site;
+                if (full_stamp[site] == a.model.stamp) {
+                    a.sparse_site(emit_flat, emit_order, unit, m.first, query_node, removed_upper, joined_upper, cut_time, emit_peel, site_pool[slot], &full_in[site*K], &full_empty[site*K]);
+                } else {
+                    a.emission_site(emit_flat, emit_order, unit, m.first, query_node, emit_peel, site_pool[slot]);
+                }
             } else {
                 a.emission_site(emit_flat, emit_order, unit, m.first, query_node, emit_peel, site_pool[slot]);
             }
@@ -1017,6 +1054,10 @@ void Threader_smc::run_BSP(ARG &a) {
         flush();
         if (query_change) {
             query_node = query_it->second.lower_node;
+            if (sparse) {
+                removed_upper = query_it->second.upper_node;
+                joined_upper = a.joining_branches.at(query_it->first).upper_node;
+            }
             query_it++;
         }
         if (record) {

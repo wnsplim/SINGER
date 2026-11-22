@@ -53,6 +53,14 @@ public:
     unordered_map<double, int> site_slot = {};
     vector<vector<Node *>> emit_nodes = {};
     int emit_trees = 0;
+    bool sparse = false;
+    Node *removed_upper = nullptr;
+    Node *joined_upper = nullptr;
+    vector<vector<Msg>> full_in = {};
+    vector<double> full_empty = {};
+    vector<int> full_stamp = {};
+    vector<vector<Msg>> next_in = {};
+    vector<int> slot_site = {};
     map<double, Branch> new_joining_branches = {};
     map<double, Branch> added_branches = {};
     double pos_lo = 0;

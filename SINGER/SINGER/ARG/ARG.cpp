@@ -891,6 +891,109 @@ void ARG::emission_single(const Flat_tree &flat, const Tree_order &t, double uni
     s.in.swap(p.msg);
 }
 
+static int rank_of(const Flat_tree &flat, Node *n) {
+    auto key_less = [](const pair<Node *, Node *> &e, Node *m) { return compare_node()(e.first, m); };
+    return (int) (lower_bound(flat.parents.begin(), flat.parents.end(), n, key_less) - flat.parents.begin());
+}
+
+void ARG::sparse_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Node *removed, Node *joined, double cut, Peel &p, Site_messages &s, const vector<Msg> *full, const double *empty) {
+    int K = (int) model.rates.size();
+    sparse_single(flat, t, unit*model.rates[0], pos, query, removed, joined, cut, p, s, full[0], empty[0]);
+    s.parts.resize(K - 1);
+    for (int k = 1; k < K; k++) {
+        sparse_single(flat, t, unit*model.rates[k], pos, query, removed, joined, cut, p, s.parts[k - 1], full[k], empty[k]);
+    }
+}
+
+void ARG::sparse_single(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Node *removed, Node *joined, double cut, Peel &p, Site_messages &s, const vector<Msg> &full, double empty) {
+    int nb = (int) flat.parents.size(), S = model.states, r = rank_of(flat, removed);
+    s.parts.clear();
+    Msg prior = {};
+    root_prior(prior.data());
+    double T[max_states*max_states];
+    bool product = model.branch_product;
+    const double *P = product ? nullptr : edge_transitions(model, flat, unit, p);
+    s.in.resize(nb);
+    copy(full.begin(), full.begin() + r, s.in.begin());
+    copy(full.begin() + r + 1, full.end(), s.in.begin() + r);
+    for (int k = joined == root.get() ? -1 : joined->flat_index; k >= 0; k = t.up[k]) {
+        Msg v = ones;
+        for (int c : t.children[k]) {
+            push_up(edge_matrix(model, P, unit*flat.lengths[c], c, T), S, product, s.in[c], v);
+        }
+        s.in[k] = v;
+    }
+    s.unit = unit;
+    s.top = t.top;
+    s.above.resize(nb);
+    s.above[t.top] = prior;
+    p.outside.resize(nb);
+    p.outside[t.top] = prior;
+    for (int v = nb - 1; v >= 0 and t.times[v] > cut; v--) {
+        if (v != t.top) {
+            transmit_up(edge_matrix(model, P, unit*flat.lengths[v], v, T), S, product, s.above[v], p.outside[v]);
+        }
+        for (int c : t.children[v]) {
+            Msg a = p.outside[v];
+            for (int d : t.children[v]) {
+                if (d != c) {
+                    push_up(edge_matrix(model, P, unit*flat.lengths[d], d, T), S, product, s.in[d], a);
+                }
+            }
+            s.above[c] = a;
+        }
+    }
+    double w[2];
+    if (query->likelihood_at(pos, w[0], w[1])) {
+        s.nu = {w[0], w[1], 0.0, 0.0};
+    } else if (query->is_sample) {
+        bool missing = any_missing and query->has_missing() and query->missing_at(Node::site_index(pos), pos);
+        s.nu = missing ? ones : leaf_message((int) query->get_state(pos));
+    } else {
+        s.nu = s.in[query->flat_index];
+    }
+    double z = 0, nu_sum = 0;
+    for (int q = 0; q < S; q++) {
+        z += prior[q]*s.in[t.top][q];
+        nu_sum += s.nu[q];
+    }
+    s.empty_term = empty;
+    s.scale = z*nu_sum;
+    s.z = z;
+}
+
+void ARG::graft_single(const Flat_tree &flat, const Tree_order &t, double unit, const vector<Msg> &in, const Branch &added, const Branch &joined, vector<Msg> &out) const {
+    int nb = (int) flat.parents.size(), S = model.states;
+    Node *n = added.upper_node;
+    int r = rank_of(flat, n);
+    bool product = model.branch_product;
+    double T[max_states*max_states];
+    out.resize(nb + 1);
+    copy(in.begin(), in.begin() + r, out.begin());
+    copy(in.begin() + r, in.end(), out.begin() + r + 1);
+    Msg v = ones;
+    for (Node *c : {added.lower_node, joined.lower_node}) {
+        model.transition(unit*(n->time - c->time), T);
+        push_up(T, S, product, in[c->flat_index], v);
+    }
+    out[r] = v;
+    int from = joined.lower_node->flat_index;
+    for (int k = joined.upper_node == root.get() ? -1 : joined.upper_node->flat_index; k >= 0; k = t.up[k]) {
+        Msg u = ones;
+        for (int c : t.children[k]) {
+            if (c == from) {
+                model.transition(unit*(flat.parents[k].first->time - n->time), T);
+                push_up(T, S, product, out[r], u);
+            } else {
+                model.transition(unit*flat.lengths[c], T);
+                push_up(T, S, product, out[c + (c >= r)], u);
+            }
+        }
+        out[k + 1] = u;
+        from = -1;
+    }
+}
+
 static void path_peel(const Site_model &model, const Flat_tree &flat, const Tree_order &t, double unit, Peel &p, vector<Msg> &out) {
     int S = model.states;
     bool product = model.branch_product;
