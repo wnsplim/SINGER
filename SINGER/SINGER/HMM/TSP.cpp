@@ -280,7 +280,22 @@ vector<double> TSP::generate_grid(double lb, double ub) {
         points.emplace_back(cc->surv_inv(ls - i*q/n));
     }
     points.emplace_back(ub);
-    return points;
+    vector<double> fine = {lb};
+    for (size_t i = 1; i < points.size(); i++) {
+        double a = points[i-1], b = points[i];
+        if (isinf(b)) {
+            for (int k = 1; cc->surv(fine.back())/ls >= 1e-4; k++) {
+                fine.emplace_back(a + k*width_cap);
+            }
+        } else {
+            int k = (int) ceil((b - a)/width_cap);
+            for (int j = 1; j < k; j++) {
+                fine.emplace_back(a + j*(b - a)/k);
+            }
+        }
+        fine.emplace_back(b);
+    }
+    return fine;
 }
 
 void TSP::forward(double rho) {

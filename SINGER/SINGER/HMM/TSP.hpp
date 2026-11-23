@@ -22,6 +22,7 @@ public:
     double cut_time = 0;
     double gap = 0;
     int min_num = 1;
+    double width_cap = 1;
     double epsilon = 1e-7;
     double sister_mass = 0;
 
