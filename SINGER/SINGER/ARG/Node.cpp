@@ -19,20 +19,16 @@ static inline bool site_less(const pair<double, double> &e, double p) {
     return e.first < p;
 }
 
-void Node::set_site(double pos, double s) {
+void Node::add_mutation(double pos) {
     auto lo = lower_bound(mutation_sites.begin(), mutation_sites.end(), pos, site_less);
     if (lo != mutation_sites.end() and lo->first == pos) {
-        lo->second = s;
+        lo->second = 1;
         return;
     }
     size_t at = lo - mutation_sites.begin();
     size_t cur = it - mutation_sites.begin();
-    mutation_sites.insert(lo, {pos, s});
+    mutation_sites.insert(lo, {pos, 1});
     it = mutation_sites.begin() + (cur >= at ? cur + 1 : cur);
-}
-
-void Node::add_mutation(double pos) {
-    set_site(pos, 1);
 }
 
 bool Node::is_missing(double pos) {
@@ -94,7 +90,7 @@ void Node::write_state(double pos, double s) {
             it = mutation_sites.begin() + (cur > at ? cur - 1 : cur);
         }
     } else if (s == 1) {
-        set_site(pos, s);
+        add_mutation(pos);
     }
 }
 

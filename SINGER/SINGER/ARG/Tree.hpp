@@ -56,9 +56,6 @@ public:
 
     vector<pair<Node *, Node *>> parents = {};
     vector<double> lengths = {};
-    int stamp = 0;
-
-    void touch();
 
     void assign(const Tree &tree);
 

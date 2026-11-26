@@ -58,7 +58,7 @@ public:
     Node *joined_upper = nullptr;
     vector<vector<Msg>> full_in = {};
     vector<double> full_empty = {};
-    vector<int> full_stamp = {};
+    vector<char> full_valid = {};
     vector<vector<Msg>> next_in = {};
     vector<int> slot_site = {};
     map<double, Branch> new_joining_branches = {};
@@ -93,8 +93,6 @@ public:
 
     void set_emission_sites(ARG &a, Emission &e, bool &stale, int bin, vector<pair<double, int>> &mut_set, Node *query_node, const Tree *tree);
 
-    void set_emission_groups(ARG &a, Emission &e, bool &stale, int bin, Node *query_node, const Tree *tree);
-
     void run_BSP(ARG &a);
 
     void run_TSP(ARG &a);
@@ -119,26 +117,12 @@ public:
 
     double data_log_ratio(ARG &a);
 
-    double history_log_ratio(ARG &a);
-
-    vector<int> ratio_below = {};
-
-    vector<Pattern_group> ratio_groups = {};
-
-    vector<Pattern_group> emit_groups = {};
-
     Flat_tree ratio_flat;
     Tree_order ratio_order;
-    vector<vector<Msg>> ratio_ref = {};
-    vector<vector<Msg>> ratio_pattern = {};
+    vector<Msg> ratio_ref = {};
+    vector<Msg> ratio_pattern = {};
     Peel ratio_peel;
     vector<Msg> ratio_cell = {};
-    vector<Site_messages> group_pool = {};
-    vector<char> group_missing = {};
-    Site_messages base_pool[max_states];
-    int base_tree = -1;
-    Node *base_query = nullptr;
-    double base_unit = -1;
 
     double redrawn_acceptance_ratio(ARG &a, tuple<double, Branch, double> cut_point);
 

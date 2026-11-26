@@ -28,15 +28,14 @@ def read_ts(node_file, edge_file, counts_file):
             print(j, k, node_time[j], node_time[k])
     return tables
 
-def read_ARG(node_file, branch_file, mutation_file, counts_file, bases):
+def read_ARG(node_file, branch_file, mutation_file, counts_file):
     tables = read_ts(node_file, branch_file, counts_file)
-    arg_io.add_mutations(tables, mutation_file, 0.0, lambda n: n, bases)
+    arg_io.add_mutations(tables, mutation_file, 0.0, lambda n: n)
     arg_io.finish_mutations(tables)
     return tables
 
 
 def write_trees(input_prefix, output_prefix, start, end, step, vcf_file=None):
-    bases = arg_io.uses_bases(input_prefix)
     for i in range(start, end, step):
         node_file, rescaled = arg_io.nodes_file(input_prefix, i)
         branch_file = f"{input_prefix}_branches_{i}.txt"
@@ -47,7 +46,7 @@ def write_trees(input_prefix, output_prefix, start, end, step, vcf_file=None):
         if not draws:
             print(f"Warning: no muts file for sample {i}; the tree sequence is written without sites.", file=sys.stderr)
         for draw, mutation_file in draws or [(None, None)]:
-            tables = read_ARG(node_file, branch_file, mutation_file, counts_file, bases)
+            tables = read_ARG(node_file, branch_file, mutation_file, counts_file)
             arg_io.add_provenance(tables, 'convert_to_tskit.py', [input_prefix], i, draw, rescaled)
             ts = tables.tree_sequence()
             if vcf_file is not None:

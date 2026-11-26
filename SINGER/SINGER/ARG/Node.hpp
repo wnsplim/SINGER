@@ -54,8 +54,6 @@ public:
 
     void write_state(double pos, double s);
 
-    void set_site(double pos, double s);
-
     void move_iterator(double m);
 
     vector<double> missing_sites = {};

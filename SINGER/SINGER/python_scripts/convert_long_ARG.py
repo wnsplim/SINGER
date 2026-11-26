@@ -5,7 +5,7 @@ import tskit
 import vcf_io
 import arg_io
 
-def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, counts_files, bases=False):
+def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, counts_files):
     tables = tskit.TableCollection(sequence_length=0)
     node_table = tables.nodes
 
@@ -34,7 +34,7 @@ def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, c
 
         arg_io.add_edges(tables, edge_span, parent_indices, child_indices, block_coordinates[node_file_index], counts_file, keep)
         arg_io.add_mutations(tables, mutation_file, block_coordinates[node_file_index],
-                             lambda n, s=sample_num, k=node_num: n + k if n >= s else n, bases)
+                             lambda n, s=sample_num, k=node_num: n + k if n >= s else n)
 
     arg_io.finish_mutations(tables)
     return tables
@@ -77,10 +77,9 @@ def main():
     with_muts = bool(draws)
     if not with_muts:
         print(f"Warning: no muts file for iteration {args.iteration}; the tree sequence is written without sites.", file=sys.stderr)
-    bases = arg_io.uses_bases(prefixes[0])
     for draw, _ in draws or [(None, None)]:
         node_files, branch_files, mutation_files, counts_files, rescaled = generate_file_lists(prefixes, args.iteration, draw, with_muts)
-        tables = read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, counts_files, bases)
+        tables = read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, counts_files)
         arg_io.add_provenance(tables, 'convert_long_ARG.py', prefixes, args.iteration, draw, rescaled)
         ts = tables.tree_sequence()
         ts = vcf_io.add_individuals_from_vcf(ts, args.vcf)

@@ -45,13 +45,9 @@ int main(int argc, const char * argv[]) {
     string r_value = "", m_value = "";
     double penalty = 1;
     double polar = 0.5;
-    string model_name = "CFN";
-    int gamma_k = 1;
-    bool augment = false;
-    bool pruning = false;
     int scaling_rep = -1;
     int scaling_bin = 100;
-    int mapping_rep = -1;
+    int mapping_rep = 1;
     double epsilon_hmm = -1;
     double epsilon_psmc = 1.0/5;
     int ploidy = 2;
@@ -362,47 +358,6 @@ int main(int argc, const char * argv[]) {
             }
             input_filename = args[++i];
         }
-        else if (arg == "-subst_model") {
-            if (i + 1 >= n_args || args[i+1][0] == '-') {
-                cerr << "Error: -subst_model flag expects CFN, JC, K80, F81, HKY or GTR. " << endl;
-                exit(1);
-            }
-            model_name = args[++i];
-            if (model_name != "CFN" and model_name != "JC" and model_name != "K80" and model_name != "F81" and model_name != "HKY" and model_name != "GTR") {
-                cerr << "Error: -subst_model flag expects CFN, JC, K80, F81, HKY or GTR. " << endl;
-                exit(1);
-            }
-        }
-        else if (arg == "-gamma") {
-            if (i + 1 >= n_args || args[i+1][0] == '-') {
-                cerr << "Error: -gamma flag expects the number of rate categories. " << endl;
-                exit(1);
-            }
-            try {
-                gamma_k = stoi(args[++i]);
-            } catch (...) {
-                cerr << "Error: -gamma flag expects a number. " << endl;
-                exit(1);
-            }
-            if (gamma_k < 0) {
-                cerr << "Error: -gamma must be 0 (the continuous gamma, under -augment) or at least 1. " << endl;
-                exit(1);
-            }
-        }
-        else if (arg == "-augment") {
-            if (i + 1 < n_args && args[i+1][0] != '-') {
-                cerr << "Error: -augment flag doesn't take any value. " << endl;
-                exit(1);
-            }
-            augment = true;
-        }
-        else if (arg == "-pruning") {
-            if (i + 1 < n_args && args[i+1][0] != '-') {
-                cerr << "Error: -pruning flag doesn't take any value. " << endl;
-                exit(1);
-            }
-            pruning = true;
-        }
         else if (arg == "-output") {
             if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -output flag cannot be empty. " << endl;
@@ -510,9 +465,6 @@ int main(int argc, const char * argv[]) {
     if (scaling_rep < 0) {
         scaling_rep = exact ? 1 : 5;
     }
-    if (mapping_rep < 0) {
-        mapping_rep = model_name == "CFN" ? 1 : 0;
-    }
     if (epsilon_hmm < 0) {
         epsilon_hmm = exact ? 0.1 : 0.001;
     }
@@ -526,25 +478,6 @@ int main(int argc, const char * argv[]) {
     sampler.set_precision(epsilon_hmm, epsilon_psmc);
     sampler.set_input_file_prefix(input_filename);
     sampler.set_output_file_prefix(output_prefix);
-    bool alignment = sampler.data.is_alignment();
-    if (alignment and model_name == "CFN") {
-        cerr << "Error: an alignment input needs -subst_model JC, K80, F81, HKY or GTR. " << endl;
-        exit(1);
-    }
-    bool polar_given = find(args.begin(), args.end(), "-polar") != args.end();
-    if (alignment) {
-        if (find(args.begin(), args.end(), "-ploidy") == args.end()) {
-            ploidy = 1;
-        }
-        if (!chrom_name.empty()) {
-            cerr << "Error: -chrom applies to VCF input only; name the chromosome of a mask file with -chrom_n or -chrom_p. " << endl;
-            exit(1);
-        }
-        if (genotype_lik or phase) {
-            cerr << "Error: -genotype_lik and -phase apply to VCF input only. " << endl;
-            exit(1);
-        }
-    }
     sampler.Ne = ploidy*Ne;
     sampler.recomb_rate = r*sampler.Ne;
     sampler.mut_rate = m*sampler.Ne;
@@ -563,56 +496,6 @@ int main(int argc, const char * argv[]) {
     if (sampler.recomb_rate == 0) {
         cerr << "Warning: the recombination rate is set to 0; are you sure? " << endl;
     }
-    if (model_name != "CFN") {
-        if (genotype_lik or phase) {
-            cerr << "Error: -genotype_lik and -phase apply to the CFN model only. " << endl;
-            exit(1);
-        }
-        if (polar_given) {
-            cerr << "Warning: -polar has no effect under -subst_model " << model_name << ", whose root prior is the stationary distribution. " << endl;
-        }
-    }
-    if (model_name != "CFN" and penalty != 1) {
-        cerr << "Error: -penalty applies to the CFN model only. " << endl;
-        exit(1);
-    }
-    if (augment and pruning) {
-        cerr << "Error: -augment and -pruning select different chains; give one of them. " << endl;
-        exit(1);
-    }
-    if (augment and gamma_k > 1) {
-        cerr << "Error: -gamma above 1 is not available under -augment; -gamma 0 runs the continuous gamma. " << endl;
-        exit(1);
-    }
-    if (pruning and gamma_k == 0) {
-        cerr << "Error: -gamma 0 (the continuous gamma) runs the full-history chain only and is refused under -pruning. " << endl;
-        exit(1);
-    }
-    if (model_name == "CFN" and (gamma_k != 1 or augment)) {
-        if (gamma_k != 1) {
-            cerr << "Warning: under CFN the gamma shape is identified only by sites with more than one mutation, which the two-state model does not represent. " << endl;
-        }
-        if (augment) {
-            cerr << "Warning: under -augment CFN runs the two-state matrix model, which costs more per rethread than the default CFN chain." << endl;
-        }
-        if (penalty != 1) {
-            cerr << "Error: -penalty other than 1 is refused on the CFN matrix path under -gamma or -augment. " << endl;
-            exit(1);
-        }
-        if (polar_given) {
-            cerr << "Error: -polar is refused on the CFN matrix path under -gamma or -augment. " << endl;
-            exit(1);
-        }
-        if (genotype_lik) {
-            cerr << "Error: -genotype_lik is refused on the CFN matrix path under -gamma or -augment. " << endl;
-            exit(1);
-        }
-        if (phase) {
-            cerr << "Error: -phase is refused on the CFN matrix path under -gamma or -augment. " << endl;
-            exit(1);
-        }
-    }
-    augment = gamma_k == 0 or (gamma_k == 1 and !pruning and (augment or model_name != "CFN"));
     if (!resume) {
         ofstream ckp(output_prefix + ".ckp");
         for (auto &g : given) {
@@ -621,14 +504,11 @@ int main(int argc, const char * argv[]) {
             }
         }
     }
-    sampler.model_name = model_name;
-    sampler.gamma_k = gamma_k;
     sampler.ploidy = ploidy;
     if (tip_ages_file.size() > 0) {
         sampler.read_tip_ages(tip_ages_file, g);
     }
     sampler.exact = exact;
-    sampler.augment = augment;
     sampler.random_seed = seed;
     sampler.seed_given = seed_given;
     sampler.start = start_pos;

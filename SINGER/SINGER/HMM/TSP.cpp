@@ -559,11 +559,6 @@ double TSP::get_prop(double lb1, double ub1, double lb2, double ub2) {
 }
 
 void TSP::compute_null_emit_probs(double theta, Node *query_node) {
-    if (!eh->model->branch_product) {
-        update_norms(query_node);
-        copy(norms.begin(), norms.end(), null_emit_probs.begin());
-        return;
-    }
     if (theta == prev_theta and query_node == prev_node and eh->bin_width == prev_width and eh->crho == prev_crho and eh->norm_scale == prev_scale) {
         return;
     }
@@ -575,33 +570,6 @@ void TSP::compute_null_emit_probs(double theta, Node *query_node) {
 }
 
 void TSP::update_norms(Node *query_node) {
-    if (!eh->model->branch_product) {
-        int S = eh->model->states;
-        if (!(null_logs_valid and query_node == log_node and eh->unit == log_unit)) {
-            int K = (int) eh->model->rates.size();
-            null_logs.resize((S + 1)*dim);
-            edge_cache.resize(K*dim);
-            for (int i = 0; i < dim; i++) {
-                eh->edge_matrices(curr_branch, curr_intervals[i]->time, query_node, &edge_cache[K*i]);
-                eh->null_logs_base(curr_branch, &edge_cache[K*i], &null_logs[(S + 1)*i]);
-            }
-            null_logs_valid = true;
-            log_node = query_node;
-            log_unit = eh->unit;
-        }
-        norms.resize(dim);
-        const double *c = eh->base_counts;
-        double u = eh->unknown_count;
-        for (int i = 0; i < dim; i++) {
-            const double *l = &null_logs[(S + 1)*i];
-            double v = 0;
-            for (int b = 0; b < S; b++) {
-                v += c[b]*l[b];
-            }
-            norms[i] = exp(-(v + u*l[S]));
-        }
-        return;
-    }
     if (!(null_logs_valid and query_node == log_node and eh->crho == log_crho and eh->norm_scale == log_scale)) {
         null_logs.resize(dim);
         for (int i = 0; i < dim; i++) {
@@ -632,13 +600,6 @@ void TSP::update_norms(Node *query_node) {
 
 void TSP::compute_mut_emit_probs(Node *query_node) {
     update_norms(query_node);
-    if (!eh->model->branch_product) {
-        int K = (int) eh->model->rates.size();
-        for (int i = 0; i < dim; i++) {
-            mut_emit_probs[i] = eh->mut_emit(curr_branch, norms[i], &edge_cache[K*i]);
-        }
-        return;
-    }
     for (int i = 0; i < dim; i++) {
         mut_emit_probs[i] = eh->mut_emit(curr_branch, curr_intervals[i]->time, query_node, norms[i]);
     }

@@ -80,13 +80,9 @@ def add_edges(tables, edge_span, parent, child, offset, counts_file, keep):
                                 metadata=metadata, metadata_offset=metadata_offset)
 
 
-BASES = 'ACGT'
-
-
-def add_mutations(tables, mutation_file, offset, node_map, bases=False):
+def add_mutations(tables, mutation_file, offset, node_map):
     """The muts rows as sites and mutations; the fifth column, when present, as the mutation's informed flag, the
-    sixth as its time. Without a file, no site. With bases (a run under a four-state model), the row whose upper node
-    is the root gives the site's ancestral base and the states of the other rows are bases."""
+    sixth as its time. Without a file, no site."""
     tables.mutations.metadata_schema = MUTATION_SCHEMA
     if mutation_file is None:
         return
@@ -96,15 +92,11 @@ def add_mutations(tables, mutation_file, offset, node_map, bases=False):
         by_site.setdefault(row[0], []).append(row)
     for pos in sorted(by_site):
         rows = by_site[pos]
-        ancestral = '0'
-        if bases:
-            ancestral = next(BASES[int(row[3])] for row in rows if int(row[2]) == -1)
-            rows = [row for row in rows if int(row[2]) != -1]
-        tables.sites.add_row(position=pos + offset, ancestral_state=ancestral)
+        tables.sites.add_row(position=pos + offset, ancestral_state='0')
         site = tables.sites.num_rows - 1
         for row in rows:
             meta = {'informed': int(row[4])} if len(row) >= 5 else {}
-            state = BASES[int(row[3])] if bases else str(int(row[3]))
+            state = str(int(row[3]))
             time = row[5] if len(row) >= 6 else tskit.UNKNOWN_TIME
             tables.mutations.add_row(site=site, node=node_map(int(row[1])), derived_state=state, metadata=meta, time=time)
 
@@ -116,11 +108,6 @@ def finish_mutations(tables):
     tables.compute_mutation_parents()
     if np.isnan(tables.mutations.time).all():
         tables.compute_mutation_times()
-
-
-def uses_bases(prefix):
-    """Whether the run at prefix used a four-state model (its .ckp names -subst_model other than CFN)."""
-    return read_ckp(prefix).get('-subst_model', 'CFN') != 'CFN'
 
 
 def read_ckp(prefix):

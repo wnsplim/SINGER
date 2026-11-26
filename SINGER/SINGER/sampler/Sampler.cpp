@@ -43,7 +43,6 @@ void Sampler::read_tip_ages(string filename, double g) {
 void Sampler::load_data(double start_pos, double end_pos) {
     data.ploidy = ploidy;
     data.read(start_pos, end_pos);
-    set_model();
     vector<Node *> leaves;
     for (int i = 0; i < (int) data.derived_sites.size(); i++) {
         Node_ptr n = new_sample(i);
@@ -56,176 +55,10 @@ void Sampler::load_data(double start_pos, double end_pos) {
     set_missing(leaves);
 }
 
-void Sampler::set_model() {
-    model.set(model_name, model_name == "CFN" ? vector<double>{} : data.base_frequencies(), {}, 1.0);
-    model.set_gamma(gamma_k, 1.0);
-    model.branch_product = model_name == "CFN" and gamma_k == 1 and !augment;
-}
-
-static double log_dirichlet(const vector<double> &x, const vector<double> &a) {
-    double v = 0, total = 0;
-    for (size_t i = 0; i < x.size(); i++) {
-        v += (a[i] - 1)*log(x[i]) - lgamma(a[i]);
-        total += a[i];
-    }
-    return v + lgamma(total);
-}
-
-static vector<double> dirichlet_draw(const vector<double> &a) {
-    vector<double> x(a.size());
-    double total = 0;
-    for (size_t i = 0; i < a.size(); i++) {
-        gamma_distribution<double> g(a[i], 1.0);
-        x[i] = g(random_engine);
-        total += x[i];
-    }
-    for (double &v : x) {
-        v /= total;
-    }
-    return x;
-}
-
-void Sampler::update_model(const function<double()> &log_likelihood, int repeats, bool substitution, bool alpha) {
-    normal_distribution<double> normal(0.0, 1.0);
-    double step = 0.2;
-    double concentration_pi = max(1000.0, arg.column_base.empty() ? (double) arg.mutation_sites.size() : sequence_length), concentration_r = max(1000.0, (double) arg.mutation_sites.size());
-    double current = log_likelihood();
-    auto decide = [&](double log_ratio) {
-        double proposed = log_likelihood();
-        if (log(uniform_random()) < proposed - current + log_ratio) {
-            current = proposed;
-            model = arg.model;
-        } else {
-            arg.model = model;
-        }
-    };
-    for (int n = 0; n < repeats and substitution and model.has_kappa(); n++) {
-        double k = model.kappa, k2 = k*exp(step*normal(random_engine));
-        arg.model.kappa = k2;
-        arg.model.refresh();
-        decide(2*log1p(k) - 2*log1p(k2) + log(k2/k));
-    }
-    for (int n = 0; n < repeats and substitution and model.has_frequencies(); n++) {
-        int S = model.states;
-        vector<double> a(S), b(S);
-        for (int i = 0; i < S; i++) {
-            a[i] = concentration_pi*model.pi[i];
-        }
-        vector<double> p2 = dirichlet_draw(a);
-        for (int i = 0; i < S; i++) {
-            b[i] = concentration_pi*p2[i];
-        }
-        arg.model.pi = p2;
-        arg.model.refresh();
-        decide(log_dirichlet(model.pi, b) - log_dirichlet(p2, a));
-    }
-    for (int n = 0; n < repeats and substitution and model.has_exchangeabilities(); n++) {
-        int m = (int) model.exchangeabilities.size();
-        vector<double> s(m), a(m), b(m);
-        for (int i = 0; i < m; i++) {
-            s[i] = model.exchangeabilities[i]/m;
-            a[i] = concentration_r*s[i];
-        }
-        vector<double> s2 = dirichlet_draw(a);
-        for (int i = 0; i < m; i++) {
-            b[i] = concentration_r*s2[i];
-            arg.model.exchangeabilities[i] = m*s2[i];
-        }
-        arg.model.refresh();
-        decide(log_dirichlet(s, b) - log_dirichlet(s2, a));
-    }
-    for (int n = 0; n < repeats and alpha; n++) {
-        double al = model.alpha, al2 = al*exp(step*normal(random_engine));
-        arg.model.alpha = al2;
-        arg.model.refresh();
-        decide(-(al2 - al) + log(al2/al));
-    }
-}
-
-void Sampler::update_model() {
-    if (model.branch_product) {
-        return;
-    }
-    if (arg.augment) {
-        History_statistics s;
-        arg.history_statistics(s);
-        update_model([&]() { return arg.statistics_log_density(s); }, 10, true, false);
-        if (model.continuous_gamma()) {
-            update_model([&]() { return arg.alpha_log_density(s); }, 10, false, true);
-            arg.redraw_rates(s);
-        }
-        return;
-    }
-    map<double, Branch> lineage;
-    lineage[0] = Branch(*arg.sample_nodes.begin(), arg.root.get());
-    Tree empty;
-    update_model([&]() { return arg.mutation_log_likelihood(lineage, 0, sequence_length, 0, empty); }, 1, true, model.categories > 1);
-}
-
-void Sampler::set_augment() {
-    arg.augment = augment and !Threader_smc::no_data;
-}
-
-void Sampler::write_model() {
-    if (model.branch_product) {
-        return;
-    }
-    ofstream file(output_prefix + "_subst_model.txt", ios::out|ios::app);
-    file << setprecision(numeric_limits<double>::max_digits10) << sample_index << " " << model.kappa;
-    for (double p : model.pi) {
-        file << " " << p;
-    }
-    for (double r : model.exchangeabilities) {
-        file << " " << r;
-    }
-    file << " " << model.alpha << "\n";
-}
-
-void Sampler::read_model() {
-    if (model.branch_product) {
-        return;
-    }
-    string filename = output_prefix + "_subst_model.txt";
-    ifstream fin(filename);
-    if (!fin.good()) {
-        cerr << "model file not found: " << filename << endl;
-        exit(1);
-    }
-    string line;
-    bool found = false;
-    while (getline(fin, line)) {
-        istringstream iss(line);
-        int index;
-        if (!(iss >> index) or index != sample_index) {
-            continue;
-        }
-        iss >> model.kappa;
-        for (double &p : model.pi) {
-            iss >> p;
-        }
-        for (double &r : model.exchangeabilities) {
-            iss >> r;
-        }
-        iss >> model.alpha;
-        found = true;
-    }
-    if (!found) {
-        cerr << "model file " << filename << " has no row for sample " << sample_index << endl;
-        exit(1);
-    }
-    model.refresh();
-    arg.model = model;
-}
-
 void Sampler::load_states(vector<Node *> &leaves) {
     for (int i = 0; i < (int) leaves.size(); i++) {
         for (double x : data.derived_sites[i]) {
             leaves[i]->add_mutation(x);
-        }
-        if (!model.branch_product) {
-            for (auto &q : data.site_states[i]) {
-                leaves[i]->set_site(q.first, model.states == 2 ? 1 << (int) leaves[i]->get_state(q.first) : q.second);
-            }
         }
     }
 }
@@ -245,9 +78,6 @@ void Sampler::order_samples() {
 
 void Sampler::build_singleton_arg() {
     arg = ARG(Ne, sequence_length);
-    arg.model = model;
-    set_augment();
-    arg.column_base = data.column_base;
     arg.time_offset = tip_offset;
     arg.any_missing = data.any_missing;
     arg.unassayed_sites = data.unassayed_sites;
@@ -295,7 +125,6 @@ void Sampler::set_entries(vector<Node *> &leaves) {
 void Sampler::iterative_start() {
     start_log();
     build_singleton_arg();
-    arg.augment = false;
     auto it = ordered_sample_nodes.begin();
     it++;
     Threader_smc threader = Threader_smc(bsp_c, tsp_q);
@@ -317,11 +146,6 @@ void Sampler::iterative_start() {
         }
     }
     arg.resample_genotypes();
-    set_augment();
-    if (arg.augment) {
-        arg.draw_mutations(nullptr, arg.mutations, true);
-        arg.redraw_histories(arg.mutations, true);
-    }
     cout << "orignal ARG length: " << arg.get_arg_length() << endl;
     arg.write_nodes(output_prefix + "_start_nodes_" + to_string(sample_index) + ".txt");
     arg.write_branches(output_prefix + "_start_branches_" + to_string(sample_index) + ".txt");
@@ -344,7 +168,6 @@ void Sampler::sweep_samples() {
     }
     arg.release_dead_nodes();
     write_iterative_start();
-    write_model();
 }
 
 void Sampler::internal_sample(int num_iters, int spacing) {
@@ -368,10 +191,6 @@ void Sampler::internal_sample(int num_iters, int spacing) {
         }
         arg.resample_genotypes();
         arg.release_dead_nodes();
-        if (arg.augment) {
-            arg.redraw_histories(arg.mutations, true);
-        }
-        update_model();
         arg.write_nodes(output_prefix + "_nodes_" + to_string(sample_index) + ".txt");
         arg.write_branches(output_prefix + "_branches_" + to_string(sample_index) + ".txt");
         arg.write_recombs(output_prefix + "_recombs_" + to_string(sample_index) + ".txt");
@@ -379,7 +198,6 @@ void Sampler::internal_sample(int num_iters, int spacing) {
             arg.write_cells(output_prefix + "_cells_" + to_string(sample_index) + ".txt");
         }
         write_mapping(output_prefix, to_string(sample_index), output_prefix + "_counts_" + to_string(sample_index) + ".txt", rescale(output_prefix + "_rescaled_nodes_" + to_string(sample_index) + ".txt"));
-        write_model();
         random_seed = random_engine();
         write_sample();
         arg.check_incompatibility();
@@ -400,9 +218,7 @@ void Sampler::resume_internal_sample(int num_iters, int spacing) {
     sample_index += 1;
     arg.penalty = penalty;
     arg.ancestral_prob = polar;
-    if (!arg.augment) {
-        arg.draw_mutations();
-    }
+    arg.draw_mutations();
     arg.check_incompatibility();
     cout << "Number of trees: " << arg.recombinations.size() << endl;
     cout << "Number of flippings: " << arg.count_flipping() << endl;
@@ -436,21 +252,10 @@ vector<double> Sampler::rescale(string filename) {
 void Sampler::write_mapping(string base, string index, string counts_file, const vector<double> &rescaled) {
     function<double(Node *)> time_of = [&](Node *n) { return n == arg.root.get() ? n->time : rescaled[n->index]; };
     const function<double(Node *)> *tp = rescaled.empty() ? nullptr : &time_of;
-    map<double, vector<Mutation_row>> draws;
     for (int r = 1; r <= mapping_rep; r++) {
         string file = base + "_muts_" + (mapping_rep > 1 ? to_string(r) + "_" : "") + index + ".txt";
-        if (!arg.augment) {
-            arg.draw_mutations(tp, arg.mutations, false);
-            arg.write_mutations(file, arg.mutations);
-        } else if (r == 1) {
-            arg.write_histories(file, arg.mutations, tp);
-            if (model.continuous_gamma()) {
-                arg.write_rates(base + "_rates_" + index + ".txt");
-            }
-        } else {
-            arg.redraw_histories(draws, false);
-            arg.write_histories(file, draws, tp);
-        }
+        arg.draw_mutations(tp, arg.mutations);
+        arg.write_mutations(file, arg.mutations);
     }
     vector<double> expected, informed_bases;
     arg.mapping_counts(tp, expected, informed_bases);
@@ -522,11 +327,6 @@ void Sampler::load_resume_arg() {
     }
     data.ploidy = ploidy;
     data.read(start, end);
-    set_model();
-    read_model();
-    arg.model = model;
-    set_augment();
-    arg.column_base = data.column_base;
     load_states(leaves);
     for (Node *n : leaves) {
         for (auto &x : n->mutation_sites) {
@@ -542,13 +342,6 @@ void Sampler::load_resume_arg() {
     set_entries(leaves);
     if (!arg.genotype_likelihoods.empty()) {
         arg.read_cells(output_prefix + "_cells_" + to_string(sample_index) + ".txt");
-    }
-    if (arg.augment) {
-        string index = to_string(sample_index);
-        if (!arg.read_histories(output_prefix + "_muts_" + (mapping_rep > 1 ? "1_" : "") + index + ".txt", output_prefix + "_rates_" + index + ".txt", scaling_rep > 0 ? output_prefix + "_rescaled_nodes_" + index + ".txt" : "")) {
-            arg.draw_mutations(nullptr, arg.mutations, true);
-            arg.redraw_histories(arg.mutations, true);
-        }
     }
 }
 

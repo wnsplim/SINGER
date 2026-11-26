@@ -34,7 +34,6 @@ public:
     double sequence_length = 0;
     ARG arg;
     bool exact = false;
-    bool augment = false;
     int ploidy = 2;
     vector<double> tip_times = {};
     double tip_offset = 0;
@@ -47,9 +46,6 @@ public:
     int scaling_rep = 5;
     int scaling_bin = 100;
     int mapping_rep = 1;
-    Site_model model;
-    string model_name = "CFN";
-    int gamma_k = 1;
     int sample_index = 0;
     set<Node_ptr, compare_node> sample_nodes = {};
     vector<Node_ptr> ordered_sample_nodes = {};
@@ -71,19 +67,7 @@ public:
 
     void load_data(double start_pos, double end_pos);
 
-    void set_model();
-
     void load_states(vector<Node *> &leaves);
-
-    void update_model(const function<double()> &log_likelihood, int repeats, bool substitution, bool alpha);
-
-    void update_model();
-
-    void set_augment();
-
-    void write_model();
-
-    void read_model();
 
     void set_missing(vector<Node *> &leaves);
 

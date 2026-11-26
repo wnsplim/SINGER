@@ -12,17 +12,6 @@
 #include "Branch.hpp"
 #include "ARG.hpp"
 
-struct Edge_matrices {
-    bool at_root = false;
-    double query_length = 0;
-    double lower_length = 0;
-    double upper_length = 0;
-    double root_length = 0;
-    double lower[max_states*max_states];
-    double query[max_states*max_states];
-    double upper[max_states*max_states];
-};
-
 class Emission {
 
 public:
@@ -30,27 +19,9 @@ public:
     double crho = 0;
     double norm_scale = 1.0;
     double bin_width = 1.0;
-    const Site_model *model = nullptr;
-    double unit = 0;
-    double base_counts[max_states] = {};
-    const Site_messages *base_groups[max_states] = {};
-    double unknown_count = 0;
     vector<const Site_messages *> sites = {};
-    vector<const Site_messages *> groups = {};
-    vector<double> group_weights = {};
-    vector<pair<array<const Site_messages *, max_states>, double>> unknown_groups = {};
-    bool augment = false;
-    bool unknown = false;
-    const Site_messages *main_pattern = nullptr;
-    vector<pair<const Site_messages *, array<double, max_states + 1>>> patterns = {};
 
     double mut_emit(Branch &branch, double time, Node *node, double emit);
-
-    double mut_emit(Branch &branch, double emit, const Edge_matrices *cached);
-
-    void null_logs_base(Branch &branch, const Edge_matrices *cached, double *out);
-
-    void edge_matrices(Branch &branch, double time, Node *node, Edge_matrices *out);
 
     void set_tree_product(double c, double rho, double p, double w) {
         crho = c*rho;

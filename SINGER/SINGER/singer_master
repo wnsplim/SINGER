@@ -27,89 +27,6 @@ def compute_average_rate(map_file, x, y):
         return 0
     return weighted_sum / total_length
 
-def is_alignment(path):
-    with open(path, 'rb') as f:
-        head = f.read(64).lstrip()
-    return head[:1] == b'>' or head[:1].isdigit() or head[:6].upper() == b'#NEXUS'
-
-
-def read_alignment(path):
-    with open(path) as f:
-        text = f.read()
-    stripped = text.lstrip()
-    names, seqs = [], []
-    if stripped.startswith('>'):
-        for block in stripped.split('>')[1:]:
-            lines = block.split('\n')
-            names.append(lines[0].split()[0])
-            seqs.append(''.join(l.strip() for l in lines[1:]))
-        return names, seqs
-    if stripped.upper().startswith('#NEXUS'):
-        clean = ''
-        depth = 0
-        for c in text:
-            if c == '[':
-                depth += 1
-            elif c == ']':
-                depth = max(0, depth - 1)
-            elif depth == 0:
-                clean += c
-        low = clean.lower()
-        block = clean[low.find('matrix') + 6:]
-        block = block[:block.find(';')]
-        order, parts = [], {}
-        for line in block.split('\n'):
-            w = line.split()
-            if len(w) < 2:
-                continue
-            name = w[0]
-            if name not in parts:
-                order.append(name)
-                parts[name] = ''
-            parts[name] += ''.join(w[1:])
-        return order, [parts[n] for n in order]
-    lines = [l for l in stripped.split('\n') if l.strip()]
-    ntax, nsite = int(lines[0].split()[0]), int(lines[0].split()[1])
-    body = lines[1:]
-    if len(body) == ntax:
-        for l in body:
-            w = l.split()
-            names.append(w[0])
-            seqs.append(''.join(w[1:]))
-        return names, seqs
-    seqs = [''] * ntax
-    for b in range(len(body)//ntax):
-        for i in range(ntax):
-            w = body[b*ntax + i].split()
-            if b == 0:
-                names.append(w[0])
-                seqs[i] += ''.join(w[1:])
-            else:
-                seqs[i] += ''.join(w)
-    return names, seqs
-
-
-def calculate_diversity_alignment(seqs, start, end, mask_n=None, mask_p=None, chrom_n=None, chrom_p=None):
-    start, end = int(start), int(end)
-    masked = []
-    if mask_n or mask_p:
-        if (mask_n and not chrom_n) or (mask_p and not chrom_p):
-            sys.exit("Error: a mask with an alignment needs -chrom_n or -chrom_p.")
-        masked = [(lo - 1, hi - 1) for lo, hi in read_masks(mask_n, mask_p, chrom_n, chrom_p, start, end)]
-    masked_columns = sum(hi - lo + 1 for lo, hi in masked)
-    index = {'A': 0, 'C': 1, 'G': 2, 'T': 3, 'U': 3}
-    columns = np.array([[index.get(c.upper(), -1) for c in s[start:end]] for s in seqs], dtype=np.int8)
-    for lo, hi in masked:
-        columns[:, lo - start:hi - start + 1] = -1
-    k = np.sum(columns >= 0, axis=0).astype(float)
-    het = np.zeros(columns.shape[1])
-    for b in range(4):
-        f = np.sum(columns == b, axis=0)/np.maximum(k, 1)
-        het += f*(1 - f)
-    ok = k >= 2
-    total = float(np.sum(het[ok]*k[ok]/(k[ok] - 1)))
-    return total/(end - start - masked_columns)
-
 
 def read_mask_intervals(mask_file, chrom, start, end):
     intervals = []
@@ -221,7 +138,7 @@ def calculate_diversity(vcf_prefix, start, end, mask_n=None, mask_p=None, chrom=
     return total_diversity / segment_length
 
 def read_tip_ages(tip_ages_file, vcf_prefix, ploidy):
-    names = read_alignment(vcf_prefix)[0] if is_alignment(vcf_prefix) else vcf_io.sample_names(vcf_prefix)
+    names = vcf_io.sample_names(vcf_prefix)
     n = ploidy*len(names)
     rows = []
     ncol = None
@@ -251,25 +168,8 @@ def read_tip_ages(tip_ages_file, vcf_prefix, ploidy):
         ages.append(by_name[names[i//ploidy]])
     return ages
 
-def compute_Ne(vcf_prefix, start, end, m, ploidy, ages=None, g=None, mask_n=None, mask_p=None, chrom=None, chrom_n=None, chrom_p=None, four_state=False):
-    alignment = is_alignment(vcf_prefix)
-    if alignment:
-        seqs = read_alignment(vcf_prefix)[1]
-        diversity = calculate_diversity_alignment(seqs, start, end, mask_n, mask_p, chrom_n, chrom_p)
-    else:
-        diversity = calculate_diversity(vcf_prefix, start, end, mask_n, mask_p, chrom, chrom_n, chrom_p)
-    if four_state:
-        B = 0.75
-        if alignment:
-            counts = np.zeros(4)
-            for s in seqs:
-                for b, c in enumerate('ACGT'):
-                    counts[b] += s[int(start):int(end)].upper().count(c)
-            if counts.sum() > 0:
-                B = 1 - np.sum((counts/counts.sum())**2)
-        if diversity >= B:
-            sys.exit("Error: the diversity is saturated; give -Ne.")
-        diversity = -B*np.log(1 - diversity/B)
+def compute_Ne(vcf_prefix, start, end, m, ploidy, ages=None, g=None, mask_n=None, mask_p=None, chrom=None, chrom_n=None, chrom_p=None):
+    diversity = calculate_diversity(vcf_prefix, start, end, mask_n, mask_p, chrom, chrom_n, chrom_p)
     mean_abs_diff = 0.0
     if ages:
         gens = [a/g for a in ages]
@@ -309,11 +209,7 @@ def main():
     parser.add_argument('-Ne', type=float, default=-1, help='Effective population size. Default: estimated from the diversity.')
     parser.add_argument('-m', type=str, required=True, help='Mutation rate: a number, or a rate map file.')
     parser.add_argument('-r', type=str, help='Recombination rate: a number, or a rate map file. Default: the -m value.')
-    parser.add_argument('-input', type=str, help='Input file: .vcf, .vcf.gz, .bcf, or an alignment (FASTA, PHYLIP, NEXUS).')
-    parser.add_argument('-subst_model', type=str, default='CFN', choices=['CFN', 'JC', 'K80', 'F81', 'HKY', 'GTR'], help='Substitution model: CFN, JC, K80, F81, HKY or GTR. Default: CFN.')
-    parser.add_argument('-gamma', type=int, default=1, help='Number of discrete gamma rate categories, run by the pruned chain, or 0 for the continuous gamma on the full-history chain. Default: 1.')
-    parser.add_argument('-augment', action='store_true', help='Sample the mutation history of every site with the ARG; the default under a four-state model.')
-    parser.add_argument('-pruning', action='store_true', help='Sum the mutation history of every site out (the pruned chain) under a four-state model.')
+    parser.add_argument('-input', type=str, help='Input file: .vcf, .vcf.gz or .bcf.')
     parser.add_argument('-output', type=str, required=True, help='Output file prefix.')
     parser.add_argument('-start', type=float, required=True, help='Start position.')
     parser.add_argument('-end', type=float, required=True, help='End position (exclusive).')
@@ -321,7 +217,7 @@ def main():
     parser.add_argument('-thin', type=int, default=200, help='Thinning interval length. Default: 200.')
     parser.add_argument('-polar', type=float, help='Probability of correct polarization. Default: 0.5.')
     parser.add_argument('-resume', action='store_true', help='Resume MCMC with this flag.')
-    parser.add_argument('-ploidy', type=int, help="Ploidy of the vcf file (1 or 2). Default: 2, or 1 for an alignment.")
+    parser.add_argument('-ploidy', type=int, default=2, help="Ploidy of the vcf file (1 or 2). Default: 2.")
     parser.add_argument('-seed', type=int, default=42, help='Random seed for reproducibility. Default: 42.')
     parser.add_argument('-tip_ages', type=str, help='File with the sample ages in years before present. Requires -g.')
     parser.add_argument('-g', type=float, help='Generation time in years.')
@@ -347,41 +243,8 @@ def main():
 
     if args.tip_ages and not args.g:
         parser.error("You must provide -g with -tip_ages")
-    alignment = is_alignment(args.input)
-    four_state = args.subst_model != 'CFN'
-    if alignment and not four_state:
-        parser.error("An alignment input needs a four-state model")
-    if args.gamma < 0:
-        parser.error("-gamma must be 0 or at least 1")
-    if args.polar is not None and four_state:
-        parser.error("-polar applies to CFN only")
-    if alignment and args.chrom:
-        parser.error("-chrom applies to VCF input only")
-    if args.augment and args.pruning:
-        parser.error("-augment and -pruning select different chains; give one of them")
-    if args.augment and args.gamma > 1:
-        parser.error("-gamma above 1 is not available under -augment; -gamma 0 runs the continuous gamma")
-    if args.pruning and args.gamma == 0:
-        parser.error("-gamma 0 (the continuous gamma) runs the full-history chain only and is refused under -pruning")
-    matrix = not four_state and (args.gamma != 1 or args.augment)
-    if matrix:
-        if args.gamma != 1:
-            print("Warning: under CFN the gamma shape is identified only by sites with more than one mutation, which the two-state model does not represent.", file=sys.stderr)
-        if args.augment:
-            print("Warning: under -augment CFN runs the two-state matrix model, which costs more per rethread than the default CFN chain.", file=sys.stderr)
-        if args.polar is not None:
-            parser.error("-polar is refused on the CFN matrix path under -gamma or -augment")
-    if args.ploidy is None:
-        args.ploidy = 1 if alignment else 2
-    polar = (0.5 if args.polar is None else args.polar) if not four_state and not matrix else None
+    polar = 0.5 if args.polar is None else args.polar
     tips = tip_flags(args.tip_ages, args.g)
-    tips += f" -subst_model {args.subst_model}"
-    if args.gamma != 1:
-        tips += f" -gamma {args.gamma}"
-    if args.augment:
-        tips += " -augment"
-    if args.pruning:
-        tips += " -pruning"
     if args.mask_n:
         tips += f" -mask_n {args.mask_n}"
     if args.mask_p:
@@ -398,7 +261,7 @@ def main():
     if m == 0:
         parser.error("The mutation rate is set to 0")
     if args.Ne < 0:
-        args.Ne = compute_Ne(args.input, args.start, args.end, m, args.ploidy, ages, args.g, args.mask_n, args.mask_p, args.chrom, args.chrom_n, args.chrom_p, four_state)
+        args.Ne = compute_Ne(args.input, args.start, args.end, m, args.ploidy, ages, args.g, args.mask_n, args.mask_p, args.chrom, args.chrom_n, args.chrom_p)
     scaling = (f" -scaling_rep {args.scaling_rep}" if args.scaling_rep is not None else "") + (f" -scaling_bin {args.scaling_bin}" if args.scaling_bin is not None else "") + (f" -mapping_rep {args.mapping_rep}" if args.mapping_rep is not None else "")
     run_singer(args.Ne, args.m, args.r, args.start, args.end, args.input, args.output, args.n, args.thin, polar, args.ploidy, args.seed, tips, args.resume, scaling)
 
