@@ -203,8 +203,6 @@ public:
 
     vector<pair<double, int>>::iterator site_at(double x);
 
-    void set_collapsed(Node *leaf, double x, double y);
-
     pair<const int *, const int *> entries_in(Node *leaf, double x, double y) const;
 
     void site_missing(const Flat_tree &flat, double pos, vector<char> &missing);
@@ -213,13 +211,13 @@ public:
 
     Msg leaf_message(int code) const;
 
-    void peel_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, Node *partner = nullptr, int partner_state = 0);
+    void peel_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, Node *partner = nullptr, int partner_state = 0, Node *leaf = nullptr, const Msg &tip = ones);
 
     double root_value(const Msg &top, bool seen0, bool seen1) const;
 
-    void emission_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s, Node *partner = nullptr, int partner_state = 0);
+    void emission_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s, Node *partner = nullptr, int partner_state = 0, Node *leaf = nullptr, const Msg &tip = ones);
 
-    void cell_sum_site(const Flat_tree &flat, const Tree_order &t, double unit, const Genotype_likelihood &g, Node *query, Peel &p, Site_messages &s);
+    void cell_sum_site(const Flat_tree &flat, const Tree_order &t, double unit, const Genotype_likelihood &g, Node *leaf, Node *query, Peel &p, Site_messages &s);
 
     void sparse_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Node *removed, Node *joined, double cut, Peel &p, Site_messages &s, const vector<Msg> &full, double empty);
 
@@ -234,12 +232,6 @@ public:
     void resample_site(const Flat_tree &flat, const Tree_order &t, int bin, double pos, size_t e, size_t f, Node *only, Peel &p);
 
     void resample_entries(Node *leaf, double x, double y);
-
-    bool journal_on = false;
-
-    vector<tuple<Node *, double, double>> state_journal = {};
-
-    void undo_journal();
 
     void resample_genotypes();
 

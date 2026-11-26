@@ -63,17 +63,6 @@ double Node::called_width(int bin, double assayed) {
     return width_at < width_table.size() and width_table[width_at].first == bin ? width_table[width_at].second : assayed;
 }
 
-bool Node::likelihood_at(double pos, double &w0, double &w1) {
-    auto it = lower_bound(likelihood_sites.begin(), likelihood_sites.end(), pos,
-                          [](const pair<double, pair<double, double>> &e, double p) { return e.first < p; });
-    if (it == likelihood_sites.end() or it->first != pos) {
-        return false;
-    }
-    w0 = it->second.first;
-    w1 = it->second.second;
-    return true;
-}
-
 void Node::write_state(double pos, double s) {
     if (s == 0) {
         auto lo = lower_bound(mutation_sites.begin(), mutation_sites.end(), pos, site_less);

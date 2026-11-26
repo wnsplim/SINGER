@@ -54,6 +54,7 @@ public:
     vector<vector<Node *>> emit_nodes = {};
     int emit_trees = 0;
     bool sparse = false;
+    Node *query_leaf = nullptr;
     Node *removed_upper = nullptr;
     Node *joined_upper = nullptr;
     vector<vector<Msg>> full_in = {};
@@ -123,10 +124,6 @@ public:
     vector<Msg> ratio_pattern = {};
     Peel ratio_peel;
     vector<Msg> ratio_cell = {};
-
-    double redrawn_acceptance_ratio(ARG &a, tuple<double, Branch, double> cut_point);
-
-    map<double, Recombination> redrawn_records = {};
 
 };
 

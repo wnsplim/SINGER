@@ -82,10 +82,6 @@ public:
     int level = 0;
 
     double called_width(int bin, double assayed);
-
-    vector<pair<double, pair<double, double>>> likelihood_sites = {};
-
-    bool likelihood_at(double pos, double &w0, double &w1);
 };
 
 shared_ptr<Node> new_node(double t);

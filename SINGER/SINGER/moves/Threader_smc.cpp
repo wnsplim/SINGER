@@ -156,43 +156,31 @@ void Threader_smc::exact_internal_rethread(ARG &a, tuple<double, Branch, double>
     get_boundary(a);
     set_check_points(a);
     Node *query = a.removed_branches.begin()->second.lower_node;
-    a.set_collapsed(query, a.removed_branches.begin()->first, a.removed_branches.rbegin()->first);
-    auto [entry_lo, entry_hi] = a.entries_in(query, start, end);
-    bool entries = entry_lo != entry_hi;
-    a.journal_on = entries;
+    query_leaf = query;
     double ar = 0;
     if (!joins_deleted_node(a, a.removed_branches)) {
         run_BSP(a);
         sample_joining_branches(a);
-        if (!entries) {
-            find_resume_index(a);
-        }
+        find_resume_index(a);
         run_TSP(a);
         sample_joining_points(a);
         if (!has_gap_node(added_branches, a) and !joins_deleted_node(a, added_branches) and !a.empties_cut_span_end_recombination(new_joining_branches, added_branches)) {
-            ar = entries ? redrawn_acceptance_ratio(a, cut_point) : exact_acceptance_ratio(a);
+            ar = exact_acceptance_ratio(a);
         }
     }
     check_ratio(ar);
-    a.journal_on = false;
-    double q = uniform_random();
-    if (q < ar and entries) {
-        a.add(new_joining_branches, added_branches);
-        a.recombinations.erase(a.recombinations.lower_bound(start), a.recombinations.upper_bound(end));
-        a.recombinations.insert(redrawn_records.begin(), redrawn_records.end());
-    } else if (q < ar) {
+    if (uniform_random() < ar) {
         a.add(new_joining_branches, added_branches);
         a.smc_sample_recombinations(added_branches);
+        a.resample_entries(query, start, end);
         for (int slot = 0; sparse and slot < (int) site_slot.size(); slot++) {
             full_in[slot_site[slot]].swap(next_in[slot]);
         }
     } else {
-        a.undo_journal();
         a.add(a.joining_branches, a.removed_branches);
         a.smc_sample_recombinations(a.removed_branches);
     }
-    a.state_journal.clear();
-    query->likelihood_sites.clear();
+    query_leaf = nullptr;
     a.clear_remove_info();
 }
 
@@ -515,38 +503,6 @@ double Threader_smc::data_log_ratio(ARG &a) {
     return ll;
 }
 
-// the proposal reads the moved individual's genotype cells, which the ratio sums out, so they are redrawn on the proposed ARG before the decision and the reverse densities read the redrawn cells
-double Threader_smc::redrawn_acceptance_ratio(ARG &a, tuple<double, Branch, double> cut_point) {
-    double jac = cut_ratio(a);
-    double q_new = bsp.branch_log_q(new_joining_branches, start_index, a.coordinates);
-    double h_new = tsp.sel_log_q + tsp.time_log_q;
-    check_drawn_density(q_new, h_new);
-    double log_pi = log_pi_ratio(a);
-    map<double, Branch> old_jb = a.joining_branches, old_rb = a.removed_branches;
-    Node *query = old_rb.begin()->second.lower_node;
-    a.add(new_joining_branches, added_branches);
-    a.smc_sample_recombinations(added_branches);
-    a.resample_entries(query, start, end);
-    redrawn_records.clear();
-    redrawn_records.insert(a.recombinations.lower_bound(start), a.recombinations.upper_bound(end));
-    a.clear_remove_info();
-    a.cut_tree = a.get_tree_at(get<0>(cut_point));
-    a.remove({get<0>(cut_point), prev(added_branches.upper_bound(get<0>(cut_point)))->second, cut_time});
-    a.joining_branches = old_jb;
-    a.removed_branches = old_rb;
-    bsp.reset();
-    tsp.reset();
-    site_slot.clear();
-    emit_trees = 0;
-    set_check_points(a);
-    a.set_collapsed(query, old_rb.begin()->first, old_rb.rbegin()->first);
-    run_BSP(a);
-    double q_old = bsp.branch_log_q(old_jb, start_index, a.coordinates);
-    run_TSP(a, old_jb);
-    double h_old = tsp.eval_joining_nodes(old_jb, old_rb, start_index, a.coordinates);
-    return exp(log_pi + (q_old - q_new) + (h_old - h_new) + log(jac));
-}
-
 static bool joined_at(map<double, Branch> &m, double x, double y, Node *n) {
     auto it = m.upper_bound(x);
     --it;
@@ -650,13 +606,9 @@ void Threader_smc::set_emission_sites(ARG &a, Emission &e, bool &stale, int bin,
                     a.emission_site(emit_flat, emit_order, unit, m.first, query_node, emit_peel, site_pool[slot]);
                 }
             } else {
-                double w[2];
-                const Genotype_likelihood *g = nullptr;
-                if (query_node->likelihood_at(m.first, w[0], w[1])) {
-                    g = &a.genotype_likelihoods[*a.entries_in(query_node, m.first, nextafter(m.first, numeric_limits<double>::infinity())).first];
-                }
-                if (g != nullptr and g->leaves[1] != nullptr) {
-                    a.cell_sum_site(emit_flat, emit_order, unit, *g, query_node, emit_peel, site_pool[slot]);
+                auto [lo, hi] = a.entries_in(query_leaf, m.first, nextafter(m.first, numeric_limits<double>::infinity()));
+                if (lo != hi) {
+                    a.cell_sum_site(emit_flat, emit_order, unit, a.genotype_likelihoods[*lo], query_leaf, query_node, emit_peel, site_pool[slot]);
                 } else {
                     a.emission_site(emit_flat, emit_order, unit, m.first, query_node, emit_peel, site_pool[slot]);
                 }

@@ -614,24 +614,6 @@ pair<const int *, const int *> ARG::entries_in(Node *leaf, double x, double y) c
     return {v.data() + (lo - v.begin()), v.data() + (hi - v.begin())};
 }
 
-void ARG::set_collapsed(Node *leaf, double x, double y) {
-    auto [lo, hi] = entries_in(leaf, x, y);
-    leaf->likelihood_sites.clear();
-    for (const int *i = lo; i != hi; ++i) {
-        Genotype_likelihood &g = genotype_likelihoods[*i];
-        if (prev(removed_branches.upper_bound(g.pos))->second.lower_node != leaf) {
-            continue;
-        }
-        int k = g.leaves[0] == leaf ? 0 : 1;
-        double w[2] = {0.0, 0.0};
-        int nc = g.leaves[1] == nullptr ? 2 : 4;
-        for (int c = 0; c < nc; c++) {
-            w[k == 0 ? (c & 1) : (c >> 1)] += g.L[c];
-        }
-        leaf->likelihood_sites.push_back({g.pos, {w[0], w[1]}});
-    }
-}
-
 int Tree_order::index_of(const Flat_tree &flat, Node *n) const {
     int k = (int) (lower_bound(times.begin(), times.end(), n->time) - times.begin());
     while (flat.parents[k].first != n) {
@@ -693,7 +675,7 @@ Msg ARG::leaf_message(int code) const {
     return m;
 }
 
-void ARG::peel_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, Node *partner, int partner_state) {
+void ARG::peel_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, Node *partner, int partner_state, Node *leaf, const Msg &tip) {
     int nb = (int) flat.parents.size();
     site_missing(flat, pos, p.missing);
     p.msg.assign(nb, ones);
@@ -701,7 +683,10 @@ void ARG::peel_site(const Flat_tree &flat, const Tree_order &t, double unit, dou
     fill(p.count, p.count + 2, 0);
     for (int k = 0; k < nb; k++) {
         Node *l = flat.parents[k].first;
-        if (l->is_sample and !p.missing[k]) {
+        if (l == leaf and !p.missing[k]) {
+            p.msg[k] = tip;
+            p.empty[k] = tip;
+        } else if (l->is_sample and !p.missing[k]) {
             int code = l == partner ? partner_state : (int) l->get_state(pos);
             p.msg[k] = leaf_message(code);
             p.empty[k] = p.msg[k];
@@ -728,9 +713,9 @@ double ARG::root_value(const Msg &top, bool seen0, bool seen1) const {
     return v/penalty;
 }
 
-void ARG::emission_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s, Node *partner, int partner_state) {
+void ARG::emission_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s, Node *partner, int partner_state, Node *leaf, const Msg &tip) {
     int nb = (int) flat.parents.size();
-    peel_site(flat, t, unit, pos, p, partner, partner_state);
+    peel_site(flat, t, unit, pos, p, partner, partner_state, leaf, tip);
     Msg prior = {};
     root_prior(prior.data());
     s.unit = unit;
@@ -759,11 +744,7 @@ void ARG::emission_site(const Flat_tree &flat, const Tree_order &t, double unit,
         }
     }
     Msg nu_empty;
-    double w[2];
-    if (query->likelihood_at(pos, w[0], w[1])) {
-        s.nu = {w[0], w[1]};
-        nu_empty = s.nu;
-    } else if (query->is_sample) {
+    if (query->is_sample) {
         bool missing = any_missing and query->has_missing() and query->missing_at(Node::site_index(pos), pos);
         s.nu = missing ? ones : leaf_message((int) query->get_state(pos));
         nu_empty = s.nu;
@@ -782,19 +763,39 @@ void ARG::emission_site(const Flat_tree &flat, const Tree_order &t, double unit,
     s.in.swap(p.msg);
 }
 
-void ARG::cell_sum_site(const Flat_tree &flat, const Tree_order &t, double unit, const Genotype_likelihood &g, Node *query, Peel &p, Site_messages &s) {
-    int j = g.leaves[0] == query ? 0 : 1;
+void ARG::cell_sum_site(const Flat_tree &flat, const Tree_order &t, double unit, const Genotype_likelihood &g, Node *leaf, Node *query, Peel &p, Site_messages &s) {
+    int j = g.leaves[0] == leaf ? 0 : 1;
+    Node *partner = g.leaves[1 - j];
     double prior[2] = {};
     root_prior(prior);
     double scale = 0;
-    s.alt.resize(1);
-    for (int h = 0; h < 2; h++) {
+    int sets = partner == nullptr ? 1 : 2;
+    s.alt.resize(sets - 1);
+    for (int h = 0; h < sets; h++) {
         Site_messages &x = h == 0 ? s : s.alt[0];
-        emission_site(flat, t, unit, g.pos, query, p, x, g.leaves[1 - j], h);
+        Msg tip;
+        for (int q = 0; q < 2; q++) {
+            tip[q] = g.L[j == 0 ? q + 2*h : h + 2*q];
+        }
+        emission_site(flat, t, unit, g.pos, query, p, x, partner, h, leaf, tip);
+        int k = query->flat_index;
+        x.nu = x.in[k];
+        Msg nu_empty = p.empty[k];
+        if (sets == 2 and !p.in_main[leaf->flat_index] and !p.in_main[partner->flat_index]) {
+            for (int q = 0; q < 2; q++) {
+                tip[q] = g.L[j == 0 ? q + 2 : 1 + 2*q];
+            }
+            peel_site(flat, t, unit, g.pos, p, partner, 1, leaf, tip);
+            for (int q = 0; q < 2; q++) {
+                x.nu[q] += p.msg[k][q];
+                nu_empty[q] += p.empty[k][q];
+            }
+            sets = 1;
+            s.alt.clear();
+        }
         double e = 0, z = 0;
         for (int q = 0; q < 2; q++) {
-            x.nu[q] = g.L[j == 0 ? q + 2*h : h + 2*q];
-            e += prior[q]*p.empty[t.top][q]*x.nu[q];
+            e += prior[q]*p.empty[t.top][q]*nu_empty[q];
             z += prior[q]*x.in[t.top][q];
         }
         x.empty_term = (1 - penalty)*e;
@@ -841,10 +842,7 @@ void ARG::sparse_site(const Flat_tree &flat, const Tree_order &t, double unit, d
             s.above[c] = a;
         }
     }
-    double w[2];
-    if (query->likelihood_at(pos, w[0], w[1])) {
-        s.nu = {w[0], w[1]};
-    } else if (query->is_sample) {
+    if (query->is_sample) {
         bool missing = any_missing and query->has_missing() and query->missing_at(Node::site_index(pos), pos);
         s.nu = missing ? ones : leaf_message((int) query->get_state(pos));
     } else {
@@ -944,9 +942,6 @@ void ARG::set_entry(const Flat_tree &flat, const Tree_order &t, double unit, dou
             p.count[h] += 1;
             p.msg[k] = leaf_message(h);
         }
-        if (journal_on and g.leaves[j]->get_state(pos) != h) {
-            state_journal.push_back({g.leaves[j], pos, g.leaves[j]->get_state(pos)});
-        }
         g.leaves[j]->write_state(pos, h);
     }
     path_peel(flat, t, unit, p, p.msg);
@@ -1010,13 +1005,6 @@ void ARG::resample_entries(Node *leaf, double x, double y) {
         }
         resample_site(flat, t, get_index(pos), pos, e, f, leaf, p);
     }
-}
-
-void ARG::undo_journal() {
-    for (auto it = state_journal.rbegin(); it != state_journal.rend(); ++it) {
-        get<0>(*it)->write_state(get<1>(*it), get<2>(*it));
-    }
-    state_journal.clear();
 }
 
 void ARG::draw_mutations() {
@@ -1516,9 +1504,6 @@ void ARG::resample_site(const Flat_tree &flat, const Tree_order &t, int bin, dou
             }
             int k = t.index_of(flat, l);
             if (!p.missing[k] and l->get_state(pos) != state[k]) {
-                if (journal_on) {
-                    state_journal.push_back({l, pos, l->get_state(pos)});
-                }
                 l->write_state(pos, state[k]);
             }
         }
