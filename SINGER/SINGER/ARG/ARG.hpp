@@ -91,6 +91,7 @@ struct Site_messages {
     int tree = -1;
     double empty_term = 0;
     double scale = 1;
+    vector<Site_messages> alt = {};
 };
 
 class ARG {
@@ -212,11 +213,13 @@ public:
 
     Msg leaf_message(int code) const;
 
-    void peel_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p);
+    void peel_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, Node *partner = nullptr, int partner_state = 0);
 
     double root_value(const Msg &top, bool seen0, bool seen1) const;
 
-    void emission_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s);
+    void emission_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s, Node *partner = nullptr, int partner_state = 0);
+
+    void cell_sum_site(const Flat_tree &flat, const Tree_order &t, double unit, const Genotype_likelihood &g, Node *query, Peel &p, Site_messages &s);
 
     void sparse_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Node *removed, Node *joined, double cut, Peel &p, Site_messages &s, const vector<Msg> &full, double empty);
 

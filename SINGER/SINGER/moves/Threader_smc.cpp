@@ -631,6 +631,7 @@ void Threader_smc::set_emission_sites(ARG &a, Emission &e, bool &stale, int bin,
             if (slot == (int) site_pool.size()) {
                 site_pool.emplace_back();
             }
+            site_pool[slot].alt.clear();
             if (sparse) {
                 int site = (int) (a.site_at(m.first) - a.site_list.begin());
                 if (full_valid.size() != a.site_list.size()) {
@@ -649,7 +650,16 @@ void Threader_smc::set_emission_sites(ARG &a, Emission &e, bool &stale, int bin,
                     a.emission_site(emit_flat, emit_order, unit, m.first, query_node, emit_peel, site_pool[slot]);
                 }
             } else {
-                a.emission_site(emit_flat, emit_order, unit, m.first, query_node, emit_peel, site_pool[slot]);
+                double w[2];
+                const Genotype_likelihood *g = nullptr;
+                if (query_node->likelihood_at(m.first, w[0], w[1])) {
+                    g = &a.genotype_likelihoods[*a.entries_in(query_node, m.first, nextafter(m.first, numeric_limits<double>::infinity())).first];
+                }
+                if (g != nullptr and g->leaves[1] != nullptr) {
+                    a.cell_sum_site(emit_flat, emit_order, unit, *g, query_node, emit_peel, site_pool[slot]);
+                } else {
+                    a.emission_site(emit_flat, emit_order, unit, m.first, query_node, emit_peel, site_pool[slot]);
+                }
             }
             site_pool[slot].tree = emit_trees - 1;
             site_slot[m.first] = slot;

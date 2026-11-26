@@ -693,7 +693,7 @@ Msg ARG::leaf_message(int code) const {
     return m;
 }
 
-void ARG::peel_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p) {
+void ARG::peel_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Peel &p, Node *partner, int partner_state) {
     int nb = (int) flat.parents.size();
     site_missing(flat, pos, p.missing);
     p.msg.assign(nb, ones);
@@ -702,7 +702,7 @@ void ARG::peel_site(const Flat_tree &flat, const Tree_order &t, double unit, dou
     for (int k = 0; k < nb; k++) {
         Node *l = flat.parents[k].first;
         if (l->is_sample and !p.missing[k]) {
-            int code = (int) l->get_state(pos);
+            int code = l == partner ? partner_state : (int) l->get_state(pos);
             p.msg[k] = leaf_message(code);
             p.empty[k] = p.msg[k];
             p.count[code] += 1;
@@ -728,9 +728,9 @@ double ARG::root_value(const Msg &top, bool seen0, bool seen1) const {
     return v/penalty;
 }
 
-void ARG::emission_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s) {
+void ARG::emission_site(const Flat_tree &flat, const Tree_order &t, double unit, double pos, Node *query, Peel &p, Site_messages &s, Node *partner, int partner_state) {
     int nb = (int) flat.parents.size();
-    peel_site(flat, t, unit, pos, p);
+    peel_site(flat, t, unit, pos, p, partner, partner_state);
     Msg prior = {};
     root_prior(prior.data());
     s.unit = unit;
@@ -780,6 +780,27 @@ void ARG::emission_site(const Flat_tree &flat, const Tree_order &t, double unit,
     s.empty_term = (1 - penalty)*e;
     s.scale = z*nu_sum;
     s.in.swap(p.msg);
+}
+
+void ARG::cell_sum_site(const Flat_tree &flat, const Tree_order &t, double unit, const Genotype_likelihood &g, Node *query, Peel &p, Site_messages &s) {
+    int j = g.leaves[0] == query ? 0 : 1;
+    double prior[2] = {};
+    root_prior(prior);
+    double scale = 0;
+    s.alt.resize(1);
+    for (int h = 0; h < 2; h++) {
+        Site_messages &x = h == 0 ? s : s.alt[0];
+        emission_site(flat, t, unit, g.pos, query, p, x, g.leaves[1 - j], h);
+        double e = 0, z = 0;
+        for (int q = 0; q < 2; q++) {
+            x.nu[q] = g.L[j == 0 ? q + 2*h : h + 2*q];
+            e += prior[q]*p.empty[t.top][q]*x.nu[q];
+            z += prior[q]*x.in[t.top][q];
+        }
+        x.empty_term = (1 - penalty)*e;
+        scale += z*(x.nu[0] + x.nu[1]);
+    }
+    s.scale = scale;
 }
 
 static int rank_of(const Flat_tree &flat, Node *n) {

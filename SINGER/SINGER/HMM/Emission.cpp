@@ -5,7 +5,7 @@
 
 #include "Emission.hpp"
 
-static double site_ratio_two(const Site_messages &s, Branch &branch, double time, Node *node) {
+static double join_value(const Site_messages &s, Branch &branch, double time, Node *node) {
     int k = branch.lower_node->flat_index;
     double l2 = s.unit*(time - branch.lower_node->time);
     double l3 = s.unit*(time - node->time);
@@ -20,7 +20,15 @@ static double site_ratio_two(const Site_messages &s, Branch &branch, double time
         double l1 = s.unit*(branch.upper_node->time - time);
         w = a[0]*(m0 + l1*m1) + a[1]*(m1 + l1*m0);
     }
-    return (w - s.empty_term)/s.scale;
+    return w - s.empty_term;
+}
+
+static double site_ratio_two(const Site_messages &s, Branch &branch, double time, Node *node) {
+    double v = join_value(s, branch, time, node);
+    for (const Site_messages &x : s.alt) {
+        v += join_value(x, branch, time, node);
+    }
+    return v/s.scale;
 }
 
 double Emission::mut_emit(Branch &branch, double time, Node *node, double emit) {
