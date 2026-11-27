@@ -48,8 +48,6 @@ public:
 
     static std::vector<double> read_numbers(const std::string &filename, const std::string &missing_message);
 
-    static std::vector<std::string> read_last_line(const std::string &filename);
-
     std::string selected_chrom();
 
     void read_mask(std::string filename, double start);

@@ -42,8 +42,6 @@ public:
     
     Branch find_joining_branch(Branch removed_branch);
     
-    pair<Branch, double> sample_cut_point();
-
     pair<Branch, double> sample_uniform_cut_point();
 
     double prior_likelihood();

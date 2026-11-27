@@ -383,39 +383,6 @@ vector<double> Data_reader::read_numbers(const string &filename, const string &m
     return v;
 }
 
-vector<string> Data_reader::read_last_line(const string &filename) {
-    ifstream file(filename, ios::in);
-    vector<string> words;
-    if (!file.is_open()) {
-        cerr << "Error opening the file: " << filename << endl;
-        exit(1);
-    }
-    file.seekg(-1, ios_base::end);
-    bool found = false;
-    int newlines_encountered = 0;
-    char ch;
-    while (file.get(ch)) {
-        if (ch == '\n') {
-            newlines_encountered++;
-            if (newlines_encountered == 2) {
-                found = true;
-                break;
-            }
-        }
-        file.seekg(-2, ios_base::cur);
-    }
-    if (!found) {
-        return words;
-    }
-    string last_line_with_content;
-    getline(file, last_line_with_content);
-    stringstream ss(last_line_with_content);
-    string word;
-    while (ss >> word) {
-        words.push_back(word);
-    }
-    return words;
-}
 
 string Data_reader::selected_chrom() {
     if (chrom_name.empty()) {

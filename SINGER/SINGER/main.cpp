@@ -26,7 +26,6 @@ static bool parse_rate(const string &value, double &rate) {
 int main(int argc, const char * argv[]) {
     bool resume = false;
     bool no_data = false;
-    bool exact = true;
     string tip_ages_file = "";
     string mask_file = "";
     string mask_p_file = "";
@@ -46,10 +45,10 @@ int main(int argc, const char * argv[]) {
     double penalty = 1;
     double polar = 0.5;
     int burnin = 2000;
-    int scaling_rep = -1;
+    int scaling_rep = 1;
     int scaling_bin = 100;
     int mapping_rep = 1;
-    double epsilon_hmm = -1;
+    double epsilon_hmm = 0.1;
     double epsilon_psmc = 1.0/5;
     int ploidy = 2;
     int seed = 42;
@@ -194,13 +193,6 @@ int main(int argc, const char * argv[]) {
                 cerr << "Error: -g flag expects a number. " << endl;
                 exit(1);
             }
-        }
-        else if (arg == "--mode") {
-            if (i + 1 >= n_args || (args[i+1] != "original" && args[i+1] != "exact")) {
-                cerr << "Error: --mode flag expects original or exact. " << endl;
-                exit(1);
-            }
-            exact = args[++i] == "exact";
         }
         else if (arg == "-Ne") {
             if (i + 1 >= n_args || args[i+1][0] == '-') {
@@ -479,12 +471,6 @@ int main(int argc, const char * argv[]) {
         cerr << "Error: -g (generation time in years) must be provided with -tip_ages. " << endl;
         exit(1);
     }
-    if (scaling_rep < 0) {
-        scaling_rep = exact ? 1 : 5;
-    }
-    if (epsilon_hmm < 0) {
-        epsilon_hmm = exact ? 0.1 : 0.001;
-    }
     Sampler sampler;
     sampler.penalty = penalty;
     sampler.polar = polar;
@@ -530,7 +516,6 @@ int main(int argc, const char * argv[]) {
     if (tip_ages_file.size() > 0) {
         sampler.read_tip_ages(tip_ages_file, g);
     }
-    sampler.exact = exact;
     sampler.random_seed = seed;
     sampler.seed_given = seed_given;
     sampler.start = start_pos;
@@ -558,7 +543,7 @@ int main(int argc, const char * argv[]) {
     }
     sampler.load_data(start_pos, end_pos);
     sampler.iterative_start();
-    sampler.burn_in(burnin);
+    sampler.burn_in(burnin, spacing);
     sampler.internal_sample(num_iters, spacing);
     return 0;
 }

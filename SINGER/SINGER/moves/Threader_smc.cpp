@@ -106,7 +106,7 @@ void Threader_smc::thread(ARG &a, Node_ptr n) {
     a.approx_sample_recombinations();
     a.clear_remove_info();
     cout << get_time() << " : finish" << endl;
-    cout << a.recombinations.size() << endl;
+    cout << "Number of recombinations: " << a.recombinations.size() - 2 << endl;
 }
 
 void Threader_smc::rethread_sample(ARG &a, Node *n) {
@@ -121,26 +121,6 @@ void Threader_smc::rethread_sample(ARG &a, Node *n) {
     run_TSP(a);
     sample_joining_points(a);
     if (keeps_deleted_node(a) and !has_gap_node(added_branches, a)) {
-        a.add(new_joining_branches, added_branches);
-    } else {
-        a.add(a.joining_branches, a.removed_branches);
-    }
-    a.approx_sample_recombinations();
-    a.clear_remove_info();
-}
-
-void Threader_smc::internal_rethread(ARG &a, tuple<double, Branch, double> cut_point) {
-    cut_time = get<2>(cut_point);
-    a.remove(cut_point);
-    get_boundary(a);
-    set_check_points(a);
-    run_BSP(a);
-    sample_joining_branches(a);
-    run_TSP(a);
-    sample_joining_points(a);
-    double ar = has_gap_node(added_branches, a) ? 0 : acceptance_ratio(a);
-    check_ratio(ar);
-    if (uniform_random() < ar) {
         a.add(new_joining_branches, added_branches);
     } else {
         a.add(a.joining_branches, a.removed_branches);
@@ -919,26 +899,6 @@ static double pruned_height(ARG &a) {
     return 0;
 }
 
-double Threader_smc::acceptance_ratio(ARG &a) {
-    double cut_height = pruned_height(a);
-    double old_height = cut_height;
-    double new_height = cut_height;
-    auto old_join_it = a.joining_branches.upper_bound(a.cut_pos);
-    old_join_it--;
-    auto new_join_it = new_joining_branches.upper_bound(a.cut_pos);
-    new_join_it--;
-    auto old_add_it = a.removed_branches.upper_bound(a.cut_pos);
-    old_add_it--;
-    auto new_add_it = added_branches.upper_bound(a.cut_pos);
-    new_add_it--;
-    if (old_join_it->second.upper_node == a.root.get()) {
-        old_height = old_add_it->second.upper_node->time;
-    }
-    if (new_join_it->second.upper_node == a.root.get()) {
-        new_height = new_add_it->second.upper_node->time;
-    }
-    return old_height/new_height;
-}
 
 double Threader_smc::cut_ratio(ARG &a) {
     double cut_height = pruned_height(a);

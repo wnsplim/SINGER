@@ -151,19 +151,6 @@ Branch Tree::find_joining_branch(Branch removed_branch) {
     return Branch(c, p);
 }
 
-pair<Branch, double> Tree::sample_cut_point() {
-    double cut_time = uniform_random()*parents.rbegin()->first->time;
-    vector<Branch> candidates = {};
-    for (auto &x : parents) {
-        if (x.second->time > cut_time and x.first->time <= cut_time) {
-            candidates.push_back(Branch(x.first, x.second));
-        }
-    }
-    int index = (int) floor(candidates.size()*uniform_random());
-    index = min((int) candidates.size() - 1, index);
-    return {candidates[index], cut_time};
-}
-
 pair<Branch, double> Tree::sample_uniform_cut_point() {
     double target = uniform_random()*length();
     double acc = 0;

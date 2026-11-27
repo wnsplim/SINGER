@@ -33,7 +33,6 @@ public:
     double end = 0;
     double sequence_length = 0;
     ARG arg;
-    bool exact = false;
     int ploidy = 2;
     vector<double> tip_times = {};
     double tip_offset = 0;
@@ -81,7 +80,7 @@ public:
 
     void run_moves(Threader_smc &threader, int num_moves);
 
-    void burn_in(int num_moves);
+    void burn_in(int num_moves, int spacing);
 
     void internal_sample(int num_iters, int spacing);
 
@@ -93,9 +92,7 @@ public:
 
     void start_log();
 
-    void write_iterative_start();
-
-    void write_sample();
+    void write_log(int iteration, string type);
 
     void load_resume_arg(string filename);
 

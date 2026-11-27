@@ -30,7 +30,6 @@ public:
 
     void rethread_sample(ARG &a, Node *n);
     
-    void internal_rethread(ARG &a, tuple<double, Branch, double> cut_point);
 
     void exact_internal_rethread(ARG &a, tuple<double, Branch, double> cut_point);
 
@@ -104,7 +103,6 @@ public:
 
     void sample_joining_points(ARG &a);
 
-    double acceptance_ratio(ARG &a);
 
     bool joins_deleted_node(ARG &a, map<double, Branch> &lineage);
 

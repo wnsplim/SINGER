@@ -307,7 +307,6 @@ void ARG::remove(tuple<double, Branch, double> cut_point) {
     cut_tree.remove(center_branch, cut_node);
     backward_tree.remove(removed_branches.begin()->second, cut_node);
     start_tree = move(backward_tree);
-    end_tree = move(forward_tree);
 }
 
 void ARG::add(map<double, Branch> &new_joining_branches, map<double, Branch> &added_branches) {
@@ -1847,7 +1846,6 @@ void ARG::release_dead_nodes() {
     }
     keep_tree(cut_tree);
     keep_tree(start_tree);
-    keep_tree(end_tree);
     auto first_dead = partition(node_owner.begin(), node_owner.end(), [&](const Node_ptr &p) { return live.count(p.get()) > 0; });
     dead_nodes.assign(make_move_iterator(first_dead), make_move_iterator(node_owner.end()));
     node_owner.erase(first_dead, node_owner.end());
@@ -2079,23 +2077,6 @@ double ARG::get_arg_length() {
         prev_pos = next_pos;
     }
     return l;
-}
-
-tuple<double, Branch, double> ARG::sample_internal_cut() {
-    if (end >= sequence_length - 0.1) {
-        cut_pos = 0;
-        cut_tree = get_tree_at(0);
-    } else {
-        cut_tree = move(end_tree);
-        cut_pos = end;
-    }
-    Branch b;
-    double t;
-    tie(b, t) = cut_tree.sample_cut_point();
-    while (t == b.lower_node->time or t == b.upper_node->time) {
-        tie(b, t) = cut_tree.sample_cut_point();
-    }
-    return {cut_pos, b, t};
 }
 
 tuple<double, Branch, double> ARG::sample_uniform_cut() {

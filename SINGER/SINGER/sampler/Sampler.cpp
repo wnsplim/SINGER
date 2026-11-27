@@ -136,7 +136,7 @@ void Sampler::iterative_start() {
         threader.thread(arg, *it);
         it++;
         random_seed = random_engine();
-        write_iterative_start();
+        write_log((int) arg.sample_nodes.size(), "initial_thread");
         int placed = (int) arg.sample_nodes.size();
         if ((placed & (placed - 1)) == 0 or it == ordered_sample_nodes.end()) {
             sweep_samples();
@@ -158,7 +158,7 @@ void Sampler::sweep_samples() {
         random_seed = random_engine();
     }
     arg.release_dead_nodes();
-    write_iterative_start();
+    write_log((int) arg.sample_nodes.size(), "sweep");
 }
 
 void Sampler::run_moves(Threader_smc &threader, int num_moves) {
@@ -166,57 +166,73 @@ void Sampler::run_moves(Threader_smc &threader, int num_moves) {
         threader.reset();
         arg.penalty = penalty;
         arg.ancestral_prob = polar;
-        if (exact) {
-            threader.exact_internal_rethread(arg, arg.sample_uniform_cut());
-        } else {
-            threader.internal_rethread(arg, arg.sample_internal_cut());
-        }
+        threader.exact_internal_rethread(arg, arg.sample_uniform_cut());
         arg.clear_remove_info();
     }
     arg.release_dead_nodes();
 }
 
-void Sampler::burn_in(int num_moves) {
+void Sampler::burn_in(int num_moves, int spacing) {
     if (num_moves == 0) {
         return;
     }
     Threader_smc threader = Threader_smc(bsp_c, tsp_q);
     random_engine.seed(random_seed);
-    run_moves(threader, num_moves);
+    for (int done = 0; done < num_moves;) {
+        int k = min(spacing, num_moves - done);
+        run_moves(threader, k);
+        done += k;
+        write_log(done, "burn_in");
+    }
     random_seed = random_engine();
 }
 
 void Sampler::internal_sample(int num_iters, int spacing) {
     Threader_smc threader = Threader_smc(bsp_c, tsp_q);
     while (sample_index < num_iters) {
-        cout << get_time() << " Iteration: " << to_string(sample_index) << endl;
-        cout << "Random seed: " << random_seed << endl;
+        int seed = random_seed;
         random_engine.seed(random_seed);
         run_moves(threader, spacing);
         write_output(output_prefix + "_" + to_string(sample_index) + ".bin");
         random_seed = random_engine();
-        write_sample();
-        cout << "Start: " << arg.start << " , End: " << arg.end << endl;
+        write_log(sample_index, "main_run");
+        cout << get_time() << " Iteration: " << sample_index << ", Random seed: " << seed << ", Start: " << arg.start << ", End: " << arg.end << ", Number of recombinations: " << arg.recombinations.size() - 2 << endl;
         sample_index += 1;
-        cout << "Number of trees: " << arg.recombinations.size() << endl;
     }
 }
 
 void Sampler::resume_internal_sample(int num_iters, int spacing, int burn) {
-    vector<string> words = Data_reader::read_last_line(output_prefix + ".log");
-    bool sampled = words[2] == "rethread";
+    vector<string> words;
+    ifstream log(output_prefix + ".log");
+    string line;
+    while (getline(log, line)) {
+        istringstream iss(line);
+        vector<string> row;
+        string w;
+        while (iss >> w) {
+            row.push_back(w);
+        }
+        if (row.size() > 2 and (row[2] == "main_run" or row[2] == "sweep")) {
+            words = row;
+        }
+    }
+    if (words.empty()) {
+        cerr << "Error: " << output_prefix << ".log has no sweep or main_run row to resume from; start the run again without -resume. " << endl;
+        exit(1);
+    }
+    bool sampled = words[2] == "main_run";
     read_resume_point(words, output_prefix + (sampled ? "_" + words[1] : "_start_0") + ".bin");
     if (!seed_given) {
         random_seed = stoi(words[words.size() - 2]);
     }
     arg.penalty = penalty;
     arg.ancestral_prob = polar;
-    cout << "Number of trees: " << arg.recombinations.size() << endl;
+    cout << "Number of recombinations: " << arg.recombinations.size() - 2 << endl;
     if (sampled) {
         sample_index = stoi(words[1]) + 1;
     } else {
         sample_index = 0;
-        burn_in(burn);
+        burn_in(burn, spacing);
     }
     internal_sample(num_iters, spacing);
 }
@@ -274,7 +290,7 @@ void Sampler::start_log() {
     file.close();
 }
 
-void Sampler::write_iterative_start() {
+void Sampler::write_log(int iteration, string type) {
     string filename = output_prefix + ".log";
     ofstream file(filename, ios::out|ios::app);
     if (!file) {
@@ -282,25 +298,8 @@ void Sampler::write_iterative_start() {
         return;
     }
     file << get_time() << "\t"
-    << arg.sample_nodes.size() << "\t"
-    << "initial_thread" << "\t"
-    << arg.recombinations.size() - 2 << "\t"
-    << setprecision(numeric_limits<double>::max_digits10)
-    << arg.end << "\t"
-    << random_seed << "\t"
-    << TSP::counter << endl;
-}
-
-void Sampler::write_sample() {
-    string filename = output_prefix + ".log";
-    ofstream file(filename, ios::out|ios::app);
-    if (!file) {
-        cerr << "Error opening the file: " << filename << endl;
-        return;
-    }
-    file << get_time() << "\t"
-    << sample_index << "\t"
-    << "rethread" << "\t"
+    << iteration << "\t"
+    << type << "\t"
     << arg.recombinations.size() - 2 << "\t"
     << setprecision(numeric_limits<double>::max_digits10)
     << arg.end << "\t"
@@ -341,6 +340,4 @@ void Sampler::read_resume_point(const vector<string> &words, string filename) {
     int log_length = (int) words.size();
     TSP::counter = stoi(words[log_length - 1]);
     load_resume_arg(filename);
-    arg.end = stod(words[log_length - 3]);
-    arg.end_tree = arg.get_tree_at(arg.end);
 }

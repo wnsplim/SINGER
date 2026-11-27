@@ -136,7 +136,6 @@ public:
     double cut_pos = 0;
     Tree cut_tree;
     Tree start_tree;
-    Tree end_tree;
 
     ARG();
 
@@ -192,7 +191,6 @@ public:
 
     double get_arg_length();
 
-    tuple<double, Branch, double> sample_internal_cut();
 
     tuple<double, Branch, double> sample_uniform_cut();
 
