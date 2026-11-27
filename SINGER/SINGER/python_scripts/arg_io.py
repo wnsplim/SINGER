@@ -122,6 +122,11 @@ def finish_mutations(tables):
     tables.sort()
     tables.build_index()
     tables.compute_mutation_parents()
+    derived = np.array(tskit.unpack_strings(tables.mutations.derived_state, tables.mutations.derived_state_offset))
+    ancestral = np.full(tables.sites.num_rows, '0')
+    top = (tables.mutations.parent == -1) & (derived == '0')
+    ancestral[tables.mutations.site[top]] = '1'
+    tables.sites.packset_ancestral_state(ancestral.tolist())
     tables.compute_mutation_times()
 
 
