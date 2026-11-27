@@ -45,6 +45,7 @@ int main(int argc, const char * argv[]) {
     string r_value = "", m_value = "";
     double penalty = 1;
     double polar = 0.5;
+    int burnin = 2000;
     int scaling_rep = -1;
     int scaling_bin = 100;
     int mapping_rep = 1;
@@ -256,6 +257,22 @@ int main(int argc, const char * argv[]) {
             }
             if (polar <= 0 or polar >= 1) {
                 cerr << "Error: -polar flag expects a number between 0 and 1. " << endl;
+                exit(1);
+            }
+        }
+        else if (arg == "-burnin") {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
+                cerr << "Error: -burnin flag cannot be empty. " << endl;
+                exit(1);
+            }
+            try {
+                burnin = stoi(args[++i]);
+            } catch (const invalid_argument&) {
+                cerr << "Error: -burnin flag expects a number. " << endl;
+                exit(1);
+            }
+            if (burnin < 0) {
+                cerr << "Error: -burnin flag expects a number of at least 0. " << endl;
                 exit(1);
             }
         }
@@ -498,10 +515,15 @@ int main(int argc, const char * argv[]) {
     }
     if (!resume) {
         ofstream ckp(output_prefix + ".ckp");
+        bool burnin_given = false;
         for (auto &g : given) {
             if (ckp_skip.count(g.first) == 0) {
                 ckp << g.first << " " << g.second << "\n";
             }
+            burnin_given = burnin_given or g.first == "-burnin";
+        }
+        if (!burnin_given) {
+            ckp << "-burnin " << burnin << "\n";
         }
     }
     sampler.ploidy = ploidy;
@@ -531,11 +553,12 @@ int main(int argc, const char * argv[]) {
     }
     if (resume) {
         sampler.sequence_length = end_pos - start_pos;
-        sampler.resume_internal_sample(num_iters, spacing);
+        sampler.resume_internal_sample(num_iters, spacing, burnin);
         return 0;
     }
     sampler.load_data(start_pos, end_pos);
     sampler.iterative_start();
+    sampler.burn_in(burnin);
     sampler.internal_sample(num_iters, spacing);
     return 0;
 }

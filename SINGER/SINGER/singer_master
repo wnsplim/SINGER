@@ -307,6 +307,7 @@ def main():
     parser.add_argument('-end', type=float, required=True, help='End position.')
     parser.add_argument('-n', type=int, default=100, help='Number of MCMC samples. Default: 100.')
     parser.add_argument('-thin', type=int, default=200, help='Thinning interval length. Default: 200.')
+    parser.add_argument('-burnin', type=int, help='MCMC iterations before the first sample. Default: 2000.')
     parser.add_argument('-polar', type=float, help='Probability of correct polarization. Default: 0.5.')
     parser.add_argument('-resume', action='store_true', help='Resume MCMC with this flag.')
     parser.add_argument('-ploidy', type=int, default=2, help="Ploidy of the vcf file (1 or 2). Default: 2.")
@@ -395,7 +396,7 @@ def main():
         parser.error("The mutation rate is set to 0")
     if args.Ne < 0:
         args.Ne = compute_Ne(args.input, blocks, m, args.ploidy, ages, args.g, args.mask_n, args.mask_p, args.chrom, args.chrom_n, args.chrom_p)
-    scaling = (f" -scaling_rep {args.scaling_rep}" if args.scaling_rep is not None else "") + (f" -scaling_bin {args.scaling_bin}" if args.scaling_bin is not None else "") + (f" -mapping_rep {args.mapping_rep}" if args.mapping_rep is not None else "")
+    scaling = (f" -burnin {args.burnin}" if args.burnin is not None else "") + (f" -scaling_rep {args.scaling_rep}" if args.scaling_rep is not None else "") + (f" -scaling_bin {args.scaling_bin}" if args.scaling_bin is not None else "") + (f" -mapping_rep {args.mapping_rep}" if args.mapping_rep is not None else "")
     run_blocks([(output, singer_command(args.Ne, args.m, args.r, left, right, args.input, output, args.n, args.thin, polar, args.ploidy, seed, tips, args.resume, scaling), log)
                 for (left, right), (output, seed, log) in zip(blocks, outputs)], args.num_cores)
     if args.convert_step:

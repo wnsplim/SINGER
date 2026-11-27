@@ -161,26 +161,38 @@ void Sampler::sweep_samples() {
     write_iterative_start();
 }
 
+void Sampler::run_moves(Threader_smc &threader, int num_moves) {
+    for (int moves = 0; moves < num_moves; moves++) {
+        threader.reset();
+        arg.penalty = penalty;
+        arg.ancestral_prob = polar;
+        if (exact) {
+            threader.exact_internal_rethread(arg, arg.sample_uniform_cut());
+        } else {
+            threader.internal_rethread(arg, arg.sample_internal_cut());
+        }
+        arg.clear_remove_info();
+    }
+    arg.release_dead_nodes();
+}
+
+void Sampler::burn_in(int num_moves) {
+    if (num_moves == 0) {
+        return;
+    }
+    Threader_smc threader = Threader_smc(bsp_c, tsp_q);
+    random_engine.seed(random_seed);
+    run_moves(threader, num_moves);
+    random_seed = random_engine();
+}
+
 void Sampler::internal_sample(int num_iters, int spacing) {
     Threader_smc threader = Threader_smc(bsp_c, tsp_q);
     while (sample_index < num_iters) {
         cout << get_time() << " Iteration: " << to_string(sample_index) << endl;
-        int moves = 0;
         cout << "Random seed: " << random_seed << endl;
         random_engine.seed(random_seed);
-        while (moves < spacing) {
-            threader.reset();
-            arg.penalty = penalty;
-            arg.ancestral_prob = polar;
-            if (exact) {
-                threader.exact_internal_rethread(arg, arg.sample_uniform_cut());
-            } else {
-                threader.internal_rethread(arg, arg.sample_internal_cut());
-            }
-            moves += 1;
-            arg.clear_remove_info();
-        }
-        arg.release_dead_nodes();
+        run_moves(threader, spacing);
         write_output(output_prefix + "_" + to_string(sample_index) + ".bin");
         random_seed = random_engine();
         write_sample();
@@ -190,17 +202,22 @@ void Sampler::internal_sample(int num_iters, int spacing) {
     }
 }
 
-void Sampler::resume_internal_sample(int num_iters, int spacing) {
-    string log_file = output_prefix + ".log";
-    read_resume_point(log_file);
-    vector<string> words = Data_reader::read_last_line(log_file);
+void Sampler::resume_internal_sample(int num_iters, int spacing, int burn) {
+    vector<string> words = Data_reader::read_last_line(output_prefix + ".log");
+    bool sampled = words[2] == "rethread";
+    read_resume_point(words, output_prefix + (sampled ? "_" + words[1] : "_start_0") + ".bin");
     if (!seed_given) {
         random_seed = stoi(words[words.size() - 2]);
     }
-    sample_index += 1;
     arg.penalty = penalty;
     arg.ancestral_prob = polar;
     cout << "Number of trees: " << arg.recombinations.size() << endl;
+    if (sampled) {
+        sample_index = stoi(words[1]) + 1;
+    } else {
+        sample_index = 0;
+        burn_in(burn);
+    }
     internal_sample(num_iters, spacing);
 }
 
@@ -291,10 +308,10 @@ void Sampler::write_sample() {
     << TSP::counter << endl;
 }
 
-void Sampler::load_resume_arg() {
+void Sampler::load_resume_arg(string filename) {
     arg = ARG(Ne, sequence_length);
     arg.num_samples = ploidy*(int) data.sample_names().size();
-    arg.read_sample(output_prefix + "_" + to_string(sample_index) + ".bin");
+    arg.read_sample(filename);
     arg.read_coordinates(output_prefix + "_coordinates.txt");
     vector<Node *> leaves(arg.sample_nodes.size());
     for (Node *n : arg.sample_nodes) {
@@ -316,16 +333,14 @@ void Sampler::load_resume_arg() {
     arg.compute_assayed();
     set_entries(leaves);
     if (!arg.genotype_likelihoods.empty()) {
-        arg.read_cells(output_prefix + "_" + to_string(sample_index) + ".bin");
+        arg.read_cells(filename);
     }
 }
 
-void Sampler::read_resume_point(string filename) {
-    vector<string> words = Data_reader::read_last_line(filename);
+void Sampler::read_resume_point(const vector<string> &words, string filename) {
     int log_length = (int) words.size();
     TSP::counter = stoi(words[log_length - 1]);
-    sample_index = stoi(words[1]);
-    load_resume_arg();
+    load_resume_arg(filename);
     arg.end = stod(words[log_length - 3]);
     arg.end_tree = arg.get_tree_at(arg.end);
 }

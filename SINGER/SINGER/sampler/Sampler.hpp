@@ -79,9 +79,13 @@ public:
 
     void sweep_samples();
 
+    void run_moves(Threader_smc &threader, int num_moves);
+
+    void burn_in(int num_moves);
+
     void internal_sample(int num_iters, int spacing);
 
-    void resume_internal_sample(int num_iters, int spacing);
+    void resume_internal_sample(int num_iters, int spacing, int burn);
 
     vector<double> rescale();
 
@@ -93,9 +97,9 @@ public:
 
     void write_sample();
 
-    void load_resume_arg();
+    void load_resume_arg(string filename);
 
-    void read_resume_point(string filename);
+    void read_resume_point(const vector<string> &words, string filename);
 };
 
 #endif /* Sampler_hpp */
