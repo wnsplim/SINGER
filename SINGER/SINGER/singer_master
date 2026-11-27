@@ -322,6 +322,7 @@ def main():
     parser.add_argument('-genotype_lik', action='store_true', help='Use genotype likelihoods (GL or PL).')
     parser.add_argument('-phase', action='store_true', help='Sample the phase of heterozygous genotypes.')
     parser.add_argument('-genotype_calls', type=str, help='VCF supplying GL or PL. Used with -genotype_lik.')
+    parser.add_argument('-penalty', type=float, help='Factor on the mutation rate of the site model: 1 is the binary CTMC (CFN), toward 0 infinite sites. Default: 1.')
     parser.add_argument('-scaling_rep', type=int, help='ARG rescaling rounds. Default: 1.')
     parser.add_argument('-scaling_bin', type=int, help='Time bins for rescaling. Default: 100.')
     parser.add_argument('-mapping_rep', type=int, help='Mapping draws per sample. Default: 1.')
@@ -362,6 +363,8 @@ def main():
         tips += " -phase"
     if args.genotype_calls:
         tips += f" -genotype_calls {args.genotype_calls}"
+    if args.penalty is not None:
+        tips += f" -penalty {args.penalty}"
     ages = read_tip_ages(args.tip_ages, args.input, args.ploidy) if args.tip_ages else None
     if args.L is not None and args.L <= 0:
         parser.error("-L must be above 0")

@@ -71,6 +71,7 @@ The optional flags include:
 |**-genotype_lik**|optional|use the GL or PL of each genotype, from the input record or else from `-genotype_calls`.|
 |**-phase**|optional|sample the phase of each heterozygous genotype. Without it, a genotype written phased (`0\|1`) keeps its written phase; under `-genotype_lik`, an unphased heterozygous genotype has its phase sampled regardless of `-phase`.|
 |**-genotype_calls**|optional|the caller's VCF whose GL or PL are used when the input has none, matched by position, REF, ALT and sample name. Read only with `-genotype_lik`.|
+|**-penalty**|optional|factor on the mutation rate of the site model, above 0 (default 1). At 1 the site model is the binary CTMC (CFN); toward 0 it approaches infinite sites.|
 |**-chrom**|optional|the chromosome name to read from the input file (default: the first chromosome in the file)|
 |**-chrom_n**|optional|the chromosome name to read from the `-mask_n` file (default: the `-chrom` chromosome)|
 |**-chrom_p**|optional|the chromosome name to read from the `-mask_p` file (default: the `-chrom` chromosome)|

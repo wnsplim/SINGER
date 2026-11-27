@@ -1,6 +1,6 @@
 [project]
 name = "singer"
-version = "0.2.6"
+dynamic = ["version"]
 requires-python = ">=3.10"
 dependencies = [
     "cython",
