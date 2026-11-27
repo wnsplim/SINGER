@@ -161,6 +161,189 @@ void Sampler::sweep_samples() {
     write_log((int) arg.sample_nodes.size(), "sweep");
 }
 
+template <class T> static void put(ofstream &f, T x) {
+    f.write(reinterpret_cast<const char *>(&x), sizeof(T));
+}
+
+static double quantile(const vector<double> &v, double q) {
+    double h = q*(v.size() - 1);
+    int lo = (int) floor(h);
+    int hi = min(lo + 1, (int) v.size() - 1);
+    return v[lo] + (h - lo)*(v[hi] - v[lo]);
+}
+
+static void summarize(const Tree &tree, int n, double Ne, double offset, double *stats, vector<int> &history) {
+    vector<Node *> inner;
+    vector<pair<Node *, Node *>> edges;
+    double tbl = 0;
+    for (auto &p : tree.parents) {
+        if (p.second->index != -1) {
+            tbl += (p.second->time - p.first->time)*Ne;
+            edges.push_back({p.second, p.first});
+        }
+        if (!p.first->is_sample) {
+            inner.push_back(p.first);
+        }
+    }
+    sort(inner.begin(), inner.end(), compare_node());
+    sort(edges.begin(), edges.end());
+    vector<double> ages(inner.size());
+    for (int i = 0; i < (int) inner.size(); i++) {
+        ages[i] = (inner[i]->time + offset)*Ne;
+    }
+    stats[0] = tbl;
+    stats[1] = quantile(ages, 0.25);
+    stats[2] = quantile(ages, 0.5);
+    stats[3] = quantile(ages, 0.75);
+    vector<Node *> active(n);
+    for (auto &p : tree.parents) {
+        if (p.first->is_sample) {
+            active[p.first->index] = p.first;
+        }
+    }
+    history.clear();
+    for (Node *u : inner) {
+        auto e = lower_bound(edges.begin(), edges.end(), make_pair(u, (Node *) nullptr));
+        int a = (int) (find(active.begin(), active.end(), e->second) - active.begin());
+        int b = (int) (find(active.begin(), active.end(), (e + 1)->second) - active.begin());
+        if (a > b) {
+            swap(a, b);
+        }
+        history.push_back(b*(b - 1)/2 + a);
+        active.erase(active.begin() + b);
+        active.erase(active.begin() + a);
+        active.push_back(u);
+    }
+}
+
+void Sampler::refresh_summary() {
+    int n = (int) arg.sample_nodes.size();
+    Tree tree;
+    int at = -2;
+    map<double, Recombination>::iterator it;
+    for (int j = 0; j < (int) log_positions.size(); j++) {
+        if (!log_dirty[j]) {
+            continue;
+        }
+        if (at == j - 1) {
+            while (it->first <= log_positions[j]) {
+                tree.forward_update(it->second);
+                it++;
+            }
+        } else {
+            tree = arg.get_tree_at(log_positions[j]);
+            it = arg.recombinations.upper_bound(log_positions[j]);
+        }
+        at = j;
+        summarize(tree, n, arg.Ne, arg.time_offset, &log_stats[4*j], log_histories[j]);
+        log_dirty[j] = 0;
+        log_changed[j] = 1;
+    }
+}
+
+static void append_number(string &line, double v) {
+    char buffer[32];
+    auto r = to_chars(buffer, buffer + 32, v);
+    line.append(buffer, r.ptr);
+}
+
+void Sampler::write_summary_row() {
+    string line = to_string(moves_done) + "\t" + to_string(arg.recombinations.size() - 2);
+    for (double v : log_stats) {
+        line += '\t';
+        append_number(line, v);
+    }
+    summary_file << line << '\n';
+}
+
+void Sampler::write_trees_row() {
+    put(trees_file, (int64_t) moves_done);
+    put(trees_file, (int32_t) count(log_changed.begin(), log_changed.end(), 1));
+    for (int j = 0; j < (int) log_positions.size(); j++) {
+        if (log_changed[j]) {
+            put(trees_file, (int32_t) j);
+            for (int c : log_histories[j]) {
+                if (code_width == 2) {
+                    put(trees_file, (uint16_t) c);
+                } else {
+                    put(trees_file, (uint32_t) c);
+                }
+            }
+            log_changed[j] = 0;
+        }
+    }
+}
+
+void Sampler::start_summary(bool resume) {
+    if (thin_log == 0) {
+        return;
+    }
+    int n = (int) arg.sample_nodes.size();
+    code_width = n*(n - 1)/2 - 1 < 65536 ? 2 : 4;
+    log_positions.clear();
+    for (int j = 0; j < thin_log_pos; j++) {
+        log_positions.push_back((j + 0.5)*arg.sequence_length/thin_log_pos);
+    }
+    log_stats.assign(4*thin_log_pos, 0);
+    log_histories.assign(thin_log_pos, {});
+    log_dirty.assign(thin_log_pos, 1);
+    log_changed.assign(thin_log_pos, 0);
+    refresh_summary();
+    string summary_name = output_prefix + "_summary.log", trees_name = output_prefix + "_summary_trees.bin";
+    if (resume) {
+        ifstream text(summary_name);
+        string line;
+        long long offset = 0;
+        while (getline(text, line) and (line[0] == '#' or line[0] == 's' or stoll(line) <= moves_done)) {
+            offset += line.size() + 1;
+        }
+        text.close();
+        filesystem::resize_file(summary_name, offset);
+        ifstream in(trees_name, ios::binary);
+        offset = 4*sizeof(int64_t) + (1 + thin_log_pos)*sizeof(double);
+        long long entry = sizeof(int32_t) + (n - 1)*code_width;
+        in.seekg(offset);
+        int64_t iteration;
+        while (in.read(reinterpret_cast<char *>(&iteration), sizeof(int64_t)) and iteration <= moves_done) {
+            int32_t m;
+            in.read(reinterpret_cast<char *>(&m), sizeof(int32_t));
+            offset += sizeof(int64_t) + sizeof(int32_t) + m*entry;
+            in.seekg(offset);
+        }
+        in.close();
+        filesystem::resize_file(trees_name, offset);
+        summary_file.open(summary_name, ios::app);
+        trees_file.open(trees_name, ios::binary | ios::app);
+        fill(log_changed.begin(), log_changed.end(), 0);
+    } else {
+        summary_file.open(summary_name, ios::trunc);
+        string line = "# positions:";
+        for (double x : log_positions) {
+            line += ' ';
+            append_number(line, x);
+        }
+        line += "\nstate\trecombinations";
+        for (int j = 0; j < thin_log_pos; j++) {
+            for (string s : {"tbl_", "q25_", "q50_", "q75_"}) {
+                line += "\t" + s + to_string(j);
+            }
+        }
+        summary_file << line << '\n';
+        write_summary_row();
+        summary_file.flush();
+        trees_file.open(trees_name, ios::binary | ios::trunc);
+        for (int64_t h : {(int64_t) thin_log_pos, (int64_t) n, (int64_t) thin_log, (int64_t) code_width}) {
+            put(trees_file, h);
+        }
+        put(trees_file, arg.sequence_length);
+        for (double x : log_positions) {
+            put(trees_file, x);
+        }
+        write_trees_row();
+        trees_file.flush();
+    }
+}
+
 void Sampler::run_moves(Threader_smc &threader, int num_moves) {
     for (int moves = 0; moves < num_moves; moves++) {
         threader.reset();
@@ -168,6 +351,19 @@ void Sampler::run_moves(Threader_smc &threader, int num_moves) {
         arg.ancestral_prob = polar;
         threader.exact_internal_rethread(arg, arg.sample_uniform_cut());
         arg.clear_remove_info();
+        moves_done += 1;
+        if (thin_log > 0) {
+            if (threader.accepted) {
+                for (auto j = lower_bound(log_positions.begin(), log_positions.end(), arg.start); j != log_positions.end() and *j <= arg.end; j++) {
+                    log_dirty[j - log_positions.begin()] = 1;
+                }
+            }
+            if (moves_done % thin_log == 0) {
+                refresh_summary();
+                write_summary_row();
+                write_trees_row();
+            }
+        }
     }
     arg.release_dead_nodes();
 }
@@ -182,7 +378,7 @@ void Sampler::burn_in(int num_moves, int spacing) {
         int k = min(spacing, num_moves - done);
         run_moves(threader, k);
         done += k;
-        write_log(done, "burn_in");
+        write_log(moves_done, "burn_in");
     }
     random_seed = random_engine();
 }
@@ -194,9 +390,13 @@ void Sampler::internal_sample(int num_iters, int spacing) {
         random_engine.seed(random_seed);
         run_moves(threader, spacing);
         write_output(output_prefix + "_" + to_string(sample_index) + ".bin");
+        if (thin_log > 0) {
+            summary_file.flush();
+            trees_file.flush();
+        }
         random_seed = random_engine();
-        write_log(sample_index, "main_run");
-        cout << get_time() << " Iteration: " << sample_index << ", Random seed: " << seed << ", Start: " << arg.start << ", End: " << arg.end << ", Number of recombinations: " << arg.recombinations.size() - 2 << endl;
+        write_log(moves_done, "main_run");
+        cout << get_time() << " Sample: " << sample_index << ", Iteration: " << moves_done << ", Random seed: " << seed << ", Start: " << arg.start << ", End: " << arg.end << ", Number of recombinations: " << arg.recombinations.size() - 2 << endl;
         sample_index += 1;
     }
 }
@@ -221,15 +421,18 @@ void Sampler::resume_internal_sample(int num_iters, int spacing, int burn) {
         exit(1);
     }
     bool sampled = words[2] == "main_run";
-    read_resume_point(words, output_prefix + (sampled ? "_" + words[1] : "_start_0") + ".bin");
+    moves_done = sampled ? stoll(words[1]) : 0;
+    int done_samples = (int) ((moves_done - burn)/spacing);
+    read_resume_point(words, output_prefix + (sampled ? "_" + to_string(done_samples - 1) : "_start_0") + ".bin");
     if (!seed_given) {
         random_seed = stoi(words[words.size() - 2]);
     }
     arg.penalty = penalty;
     arg.ancestral_prob = polar;
     cout << "Number of recombinations: " << arg.recombinations.size() - 2 << endl;
+    start_summary(true);
     if (sampled) {
-        sample_index = stoi(words[1]) + 1;
+        sample_index = done_samples;
     } else {
         sample_index = 0;
         burn_in(burn, spacing);
@@ -290,7 +493,7 @@ void Sampler::start_log() {
     file.close();
 }
 
-void Sampler::write_log(int iteration, string type) {
+void Sampler::write_log(long long iteration, string type) {
     string filename = output_prefix + ".log";
     ofstream file(filename, ios::out|ios::app);
     if (!file) {

@@ -1,0 +1,13 @@
+[project]
+name = "singer"
+version = "0.2.6"
+requires-python = ">=3.10"
+dependencies = [
+    "cython",
+    "numpy",
+    "setuptools",
+    "tskit>=1.0",
+]
+
+[tool.uv]
+package = false

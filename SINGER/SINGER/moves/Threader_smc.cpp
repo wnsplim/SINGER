@@ -149,7 +149,8 @@ void Threader_smc::exact_internal_rethread(ARG &a, tuple<double, Branch, double>
         }
     }
     check_ratio(ar);
-    if (uniform_random() < ar) {
+    accepted = uniform_random() < ar;
+    if (accepted) {
         a.add(new_joining_branches, added_branches);
         a.smc_sample_recombinations(added_branches);
         a.resample_entries(query, start, end);

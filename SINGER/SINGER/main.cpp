@@ -45,6 +45,8 @@ int main(int argc, const char * argv[]) {
     double penalty = 1;
     double polar = 0.5;
     int burnin = 2000;
+    int thin_log = -1;
+    int thin_log_pos = 100;
     int scaling_rep = 1;
     int scaling_bin = 100;
     int mapping_rep = 1;
@@ -268,6 +270,22 @@ int main(int argc, const char * argv[]) {
                 exit(1);
             }
         }
+        else if (arg == "-thin_log" or arg == "-thin_log_pos") {
+            if (i + 1 >= n_args || args[i+1][0] == '-') {
+                cerr << "Error: " << arg << " flag cannot be empty. " << endl;
+                exit(1);
+            }
+            try {
+                (arg == "-thin_log" ? thin_log : thin_log_pos) = stoi(args[++i]);
+            } catch (const invalid_argument&) {
+                cerr << "Error: " << arg << " flag expects a number. " << endl;
+                exit(1);
+            }
+            if (thin_log_pos < 1) {
+                cerr << "Error: -thin_log_pos flag expects a number of at least 1. " << endl;
+                exit(1);
+            }
+        }
         else if (arg == "-scaling_rep") {
             if (i + 1 >= n_args || args[i+1][0] == '-') {
                 cerr << "Error: -scaling_rep flag cannot be empty. " << endl;
@@ -471,7 +489,12 @@ int main(int argc, const char * argv[]) {
         cerr << "Error: -g (generation time in years) must be provided with -tip_ages. " << endl;
         exit(1);
     }
+    if (thin_log < 0) {
+        thin_log = max(1, (int) round(spacing/100.0));
+    }
     Sampler sampler;
+    sampler.thin_log = thin_log;
+    sampler.thin_log_pos = thin_log_pos;
     sampler.penalty = penalty;
     sampler.polar = polar;
     sampler.scaling_rep = scaling_rep;
@@ -501,15 +524,15 @@ int main(int argc, const char * argv[]) {
     }
     if (!resume) {
         ofstream ckp(output_prefix + ".ckp");
-        bool burnin_given = false;
         for (auto &g : given) {
             if (ckp_skip.count(g.first) == 0) {
                 ckp << g.first << " " << g.second << "\n";
             }
-            burnin_given = burnin_given or g.first == "-burnin";
         }
-        if (!burnin_given) {
-            ckp << "-burnin " << burnin << "\n";
+        for (auto &d : vector<pair<string, int>>{{"-burnin", burnin}, {"-thin_log", thin_log}, {"-thin_log_pos", thin_log_pos}}) {
+            if (none_of(given.begin(), given.end(), [&](const pair<string, string> &g) { return g.first == d.first; })) {
+                ckp << d.first << " " << d.second << "\n";
+            }
         }
     }
     sampler.ploidy = ploidy;
@@ -543,6 +566,7 @@ int main(int argc, const char * argv[]) {
     }
     sampler.load_data(start_pos, end_pos);
     sampler.iterative_start();
+    sampler.start_summary(false);
     sampler.burn_in(burnin, spacing);
     sampler.internal_sample(num_iters, spacing);
     return 0;

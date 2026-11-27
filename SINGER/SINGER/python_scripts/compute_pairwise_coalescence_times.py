@@ -1,6 +1,5 @@
 import tskit
 import numpy as np
-import pandas as pd
 import argparse
 
 def compute_pairwise_coalescence_time(ts, leaf_index, query_index, s):
@@ -23,16 +22,16 @@ def compute_all_pairwise_coalescence_times(ts, leaf_index, s):
 
 def main():
     parser = argparse.ArgumentParser(description="Calculate pairwise coalescence times for a given leaf node.")
-    parser.add_argument("--trees_file", type=str, required=True, help="Path to the tree sequence file.")
-    parser.add_argument("--leaf_index", type=int, required=True, help="Index of the leaf node.")
-    parser.add_argument("--interval_size", type=int, required=True, help="Size of the interval.")
-    parser.add_argument("--output_file", type=str, required=True, help="Output filename.")
-    
+    parser.add_argument("-input", type=str, required=True, help="Path to the tree sequence file.")
+    parser.add_argument("-leaf_index", type=int, required=True, help="Index of the leaf node.")
+    parser.add_argument("-interval_size", type=int, required=True, help="Size of the interval.")
+    parser.add_argument("-output", type=str, required=True, help="Output file prefix.")
+
     args = parser.parse_args()
-    
-    ts = tskit.load(args.trees_file)
+
+    ts = tskit.load(args.input)
     all_coalescence_times = compute_all_pairwise_coalescence_times(ts, args.leaf_index, args.interval_size)
-    np.savetxt(args.output_file, all_coalescence_times, delimiter=",")
+    np.savetxt(f"{args.output}_pairwise_coalescence_times.csv", all_coalescence_times, delimiter=",")
     
  
 if __name__ == "__main__":

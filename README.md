@@ -8,6 +8,8 @@ If you want to compile the source files, then C++17 and htslib are required. Oth
 
 The analysis on the inferred ARGs can be performed using [tskit](https://tskit.dev/tskit/docs/stable/introduction.html), and you can find the installation instructions using the link. **Note that now we support the compatibility with tskit version 1.0 onward, which requires python 3.10 and above (from version 0.1.9).** 
 
+The Python scripts need numpy, tskit, Cython and setuptools. `pyproject.toml` lists them and `uv.lock` pins their versions. To install them with [uv](https://docs.astral.sh/uv/), run `uv sync` in this folder, then run the scripts with `uv run python`.
+
 ## Installations
 
 The easiest way is to directly go to the folder `releases/` and download one of the versions which work for your working platform (Linux/MacOS_Intel/MacOS_M1). After downloading, you can decompress it using:
@@ -56,6 +58,8 @@ The optional flags include:
 |**-n**|optional|the number of posterior samples, default at 100|
 |**-thin**|optional|the number of MCMC iterations between adjacent samples, default at 200|
 |**-burnin**|optional|the number of MCMC iterations before the first sample, default at 2000. No sample written during the burn-in.|
+|**-thin_log**|optional|the number of MCMC iterations between rows of the summary log, default at `-thin`/100. Set to 0 to write no summary log|
+|**-thin_log_pos**|optional|the number of equidistant positions in the summary log, default at 100|
 |**-polar**|optional|the probability of correct polarization, default at 0.5 for unpolarized data, please use 0.99 for polarized data|
 |**-scaling_rep**|optional|the number of ARG rescaling rounds applied to a copy of each written posterior sample, default at 1; the rescaled node times are written to the sample file. Set to 0 to disable rescaling|
 |**-scaling_bin**|optional|the number of time bins used for ARG rescaling, default at 100|
@@ -66,7 +70,7 @@ The optional flags include:
 |**-mask_p**|optional|Positive mask. A BED file of the accessible regions, for example the 1000 Genomes strict accessibility mask for GRCh37 ([20141020.strict_mask.whole_genome.bed](https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/supporting/accessible_genome_masks/20141020.strict_mask.whole_genome.bed)). You can use `-mask_p` together with `-mask_n`.|
 |**-genotype_lik**|optional|use the GL or PL of each genotype, from the input record or else from `-genotype_calls`.|
 |**-phase**|optional|sample the phase of each heterozygous genotype. Without it, a genotype written phased (`0\|1`) keeps its written phase; under `-genotype_lik`, an unphased heterozygous genotype has its phase sampled regardless of `-phase`.|
-|**-genotype_calls**|optional|the caller's VCF whose GL or PL are used where the input has none, matched by position, REF, ALT and sample name. Read only with `-genotype_lik`.|
+|**-genotype_calls**|optional|the caller's VCF whose GL or PL are used when the input has none, matched by position, REF, ALT and sample name. Read only with `-genotype_lik`.|
 |**-chrom**|optional|the chromosome name to read from the input file (default: the first chromosome in the file)|
 |**-chrom_n**|optional|the chromosome name to read from the `-mask_n` file (default: the `-chrom` chromosome)|
 |**-chrom_p**|optional|the chromosome name to read from the `-mask_p` file (default: the `-chrom` chromosome)|
@@ -168,13 +172,13 @@ The file `prefix_of_output_file.blocks` lists the region and the blocks that ran
 We recommend converting these files to tree sequence format in tskit, with this function:
 
 ```
-path_to_singer/convert_to_tskit.py -input prefix_of_arg_files -output prefix_of_tskit_files
+path_to_singer/convert_to_tskit.py -input prefix_of_output_file.ckp -output prefix_of_tskit_files
 -start start_index -end end_index -step step_size
 ```
 
 |flag|details|
 |-------------------|---|
-|**-input**|the `-output` prefix of the SINGER run|
+|**-input**|the `.ckp` file of the SINGER run, or its `.blocks` file for a run in blocks|
 |**-output**|prefix of the .trees files to write|
 |**-start**|index of the first posterior sample to convert|
 |**-end**|index "after" the last posterior sample to convert|
@@ -190,7 +194,7 @@ Each tree sequence holds:
 - the counts in its edge metadata (`expected_mutations`, `informed_bases`). Call `tables.edges.drop_metadata()` before `simplify`, which tskit refuses on edges with metadata;
 - the flags of the run in its provenance record.
 
-For a run in blocks (`-L` or `-blocks`), the same command stitches the blocks into one tree sequence. When `prefix_of_output_file.blocks` is present, `convert_to_tskit.py` places each block at its chromosome position in one tree sequence. The sequence length is the end of the region. A gap between the blocks, and a block that was skipped, has no edges and no sites. To leave a block out of the tree sequence, delete its line from `prefix_of_output_file.blocks` before you convert.
+For a run in blocks (`-L` or `-blocks`), the same command with `-input prefix_of_output_file.blocks` stitches the blocks into one tree sequence. `convert_to_tskit.py` places each block at its chromosome position in one tree sequence. The sequence length is the end of the region. A gap between the blocks, and a block that was skipped, has no edges and no sites. To leave a block out of the tree sequence, delete its line from `prefix_of_output_file.blocks` before you convert.
 
 You can also give `-convert_step k` to `singer_master`. At the end of the run, it then converts every `k`-th sample to `prefix_of_output_file_{i}.trees` with the same content, and attaches the sample names of the input file.
 
@@ -199,15 +203,21 @@ You can also give `-convert_step k` to `singer_master`. At the end of the run, i
 
 ### Examining the convergence of the MCMC in SINGER
 
-SINGER is an MCMC-based sampling algorithm. To examine the convergence of it we normally examine the traces of summary statistics, and we have found that 2 summary statistics are quite good at indicating the convergence of the SINGER MCMC: fit to the diversity landscape and number of non-uniquely-mapped sites, as used in the manuscript. We have provided a python script to calculate the traces for these 2 quantities:
+SINGER is an MCMC-based sampling algorithm. To examine the convergence of it, SINGER writes the summary log `prefix_of_output_files_summary.log`: one row every `-thin_log` MCMC iterations, from the start of the burn-in, with the number of recombinations, and at each of the `-thin_log_pos` equidistant positions the total branch length and the 25, 50 and 75% quantiles of the node ages of the local tree. The local trees at these positions are written to `prefix_of_output_files_summary_trees.bin`. We have provided a python script to compute the effective sample sizes (ESS) from these two files:
 
 ```
-python compute_trace.py
--prefix prefix_of_tree_sequence_file -m mutation_rate
--start_index index_start_sample -end_index index_terminal_sample
--output_filename output_trace_filename
+python compute_ess.py -input prefix_of_output_files_summary.log -output prefix_of_ess_file
+[-burnin burn_in_iterations] [-tree_ess rf rnni triplet]
 ```
-The script will calculate the aforementioned two statistics for all samples with index between the `start_index` and the `end_index`, and they will be output as the 2 columns in the output file. The fit to the diversity landscape and the number of non-uniquely-mapped sites typically drops with more iterations of the MCMC, and when they reach to a stable stage that is usually a good sign for convergence. 
+
+|flag|details|
+|-------------------|---|
+|**-input**|the summary log of the SINGER run; the script reads the trees file and the `.ckp` file of the run from the same folder|
+|**-output**|prefix of the .tsv file to write|
+|**-burnin**|the rows of the summary log up to this MCMC iteration are left out, default at the `-burnin` of the run|
+|**-tree_ess**|the tree distances for the tree ESS, one or more of `rf` (Robinson-Foulds), `rnni` (ranked nearest neighbour interchange) and `triplet`, default at `rf`; giving `0` skips all tree ESS computation|
+
+The script computes the ESS of every column of the summary log, and for the local tree at each position the minimum and median pseudo-ESS and the Fréchet correlation ESS of [Magee et al. (2024)](https://doi.org/10.1214/22-BA1339). It prints their quantiles over the positions and writes every value to `prefix_of_ess_file_ess.tsv`, one row per column of the summary log, then one row per tree ESS named `{measure}_{distance}_{position index}`. The tree ESS needs Cython and a C compiler, and the script compiles `tree_distances.pyx` on its first run.
 
 ### Computing the pairwise coalescence times with respect to a particular haplotype
 
@@ -215,10 +225,10 @@ In the manuscript we used the coalescence ratio to find introgression signals, w
 
 ```
 python compute_pairwise_coalescence_times.py
---trees_file tree_sequence_filename --leaf_index index_of_leaf_node
---interval_size size_of_genome_window --output_file output_file_name
+-input tree_sequence_filename -leaf_index index_of_leaf_node
+-interval_size size_of_genome_window -output prefix_of_output_file
 ```
-Each row in the output file stands for all the pairwise coalescence times between the input leaf node index and all others. The rows are in the order of the genome windows. 
+Each row in the output file `prefix_of_output_file_pairwise_coalescence_times.csv` stands for all the pairwise coalescence times between the input leaf node index and all others. The rows are in the order of the genome windows. 
 
 ## Suggestions from developer
 

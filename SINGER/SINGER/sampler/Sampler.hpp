@@ -11,6 +11,8 @@
 #include <stdio.h>
 #include <chrono>
 #include <sstream>
+#include <filesystem>
+#include <charconv>
 #include "ARG.hpp"
 #include "Threader_smc.hpp"
 #include "Emission.hpp"
@@ -46,6 +48,17 @@ public:
     int scaling_bin = 100;
     int mapping_rep = 1;
     int sample_index = 0;
+    int thin_log = 0;
+    int thin_log_pos = 100;
+    long long moves_done = 0;
+    vector<double> log_positions = {};
+    vector<double> log_stats = {};
+    vector<vector<int>> log_histories = {};
+    vector<char> log_dirty = {};
+    vector<char> log_changed = {};
+    int code_width = 2;
+    ofstream summary_file;
+    ofstream trees_file;
     set<Node_ptr, compare_node> sample_nodes = {};
     vector<Node_ptr> ordered_sample_nodes = {};
     Data_reader data;
@@ -78,6 +91,14 @@ public:
 
     void sweep_samples();
 
+    void start_summary(bool resume);
+
+    void refresh_summary();
+
+    void write_summary_row();
+
+    void write_trees_row();
+
     void run_moves(Threader_smc &threader, int num_moves);
 
     void burn_in(int num_moves, int spacing);
@@ -92,7 +113,7 @@ public:
 
     void start_log();
 
-    void write_log(int iteration, string type);
+    void write_log(long long iteration, string type);
 
     void load_resume_arg(string filename);
 

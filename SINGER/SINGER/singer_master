@@ -220,7 +220,7 @@ def read_blocks(blocks_file, start, end):
                 sys.exit(f"Error: -blocks {blocks_file} line {lineno}: expected 'left right'.")
             left, right = float(w[0]), float(w[1])
             if not (left < right and left >= (blocks[-1][1] if blocks else start) and right <= end):
-                sys.exit(f"Error: -blocks {blocks_file} line {lineno}: the blocks must be sorted and non-overlapping, each with left below right, inside -start {start} and -end {end}.")
+                sys.exit(f"Error: -blocks {blocks_file} line {lineno}: blocks must be sorted, disjoint and inside -start and -end.")
             blocks.append((left, right))
     return blocks
 
@@ -253,8 +253,6 @@ def terminate(running):
             p.wait()
 
 def run_blocks(jobs, num_cores):
-    """Runs the jobs (output prefix, command, log file or None for the terminal), up to num_cores at once, each in its
-    own process group. A signal or a job exiting nonzero stops every running job and exits nonzero."""
     parent = os.getpid()
     prctl = ctypes.CDLL(None).prctl if sys.platform.startswith("linux") else None
 
@@ -308,6 +306,8 @@ def main():
     parser.add_argument('-n', type=int, default=100, help='Number of MCMC samples. Default: 100.')
     parser.add_argument('-thin', type=int, default=200, help='Thinning interval length. Default: 200.')
     parser.add_argument('-burnin', type=int, help='MCMC iterations before the first sample. Default: 2000.')
+    parser.add_argument('-thin_log', type=int, help='MCMC iterations between rows of the summary log; 0 writes none. Default: -thin / 100.')
+    parser.add_argument('-thin_log_pos', type=int, help='Number of equidistant positions in the summary log. Default: 100.')
     parser.add_argument('-polar', type=float, help='Probability of correct polarization. Default: 0.5.')
     parser.add_argument('-resume', action='store_true', help='Resume MCMC with this flag.')
     parser.add_argument('-ploidy', type=int, default=2, help="Ploidy of the vcf file (1 or 2). Default: 2.")
@@ -396,7 +396,7 @@ def main():
         parser.error("The mutation rate is set to 0")
     if args.Ne < 0:
         args.Ne = compute_Ne(args.input, blocks, m, args.ploidy, ages, args.g, args.mask_n, args.mask_p, args.chrom, args.chrom_n, args.chrom_p)
-    scaling = (f" -burnin {args.burnin}" if args.burnin is not None else "") + (f" -scaling_rep {args.scaling_rep}" if args.scaling_rep is not None else "") + (f" -scaling_bin {args.scaling_bin}" if args.scaling_bin is not None else "") + (f" -mapping_rep {args.mapping_rep}" if args.mapping_rep is not None else "")
+    scaling = (f" -burnin {args.burnin}" if args.burnin is not None else "") + (f" -thin_log {args.thin_log}" if args.thin_log is not None else "") + (f" -thin_log_pos {args.thin_log_pos}" if args.thin_log_pos is not None else "") +(f" -scaling_rep {args.scaling_rep}" if args.scaling_rep is not None else "") + (f" -scaling_bin {args.scaling_bin}" if args.scaling_bin is not None else "") + (f" -mapping_rep {args.mapping_rep}" if args.mapping_rep is not None else "")
     run_blocks([(output, singer_command(args.Ne, args.m, args.r, left, right, args.input, output, args.n, args.thin, polar, args.ploidy, seed, tips, args.resume, scaling), log)
                 for (left, right), (output, seed, log) in zip(blocks, outputs)], args.num_cores)
     if args.convert_step:

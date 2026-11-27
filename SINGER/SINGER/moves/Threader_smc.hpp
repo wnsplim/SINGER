@@ -53,6 +53,7 @@ public:
     vector<vector<Node *>> emit_nodes = {};
     int emit_trees = 0;
     bool sparse = false;
+    bool accepted = false;
     Node *query_leaf = nullptr;
     Node *removed_upper = nullptr;
     Node *joined_upper = nullptr;

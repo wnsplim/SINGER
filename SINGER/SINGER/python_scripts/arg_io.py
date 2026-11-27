@@ -9,8 +9,8 @@ EDGE_SCHEMA = tskit.MetadataSchema({
     'codec': 'json',
     'type': 'object',
     'properties': {
-        'expected_mutations': {'type': 'number', 'description': 'expected number of mutations on the edge over the sites at which the data can see it'},
-        'informed_bases': {'type': 'number', 'description': 'number of bases of the edge at which at least one sample below it and one outside it have data'},
+        'expected_mutations': {'type': 'number', 'description': 'expected number of mutations on the edge'},
+        'informed_bases': {'type': 'number', 'description': 'number of informed bases of the edge'},
     },
 })
 
@@ -18,7 +18,7 @@ MUTATION_SCHEMA = tskit.MetadataSchema({
     'codec': 'json',
     'type': 'object',
     'properties': {
-        'informed': {'type': 'integer', 'description': '1 when the data can see the branch of the mutation at this site, 0 when the draw placed it on a branch they cannot'},
+        'informed': {'type': 'integer', 'description': '1 for an informed mutation, else 0'},
     },
 })
 
@@ -28,18 +28,12 @@ CELL = np.dtype([('pos', '<f8'), ('leaf0', '<i4'), ('state0', 'i1'), ('leaf1', '
 
 
 def sample_file(prefix, i):
-    """<prefix>_<i>.bin"""
     return f'{prefix}_{i}.bin'
 
 
 def read_sample(path):
-    """The sample file as a dict: samples (the number of haplotypes), length, parents (the parent of each node of the
-    first tree, -1 above its root), times, rescaled (None when the run wrote none), records (position, source node,
-    start time and target node of each tree change), draws (one array per mapping draw of position, lower node,
-    state and informed flag), counts (expected mutations and informed bases of each edge, the edges ordered by child
-    then left end, the edges above the root left out), cells (position, then leaf and state of each cell; None
-    without genotype likelihoods)."""
-    b = open(path, 'rb').read()
+    with open(path, 'rb') as file:
+        b = file.read()
     n, f, nodes, records, scaled, draws = np.frombuffer(b, '<i8', 6).tolist()
     o = 48
 
@@ -60,9 +54,6 @@ def read_sample(path):
 
 
 def trees(sample, ended=None):
-    """Yields (left, right, parent) for each tree along the genome, where parent maps each node of the tree to its
-    parent (-1 above the root) and changes in place from one tree to the next. With a list as ended, each edge is
-    appended to it as (left, right, parent, child) when it ends, the edges above the root included."""
     par = dict(enumerate(sample['parents'].tolist()))
     kids = {}
     for c, p in par.items():
@@ -110,7 +101,6 @@ def trees(sample, ended=None):
 
 
 def trees_name(output, i, draw):
-    """<output>[_<draw>]_<i>.trees"""
     parts = [output]
     if draw is not None:
         parts.append(str(draw))
@@ -119,7 +109,6 @@ def trees_name(output, i, draw):
 
 
 def add_mutations(tables, mutations, offset, node_map):
-    """The mutations of one mapping draw as sites and mutations, with the informed flag as mutation metadata."""
     last = None
     for pos, node, state, informed in zip(mutations['pos'].tolist(), node_map(mutations['lower'].astype(np.int64)).tolist(),
                                           mutations['state'].tolist(), mutations['informed'].tolist()):
@@ -130,7 +119,6 @@ def add_mutations(tables, mutations, offset, node_map):
 
 
 def finish_mutations(tables):
-    """Sorts, indexes, sets the mutation parents and computes the mutation times."""
     tables.sort()
     tables.build_index()
     tables.compute_mutation_parents()
@@ -138,11 +126,6 @@ def finish_mutations(tables):
 
 
 def read_long_ARG(sample_files, block_coordinates, sequence_length=0, draw=None):
-    """The tables of the blocks' sample files placed at their absolute offsets block_coordinates, with the rescaled
-    node times when the run wrote them, the counts as edge metadata and the mutations of mapping draw draw (an index
-    into the draws; None for no site). The sample nodes are shared, the other nodes of each block appended. The
-    sequence length is sequence_length or, when larger, the end of the last block; a region without a block has no
-    edge."""
     tables = tskit.TableCollection(sequence_length=sequence_length)
     tables.edges.metadata_schema = EDGE_SCHEMA
     tables.mutations.metadata_schema = MUTATION_SCHEMA
@@ -173,7 +156,6 @@ def read_long_ARG(sample_files, block_coordinates, sequence_length=0, draw=None)
 
 
 def read_ckp(prefix):
-    """The flags of the run from <prefix>.ckp as a dict, or {} when absent."""
     flags = {}
     path = f'{prefix}.ckp'
     if os.path.exists(path):

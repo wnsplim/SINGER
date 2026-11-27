@@ -8,8 +8,6 @@ import arg_io
 
 
 def read_blocks(input_prefix):
-    """The block prefixes, their offsets and the region end from <input_prefix>.blocks (first row 'start end', then
-    one row 'index left right' per block); a run without that file is one block at offset 0 with no region end."""
     blocks_file = f"{input_prefix}.blocks"
     if not os.path.exists(blocks_file):
         return [input_prefix], [0.0], 0
@@ -24,14 +22,14 @@ def write_trees(input_prefix, output_prefix, start, end, step, vcf_file=None):
         files = [arg_io.sample_file(p, i) for p in prefixes]
         for f in files:
             if not os.path.exists(f):
-                sys.exit(f"No MCMC sample {i}: {f} not found. -start and -end are MCMC sample indices, -end exclusive.")
+                sys.exit(f"No MCMC sample {i}: {f} not found.")
         samples = [arg_io.read_sample(f) for f in files]
         rescaled = all(s['rescaled'] is not None for s in samples)
         if any(s['rescaled'] is not None for s in samples) and not rescaled:
             sys.exit("Some blocks have rescaled node times and some do not: " + ", ".join(files))
         draws = len(samples[0]['draws'])
         if draws == 0:
-            print(f"Warning: sample {i} has no mutation draw; the tree sequence is written without sites.", file=sys.stderr)
+            print(f"Warning: sample {i} has no mutation draw.", file=sys.stderr)
         for d in range(draws) if draws else [None]:
             draw = None if draws <= 1 else d + 1
             tables = arg_io.read_long_ARG(files, offsets, length, d)
@@ -46,21 +44,22 @@ def write_trees(input_prefix, output_prefix, start, end, step, vcf_file=None):
 def main():
     parser = argparse.ArgumentParser(description='Convert to tskit format')
 
-    parser.add_argument('-input', type=str, required=True, help='Prefix of ARG files. When <input>.blocks exists (a run of singer_master with -L or -blocks), the blocks it lists are stitched into one tree sequence at their chromosome positions, with no edge between them and the region end of its first row as the sequence length; delete a row to leave that block out.')
-    parser.add_argument('-output', type=str, required=True, help='Prefix of output files: <output>_<i>.trees, or <output>_<r>_<i>.trees for draw r of a run with -mapping_rep above 1. The node times are the rescaled ones when the run wrote them, else the sampled ones.')
-    parser.add_argument('-start', type=int, required=True, help='Index of the first MCMC sample to convert.')
-    parser.add_argument('-end', type=int, required=True, help='Index after the last MCMC sample to convert (exclusive).')
+    parser.add_argument('-input', type=str, required=True, help='The .ckp file of the run, or its .blocks file for a run in blocks.')
+    parser.add_argument('-output', type=str, required=True, help='Prefix of output files.')
+    parser.add_argument('-start', type=int, required=True, help='Start index of the sample.')
+    parser.add_argument('-end', type=int, required=True, help='End index of the sample.')
     parser.add_argument('-step', type=int, default=1, help='Step size of subsampling. Default: 1.')
-    parser.add_argument('-vcf', type=str, default=None,
-                        help='Input file of the SINGER run (.vcf, .vcf.gz or .bcf). Sample names from the header are '
-                             'attached as individuals, and tips are named <sample>_0 / <sample>_1.')
+    parser.add_argument('-vcf', type=str, default=None, help='Input VCF of the run, for the sample names.')
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
 
     args = parser.parse_args()
+    prefix, extension = os.path.splitext(args.input)
+    if extension not in ('.ckp', '.blocks'):
+        sys.exit(f"-input {args.input}: not a .ckp or .blocks file.")
 
-    write_trees(args.input, args.output, args.start, args.end, args.step, args.vcf)
+    write_trees(prefix, args.output, args.start, args.end, args.step, args.vcf)
 
 if __name__ == '__main__':
     main()
