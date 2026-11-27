@@ -83,9 +83,9 @@ public:
 
     void resume_internal_sample(int num_iters, int spacing);
 
-    vector<double> rescale(string filename);
+    vector<double> rescale();
 
-    void write_mapping(string base, string index, string counts_file, const vector<double> &rescaled);
+    void write_output(string filename);
 
     void start_log();
 

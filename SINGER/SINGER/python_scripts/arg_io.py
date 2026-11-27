@@ -1,7 +1,5 @@
-import glob
 import json
 import os
-import re
 import time
 
 import numpy as np
@@ -24,27 +22,91 @@ MUTATION_SCHEMA = tskit.MetadataSchema({
     },
 })
 
-
-def muts_files(prefix, i):
-    """The mapping draws of sample i as (draw index or None, path): one file <prefix>_muts_<i>.txt, or the files
-    <prefix>_muts_<r>_<i>.txt of a run with -mapping_rep above 1, sorted by r."""
-    single = f'{prefix}_muts_{i}.txt'
-    if os.path.exists(single):
-        return [(None, single)]
-    found = []
-    for f in glob.glob(f'{prefix}_muts_*_{i}.txt'):
-        m = re.fullmatch(re.escape(prefix) + r'_muts_(\d+)_' + str(i) + r'\.txt', f)
-        if m:
-            found.append((int(m.group(1)), f))
-    return sorted(found)
+RECORD = np.dtype([('pos', '<f8'), ('source', '<i4'), ('start', '<f8'), ('target', '<i4')])
+MUTATION = np.dtype([('pos', '<f8'), ('lower', '<i4'), ('state', 'i1'), ('informed', 'i1')])
+CELL = np.dtype([('pos', '<f8'), ('leaf0', '<i4'), ('state0', 'i1'), ('leaf1', '<i4'), ('state1', 'i1')])
 
 
-def nodes_file(prefix, i):
-    """The node times of sample i: the rescaled ones when the run wrote them, else the sampled ones; (path, rescaled)."""
-    rescaled = f'{prefix}_rescaled_nodes_{i}.txt'
-    if os.path.exists(rescaled):
-        return rescaled, True
-    return f'{prefix}_nodes_{i}.txt', False
+def sample_file(prefix, i):
+    """<prefix>_<i>.bin"""
+    return f'{prefix}_{i}.bin'
+
+
+def read_sample(path):
+    """The sample file as a dict: samples (the number of haplotypes), length, parents (the parent of each node of the
+    first tree, -1 above its root), times, rescaled (None when the run wrote none), records (position, source node,
+    start time and target node of each tree change), draws (one array per mapping draw of position, lower node,
+    state and informed flag), counts (expected mutations and informed bases of each edge, the edges ordered by child
+    then left end, the edges above the root left out), cells (position, then leaf and state of each cell; None
+    without genotype likelihoods)."""
+    b = open(path, 'rb').read()
+    n, f, nodes, records, scaled, draws = np.frombuffer(b, '<i8', 6).tolist()
+    o = 48
+
+    def take(dtype, count):
+        nonlocal o
+        a = np.frombuffer(b, dtype, int(count), o)
+        o += a.nbytes
+        return a
+
+    s = {'samples': n, 'length': float(take('<f8', 1)[0]), 'parents': take('<i4', f), 'times': take('<f8', nodes)}
+    s['rescaled'] = take('<f8', nodes) if scaled else None
+    s['records'] = take(RECORD, records)
+    s['draws'] = [take(MUTATION, take('<i8', 1)[0]) for _ in range(draws)]
+    s['counts'] = take('<f8', 2 * take('<i8', 1)[0]).reshape(-1, 2)
+    cells = take('<i8', 1)[0]
+    s['cells'] = take(CELL, cells) if cells else None
+    return s
+
+
+def trees(sample, ended=None):
+    """Yields (left, right, parent) for each tree along the genome, where parent maps each node of the tree to its
+    parent (-1 above the root) and changes in place from one tree to the next. With a list as ended, each edge is
+    appended to it as (left, right, parent, child) when it ends, the edges above the root included."""
+    par = dict(enumerate(sample['parents'].tolist()))
+    kids = {}
+    for c, p in par.items():
+        kids.setdefault(p, []).append(c)
+    left = dict.fromkeys(par, 0.0)
+    k = len(par)
+    x0 = 0.0
+
+    def end(c, x):
+        if ended is not None:
+            ended.append((left[c], x, par[c], c))
+
+    def link(c, p, x):
+        par[c] = p
+        kids.setdefault(p, []).append(c)
+        left[c] = x
+
+    for x, s, _, g in sample['records'].tolist():
+        yield x0, x, par
+        d = par[s]
+        sib = kids[d][0] if kids[d][1] == s else kids[d][1]
+        pd = par[d]
+        end(s, x)
+        end(sib, x)
+        end(d, x)
+        kids[pd].remove(d)
+        del par[d], kids[d]
+        if g == sib:
+            link(sib, k, x)
+            link(s, k, x)
+            link(k, pd, x)
+        else:
+            u = par[g]
+            end(g, x)
+            kids[u].remove(g)
+            link(sib, pd, x)
+            link(s, k, x)
+            link(g, k, x)
+            link(k, u, x)
+        k += 1
+        x0 = x
+    yield x0, sample['length'], par
+    if ended is not None:
+        ended.extend((left[c], sample['length'], p, c) for c, p in par.items())
 
 
 def trees_name(output, i, draw):
@@ -56,92 +118,56 @@ def trees_name(output, i, draw):
     return '_'.join(parts) + '.trees'
 
 
-def edge_metadata(counts_file, keep):
-    """The packed edge metadata column for the branches rows selected by the boolean mask keep, from the counts file
-    (one row per branches row: expected count, informed bases), or None when the file is absent."""
-    if counts_file is None or not os.path.exists(counts_file):
-        return None
-    counts = np.loadtxt(counts_file, ndmin=2)
-    if counts.shape[0] != len(keep):
-        raise ValueError(f'{counts_file} has {counts.shape[0]} rows, the branches file {len(keep)}')
-    rows = [EDGE_SCHEMA.validate_and_encode_row({'expected_mutations': float(e), 'informed_bases': float(b)}) for e, b in counts[keep]]
-    return tskit.pack_bytes(rows)
-
-
-def add_edges(tables, edge_span, parent, child, offset, counts_file, keep):
-    """Appends the branches rows (already filtered by keep) as edges with the counts as metadata when available."""
-    tables.edges.metadata_schema = EDGE_SCHEMA
-    packed = edge_metadata(counts_file, keep)
-    if packed is None:
-        metadata, metadata_offset = tskit.pack_bytes([b''] * len(parent))
-    else:
-        metadata, metadata_offset = packed
-    tables.edges.append_columns(left=edge_span[:, 0] + offset, right=edge_span[:, 1] + offset, parent=parent, child=child,
-                                metadata=metadata, metadata_offset=metadata_offset)
-
-
-def add_mutations(tables, mutation_file, offset, node_map):
-    """The muts rows as sites and mutations; the fifth column, when present, as the mutation's informed flag.
-    Without a file, no site."""
-    tables.mutations.metadata_schema = MUTATION_SCHEMA
-    if mutation_file is None:
-        return
-    mutations = np.loadtxt(mutation_file, ndmin=2)
-    by_site = {}
-    for row in mutations:
-        by_site.setdefault(row[0], []).append(row)
-    for pos in sorted(by_site):
-        rows = by_site[pos]
-        tables.sites.add_row(position=pos + offset, ancestral_state='0')
-        site = tables.sites.num_rows - 1
-        for row in rows:
-            meta = {'informed': int(row[4])} if len(row) >= 5 else {}
-            state = str(int(row[3]))
-            tables.mutations.add_row(site=site, node=node_map(int(row[1])), derived_state=state, metadata=meta, time=tskit.UNKNOWN_TIME)
+def add_mutations(tables, mutations, offset, node_map):
+    """The mutations of one mapping draw as sites and mutations, with the informed flag as mutation metadata."""
+    last = None
+    for pos, node, state, informed in zip(mutations['pos'].tolist(), node_map(mutations['lower'].astype(np.int64)).tolist(),
+                                          mutations['state'].tolist(), mutations['informed'].tolist()):
+        if pos != last:
+            site = tables.sites.add_row(position=pos + offset, ancestral_state='0')
+            last = pos
+        tables.mutations.add_row(site=site, node=node, derived_state=str(state), metadata={'informed': informed}, time=tskit.UNKNOWN_TIME)
 
 
 def finish_mutations(tables):
-    """Sorts, indexes, and sets the mutation parents; computes the mutation times only when the muts rows carried none."""
+    """Sorts, indexes, sets the mutation parents and computes the mutation times."""
     tables.sort()
     tables.build_index()
     tables.compute_mutation_parents()
-    if np.isnan(tables.mutations.time).all():
-        tables.compute_mutation_times()
+    tables.compute_mutation_times()
 
 
-def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, counts_files, sequence_length=0):
-    """The tables of the blocks placed at their absolute offsets block_coordinates; the sample nodes are shared, the
-    other nodes of each block appended. The sequence length is sequence_length or, when larger, the end of the last
-    edge; a region without a block has no edge."""
+def read_long_ARG(sample_files, block_coordinates, sequence_length=0, draw=None):
+    """The tables of the blocks' sample files placed at their absolute offsets block_coordinates, with the rescaled
+    node times when the run wrote them, the counts as edge metadata and the mutations of mapping draw draw (an index
+    into the draws; None for no site). The sample nodes are shared, the other nodes of each block appended. The
+    sequence length is sequence_length or, when larger, the end of the last block; a region without a block has no
+    edge."""
     tables = tskit.TableCollection(sequence_length=sequence_length)
-    node_table = tables.nodes
-
-    for node_file_index, (node_file, branch_file, mutation_file, counts_file) in enumerate(zip(node_files, branch_files, mutation_files, counts_files)):
-        node_time = np.atleast_1d(np.loadtxt(node_file))
-        edge_all = np.loadtxt(branch_file, ndmin=2)
-        keep = edge_all[:, 2] >= 0
-        edge_span = edge_all[keep, :]
-        if node_file_index == 0:
-            sample_num = len(node_time) - len(set(edge_span[:, 2].astype(int)))
-            for t in node_time[:sample_num]:
-                node_table.add_row(flags=tskit.NODE_IS_SAMPLE, time=t)
-        node_num = node_table.num_rows - sample_num
-        for t in node_time[sample_num:]:
-            node_table.add_row(time=t)
-
-        length = max(edge_span[:, 1])
-        tables.sequence_length = max(tables.sequence_length, length + block_coordinates[node_file_index])
-
-        parent_indices = np.array(edge_span[:, 2], dtype=np.int32)
-        child_indices = np.array(edge_span[:, 3], dtype=np.int32)
-
-        parent_indices[parent_indices >= sample_num] += node_num
-        child_indices[child_indices >= sample_num] += node_num
-
-        add_edges(tables, edge_span, parent_indices, child_indices, block_coordinates[node_file_index], counts_file, keep)
-        add_mutations(tables, mutation_file, block_coordinates[node_file_index],
-                      lambda n, s=sample_num, k=node_num: n + k if n >= s else n)
-
+    tables.edges.metadata_schema = EDGE_SCHEMA
+    tables.mutations.metadata_schema = MUTATION_SCHEMA
+    for path, offset in zip(sample_files, block_coordinates):
+        s = read_sample(path)
+        n = s['samples']
+        times = s['times'] if s['rescaled'] is None else s['rescaled']
+        if tables.nodes.num_rows == 0:
+            tables.nodes.append_columns(flags=np.full(n, tskit.NODE_IS_SAMPLE, np.uint32), time=times[:n])
+        base = tables.nodes.num_rows - n
+        tables.nodes.append_columns(flags=np.zeros(len(times) - n, np.uint32), time=times[n:])
+        node_map = lambda a, n=n, base=base: np.where(a >= n, a + base, a).astype(np.int32)
+        ended = []
+        for _ in trees(s, ended):
+            pass
+        e = np.array(ended)
+        e = e[e[:, 2] >= 0]
+        e = e[np.lexsort((e[:, 0], e[:, 3]))]
+        metadata, metadata_offset = tskit.pack_bytes([EDGE_SCHEMA.validate_and_encode_row({'expected_mutations': x, 'informed_bases': y})
+                                                      for x, y in s['counts'].tolist()])
+        tables.edges.append_columns(left=e[:, 0] + offset, right=e[:, 1] + offset, parent=node_map(e[:, 2].astype(np.int64)),
+                                    child=node_map(e[:, 3].astype(np.int64)), metadata=metadata, metadata_offset=metadata_offset)
+        tables.sequence_length = max(tables.sequence_length, s['length'] + offset)
+        if draw is not None:
+            add_mutations(tables, s['draws'][draw], offset, node_map)
     finish_mutations(tables)
     return tables
 

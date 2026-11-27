@@ -56,9 +56,9 @@ The optional flags include:
 |**-n**|optional|the number of posterior samples, default at 100|
 |**-thin**|optional|the number of MCMC iterations between adjacent samples, default at 200|
 |**-polar**|optional|the probability of correct polarization, default at 0.5 for unpolarized data, please use 0.99 for polarized data|
-|**-scaling_rep**|optional|the number of ARG rescaling rounds applied to a copy of each written posterior sample, default at 1; the rescaled node times are written to `prefix_of_output_files_rescaled_nodes_{i}.txt`. Set to 0 to disable rescaling|
+|**-scaling_rep**|optional|the number of ARG rescaling rounds applied to a copy of each written posterior sample, default at 1; the rescaled node times are written to the sample file. Set to 0 to disable rescaling|
 |**-scaling_bin**|optional|the number of time bins used for ARG rescaling, default at 100|
-|**-mapping_rep**|optional|the number of stochastic mapping draws written for each posterior sample, default at 1. With 1 the draw is `prefix_of_output_files_muts_{i}.txt`. With more, draw `r` is `prefix_of_output_files_muts_{r}_{i}.txt`. With 0 no muts file is written.|
+|**-mapping_rep**|optional|the number of stochastic mapping draws written for each posterior sample, default at 1. Each draw is written to the sample file. With 0 no draw is written.|
 |**-tip_ages**|optional|file with the sampling ages in calendar years before present, see [Heterochronous samples](#heterochronous-samples-ancient-dna)|
 |**-g**|optional|generation time in years, required with `-tip_ages`|
 |**-mask_n**|optional|Negative mask. A BED file of the regions to mask; a row with a VCF sample name in a fourth column masks the region for that sample only.|
@@ -74,10 +74,10 @@ The optional flags include:
 The output files will be:
 
 ```
-prefix_of_output_files_nodes_{i}.txt, prefix_of_output_files_branches_{i}.txt, prefix_of_output_files_muts_{i}.txt, prefix_of_output_files_recombs_{i}.txt
+prefix_of_output_files_{i}.bin
 ```
 
-with `i` from `0` to `num_samples - 1`, and `prefix_of_output_files_rescaled_nodes_{i}.txt` when `-scaling_rep` is above 0. `prefix_of_output_files_counts_{i}.txt` has one row for each row of the branches file: the expected number of mutations on the branch, and the number of its bases at which the data can see a mutation on it (a base where at least one sample below the branch and one sample outside it have data). Each muts row corresponds to one mutation: the position, the lower and upper node of its branch, the state after it (1 when the data can see it at that site by the same rule and 0 otherwise). When `-scaling_rep` is above 0, the muts and counts files are drawn at the rescaled node times.
+with `i` from `0` to `num_samples - 1`. The sample file holds the ARG of the sample, its rescaled node times when `-scaling_rep` is above 0, the counts, the mutations of each mapping draw, and the sampled genotypes under `-genotype_lik`. The counts are, for each edge: the expected number of mutations on the branch, and the number of its bases at which the data can see a mutation on it (a base where at least one sample below the branch and one sample outside it have data). Each mutation has: the position, the lower node of its branch, the state after it, and the informed flag (1 when the data can see it at that site by the same rule and 0 otherwise). When `-scaling_rep` is above 0, the mutations and counts are drawn at the rescaled node times. In Python, `read_sample` in `python_scripts/arg_io.py` reads the file, and `trees` yields the trees of the sample along the genome.
 
 ### Rate maps
 
@@ -149,7 +149,7 @@ Each line of the block file is one block: its left and its right position, in th
 |**-blocks**|file of blocks, one `left right` line for each block|
 |**-num_cores**|the number of blocks that run at the same time, default at 1|
 
-Block `b` (counted from 0, in the order of the blocks) writes the output files of a SINGER run with the prefix `prefix_of_output_file_block{b}`, and its console output to `prefix_of_output_file_block{b}.out`. It runs with the seed `-seed` + `b`. In a file name such as `prefix_of_output_file_block{b}_nodes_{i}.txt`, `b` is the block index and `i` is the sample index; the converted `prefix_of_output_file_{i}.trees` is sample `i` of the whole region. A block that holds no VCF record is skipped. Without `-Ne`, `singer_master` estimates Ne one time from the diversity of all the blocks that run, with the masks applied, and gives this value to every block. All the other flags apply to every block.
+Block `b` (counted from 0, in the order of the blocks) writes the output files of a SINGER run with the prefix `prefix_of_output_file_block{b}`, and its console output to `prefix_of_output_file_block{b}.out`. It runs with the seed `-seed` + `b`. In a file name such as `prefix_of_output_file_block{b}_{i}.bin`, `b` is the block index and `i` is the sample index; the converted `prefix_of_output_file_{i}.trees` is sample `i` of the whole region. A block that holds no VCF record is skipped. Without `-Ne`, `singer_master` estimates Ne one time from the diversity of all the blocks that run, with the masks applied, and gives this value to every block. All the other flags apply to every block.
 
 The file `prefix_of_output_file.blocks` lists the region and the blocks that ran. The first line has the start and the end of the region. Each other line is one block: its index, its left position and its right position. For the first command above, when the block from 15 Mb to 20 Mb holds no VCF record:
 
@@ -185,7 +185,7 @@ Sample `i` is written to `prefix_of_tskit_files_{i}.trees`. With `-mapping_rep` 
 Each tree sequence holds:
 
 - the ARG of the sample, with the rescaled node times when SINGER wrote them, else the sampled ones;
-- the mutations of the muts file, with the `informed` flag in the mutation metadata; their times are computed by tskit (`compute_mutation_times`). Without a muts file the tree sequence will not carry any mutation table;
+- the mutations of the mapping draw, with the `informed` flag in the mutation metadata; their times are computed by tskit (`compute_mutation_times`). Without a mapping draw (`-mapping_rep 0`) the tree sequence will not carry any mutation table;
 - the counts in its edge metadata (`expected_mutations`, `informed_bases`). Call `tables.edges.drop_metadata()` before `simplify`, which tskit refuses on edges with metadata;
 - the flags of the run in its provenance record.
 

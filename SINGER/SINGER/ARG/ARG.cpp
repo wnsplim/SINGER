@@ -8,7 +8,6 @@
 #include "ARG.hpp"
 #include "Data_reader.hpp"
 #include <fstream>
-#include <sstream>
 
 ARG::ARG() {}
 
@@ -433,50 +432,143 @@ void ARG::write_coordinates(string filename) {
     return;
 }
 
-void ARG::read(string node_file, string branch_file, string recomb_file) {
-    read_nodes(node_file);
-    read_branches(branch_file);
-    read_recombs(recomb_file);
+template <class T> static void put(ofstream &f, T x) {
+    f.write(reinterpret_cast<const char *>(&x), sizeof(T));
 }
 
-void ARG::write_cells(string filename) {
-    ofstream file(filename);
-    file.precision(numeric_limits<double>::max_digits10);
+template <class T> static T get(ifstream &f) {
+    T x;
+    f.read(reinterpret_cast<char *>(&x), sizeof(T));
+    return x;
+}
+
+struct Sample_file {
+    vector<int32_t> parents;
+    vector<double> times, rec_pos, rec_start;
+    vector<int32_t> rec_source, rec_target;
+    vector<Cell_row> cells;
+};
+
+static Sample_file read_sample_file(string filename) {
+    ifstream f(filename, ios::binary);
+    if (!f) {
+        cerr << "input file not found: " << filename << endl;
+        exit(1);
+    }
+    Sample_file s;
+    int64_t h[6];
+    for (int64_t &x : h) {
+        x = get<int64_t>(f);
+    }
+    get<double>(f);
+    for (int64_t i = 0; i < h[1]; i++) {
+        s.parents.push_back(get<int32_t>(f));
+    }
+    for (int64_t i = 0; i < h[2]; i++) {
+        s.times.push_back(get<double>(f));
+    }
+    f.seekg(h[4]*h[2]*sizeof(double), ios::cur);
+    for (int64_t i = 0; i < h[3]; i++) {
+        s.rec_pos.push_back(get<double>(f));
+        s.rec_source.push_back(get<int32_t>(f));
+        s.rec_start.push_back(get<double>(f));
+        s.rec_target.push_back(get<int32_t>(f));
+    }
+    for (int64_t d = 0; d < h[5]; d++) {
+        f.seekg(get<int64_t>(f)*(sizeof(double) + sizeof(int32_t) + 2), ios::cur);
+    }
+    f.seekg(get<int64_t>(f)*2*sizeof(double), ios::cur);
+    int64_t c = get<int64_t>(f);
+    for (int64_t i = 0; i < c; i++) {
+        Cell_row r;
+        r.pos = get<double>(f);
+        for (int k = 0; k < 2; k++) {
+            r.leaf[k] = get<int32_t>(f);
+            r.state[k] = get<int8_t>(f);
+        }
+        s.cells.push_back(r);
+    }
+    if (!f) {
+        cerr << "Error: " << filename << " is not a complete sample file. " << endl;
+        exit(1);
+    }
+    return s;
+}
+
+void ARG::read_sample(string filename) {
+    Sample_file s = read_sample_file(filename);
+    read_nodes(s.times);
+    int f = (int) s.parents.size(), top = (int) s.times.size();
+    vector<int> par(top + 1, -2), kid0(top + 1, -1), kid1(top + 1, -1);
+    vector<double> left(top + 1, 0), rows, recombs;
+    auto end = [&](int c, double x) {
+        rows.insert(rows.end(), {left[c], x, par[c] == top ? -1.0 : (double) par[c], (double) c});
+    };
+    auto link = [&](int c, int p, double x) {
+        par[c] = p;
+        (kid0[p] < 0 ? kid0[p] : kid1[p]) = c;
+        left[c] = x;
+    };
+    auto unlink = [&](int c) {
+        (kid0[par[c]] == c ? kid0[par[c]] : kid1[par[c]]) = -1;
+    };
+    for (int c = 0; c < f; c++) {
+        link(c, s.parents[c] < 0 ? top : s.parents[c], 0);
+    }
+    for (int j = 0; j < (int) s.rec_pos.size(); j++) {
+        double x = s.rec_pos[j];
+        int src = s.rec_source[j], g = s.rec_target[j], k = f + j;
+        int d = par[src], sib = kid0[d] == src ? kid1[d] : kid0[d], pd = par[d];
+        end(src, x);
+        end(sib, x);
+        end(d, x);
+        unlink(d);
+        if (g == sib) {
+            link(sib, k, x);
+            link(src, k, x);
+            link(k, pd, x);
+        } else {
+            int u = par[g];
+            end(g, x);
+            unlink(g);
+            link(sib, pd, x);
+            link(src, k, x);
+            link(g, k, x);
+            link(k, u, x);
+        }
+        par[d] = -2;
+        recombs.insert(recombs.end(), {x, (double) src, (double) d, s.rec_start[j]});
+    }
+    for (int c = 0; c < top; c++) {
+        if (par[c] != -2) {
+            end(c, sequence_length);
+        }
+    }
+    read_branches(rows);
+    read_recombs(recombs);
+}
+
+vector<Cell_row> ARG::cell_rows() {
+    vector<Cell_row> rows;
     for (auto &g : genotype_likelihoods) {
-        file << g.pos;
+        Cell_row r = {g.pos, {-1, -1}, {0, 0}};
         for (int h = 0; h < 2; h++) {
             if (g.leaves[h] != nullptr) {
-                file << " " << g.leaves[h]->index << " " << (int) g.leaves[h]->get_state(g.pos);
+                r.leaf[h] = g.leaves[h]->index;
+                r.state[h] = g.leaves[h]->get_state(g.pos);
             }
         }
-        file << "\n";
+        rows.push_back(r);
     }
+    return rows;
 }
 
 void ARG::read_cells(string filename) {
-    ifstream fin(filename);
-    if (!fin.good()) {
-        cerr << "cells file not found: " << filename << endl;
-        exit(1);
-    }
-    string line;
-    int line_number = 0;
-    while (getline(fin, line)) {
-        line_number += 1;
-        istringstream iss(line);
-        double pos;
-        vector<int> v;
-        int x;
-        bool has_pos = (bool) (iss >> pos);
-        while (has_pos and iss >> x) {
-            v.push_back(x);
-        }
-        if (!has_pos or !iss.eof() or v.size() % 2 != 0) {
-            cerr << "Error: line " << line_number << " of " << filename << " is not 'position leaf state leaf state ...'. " << endl;
-            exit(1);
-        }
-        for (size_t i = 0; i < v.size(); i += 2) {
-            node_list[v[i]]->write_state(pos, v[i + 1]);
+    for (const Cell_row &r : read_sample_file(filename).cells) {
+        for (int h = 0; h < 2; h++) {
+            if (r.leaf[h] >= 0) {
+                node_list[r.leaf[h]]->write_state(r.pos, r.state[h]);
+            }
         }
     }
 }
@@ -1774,34 +1866,25 @@ void ARG::create_node_set() {
     assert(cut_node == nullptr or node_set.count(cut_node) > 0);
 }
 
-void ARG::write_nodes(string filename) {
+void ARG::number_nodes() {
     anchors_changed(0, INT_MAX);
     node_set.clear();
-    create_node_set();
-    vector<Node *> order;
-    for (Node *n : node_set) {
-        if (n->is_sample) {
-            order.push_back(n);
+    vector<Node *> inner;
+    for (const Branch &b : recombinations.begin()->second.inserted_branches) {
+        if (!b.lower_node->is_sample) {
+            inner.push_back(b.lower_node);
         }
     }
-    sort(order.begin(), order.end(), [](Node *a, Node *b) { return a->index < b->index; });
-    for (Node *n : node_set) {
-        if (!n->is_sample) {
-            order.push_back(n);
+    sort(inner.begin(), inner.end(), compare_node());
+    int index = (int) sample_nodes.size();
+    for (Node *n : inner) {
+        n->set_index(index++);
+    }
+    for (auto &x : recombinations) {
+        if (x.first > 0 and x.first < sequence_length) {
+            x.second.inserted_node->set_index(index++);
         }
     }
-    ofstream file;
-    file.open(filename);
-    int index = 0;
-    for (Node *n : order) {
-        if (!n->is_sample) {
-            n->set_index(index);
-        }
-        file << std::setprecision(std::numeric_limits<double>::max_digits10) << (n->time + time_offset)*Ne << "\n";
-        index += 1;
-    }
-    file.close();
-    node_set.clear();
 }
 
 vector<tuple<int, int, double, double>> ARG::branch_rows() {
@@ -1828,56 +1911,89 @@ vector<tuple<int, int, double, double>> ARG::branch_rows() {
     return branch_info;
 }
 
-void ARG::write_branches(string filename) {
-    vector<tuple<int, int, double, double>> branch_info = branch_rows();
-    ofstream file;
-    file.open(filename);
-    file << std::setprecision(std::numeric_limits<double>::max_digits10) << std::fixed;
-    for (int i = 0; i < branch_info.size(); i++) {
-        auto [k1, k2, x, l] = branch_info[i];
-        file << x << " " << l << " " << (double) k1 << " " << (double) k2 << "\n";
+void ARG::write_sample(string filename, const vector<Cell_row> &cells, const vector<double> &rescaled, const vector<map<double, vector<Mutation_row>>> &draws, const vector<double> &expected, const vector<double> &informed_bases) {
+    const set<Branch> &first = recombinations.begin()->second.inserted_branches;
+    vector<int32_t> parents(first.size());
+    vector<Node *> nodes(first.size());
+    for (const Branch &b : first) {
+        parents[b.lower_node->index] = b.upper_node == root.get() ? -1 : b.upper_node->index;
+        nodes[b.lower_node->index] = b.lower_node;
     }
-    file.close();
-}
-
-void ARG::write_counts(string filename, const vector<double> &expected, const vector<double> &informed_bases) {
-    ofstream file;
-    file.open(filename);
-    file.precision(numeric_limits<double>::max_digits10);
-    for (int i = 0; i < (int) expected.size(); i++) {
-        file << expected[i] << " " << informed_bases[i] << "\n";
-    }
-    file.close();
-}
-
-void ARG::write_recombs(string filename) {
-    ofstream file;
-    file.open(filename);
-    file << std::setprecision(std::numeric_limits<double>::max_digits10) << std::fixed;
-    for (auto x : recombinations) {
-        Recombination &r = x.second;
+    for (auto &x : recombinations) {
         if (x.first > 0 and x.first < sequence_length) {
-            file << r.pos << " " << r.source_branch.lower_node->index << " " << r.source_branch.upper_node->index << " " << Ne*(r.start_time + time_offset) << "\n";
+            nodes.push_back(x.second.inserted_node);
         }
     }
-    file.close();
-}
-
-void ARG::write_mutations(string filename, const map<double, vector<Mutation_row>> &rows) {
-    ofstream file;
-    file.open(filename);
-    file.precision(numeric_limits<double>::max_digits10);
-    for (auto &x : rows) {
-        for (auto &m : x.second) {
-            file << x.first << " " << m.branch.lower_node->index << " " << m.branch.upper_node->index << " " << m.state << " " << (int) m.informed << "\n";
+    ofstream f(filename, ios::binary);
+    for (int64_t h : {(int64_t) sample_nodes.size(), (int64_t) first.size(), (int64_t) nodes.size(), (int64_t) (nodes.size() - first.size()), (int64_t) !rescaled.empty(), (int64_t) draws.size()}) {
+        put(f, h);
+    }
+    put(f, sequence_length);
+    for (int32_t p : parents) {
+        put(f, p);
+    }
+    for (Node *n : nodes) {
+        put(f, (n->time + time_offset)*Ne);
+    }
+    for (double t : rescaled) {
+        put(f, (t + time_offset)*Ne);
+    }
+    for (auto &x : recombinations) {
+        if (x.first > 0 and x.first < sequence_length) {
+            const Recombination &r = x.second;
+            Node *s = r.source_branch.lower_node, *g = nullptr;
+            for (const Branch &b : r.inserted_branches) {
+                if (b.upper_node == r.inserted_node and b.lower_node != s) {
+                    g = b.lower_node;
+                }
+            }
+            put(f, x.first);
+            put(f, (int32_t) s->index);
+            put(f, Ne*(r.start_time + time_offset));
+            put(f, (int32_t) g->index);
+        }
+    }
+    for (auto &rows : draws) {
+        int64_t m = 0;
+        for (auto &x : rows) {
+            m += x.second.size();
+        }
+        put(f, m);
+        for (auto &x : rows) {
+            for (auto &r : x.second) {
+                put(f, x.first);
+                put(f, (int32_t) r.branch.lower_node->index);
+                put(f, (int8_t) r.state);
+                put(f, (int8_t) r.informed);
+            }
+        }
+    }
+    vector<tuple<int, int, double, double>> rows = branch_rows();
+    vector<int> order;
+    for (int i = 0; i < (int) rows.size(); i++) {
+        if (get<0>(rows[i]) >= 0) {
+            order.push_back(i);
+        }
+    }
+    sort(order.begin(), order.end(), [&](int a, int b) { return make_pair(get<1>(rows[a]), get<2>(rows[a])) < make_pair(get<1>(rows[b]), get<2>(rows[b])); });
+    put(f, (int64_t) order.size());
+    for (int i : order) {
+        put(f, expected[i]);
+        put(f, informed_bases[i]);
+    }
+    put(f, (int64_t) cells.size());
+    for (const Cell_row &r : cells) {
+        put(f, r.pos);
+        for (int h = 0; h < 2; h++) {
+            put(f, (int32_t) r.leaf[h]);
+            put(f, (int8_t) r.state[h]);
         }
     }
 }
 
-void ARG::read_nodes(string filename) {
+void ARG::read_nodes(const vector<double> &times) {
     root->set_index(-1);
     node_set.clear();
-    vector<double> times = Data_reader::read_numbers(filename, "input file not found");
     double youngest = *min_element(times.begin(), times.begin() + num_samples);
     time_offset = youngest/Ne;
     for (int i = 0; i < (int) times.size(); i++) {
@@ -1885,8 +2001,7 @@ void ARG::read_nodes(string filename) {
     }
 }
 
-void ARG::read_branches(string filename) {
-    vector<double> v = Data_reader::read_numbers(filename, "input file not found");
+void ARG::read_branches(const vector<double> &v) {
     double p;
     Node *parent_node;
     Branch b;
@@ -1912,8 +2027,7 @@ void ARG::read_branches(string filename) {
     }
 }
 
-void ARG::read_recombs(string filename) {
-    vector<double> v = Data_reader::read_numbers(filename, "input file not found");
+void ARG::read_recombs(const vector<double> &v) {
     create_node_set();
     map<double, Branch> source_branches = {};
     map<double, double> start_times = {};
@@ -1937,13 +2051,7 @@ void ARG::read_recombs(string filename) {
             x.second.start_time = start_times.at(pos)/Ne - time_offset;
             x.second.source_branch = source_branches.at(pos);
             x.second.find_nodes();
-            if (x.second.deleted_node != nullptr and x.second.inserted_node != nullptr) {
-                x.second.find_target_branch();
-            }
-            if (x.second.target_branch == Branch()) {
-                cerr << "Error: the tree change at position " << pos << " in the input ARG (" << filename << ") is not one subtree prune and regraft. " << endl;
-                exit(1);
-            }
+            x.second.find_target_branch();
             x.second.find_recomb_info();
             assert(x.second.start_time <= x.second.deleted_node->time);
             assert(x.second.start_time <= x.second.inserted_node->time);

@@ -144,14 +144,8 @@ void Sampler::iterative_start() {
     }
     arg.resample_genotypes();
     cout << "orignal ARG length: " << arg.get_arg_length() << endl;
-    arg.write_nodes(output_prefix + "_start_nodes_" + to_string(sample_index) + ".txt");
-    arg.write_branches(output_prefix + "_start_branches_" + to_string(sample_index) + ".txt");
-    arg.write_recombs(output_prefix + "_start_recombs_" + to_string(sample_index) + ".txt");
-    if (!arg.genotype_likelihoods.empty()) {
-        arg.write_cells(output_prefix + "_start_cells_" + to_string(sample_index) + ".txt");
-    }
     arg.write_coordinates(output_prefix + "_coordinates.txt");
-    write_mapping(output_prefix + "_start", to_string(sample_index), output_prefix + "_start_counts_" + to_string(sample_index) + ".txt", rescale(output_prefix + "_start_rescaled_nodes_" + to_string(sample_index) + ".txt"));
+    write_output(output_prefix + "_start_" + to_string(sample_index) + ".bin");
 }
 
 void Sampler::sweep_samples() {
@@ -187,13 +181,7 @@ void Sampler::internal_sample(int num_iters, int spacing) {
             arg.clear_remove_info();
         }
         arg.release_dead_nodes();
-        arg.write_nodes(output_prefix + "_nodes_" + to_string(sample_index) + ".txt");
-        arg.write_branches(output_prefix + "_branches_" + to_string(sample_index) + ".txt");
-        arg.write_recombs(output_prefix + "_recombs_" + to_string(sample_index) + ".txt");
-        if (!arg.genotype_likelihoods.empty()) {
-            arg.write_cells(output_prefix + "_cells_" + to_string(sample_index) + ".txt");
-        }
-        write_mapping(output_prefix, to_string(sample_index), output_prefix + "_counts_" + to_string(sample_index) + ".txt", rescale(output_prefix + "_rescaled_nodes_" + to_string(sample_index) + ".txt"));
+        write_output(output_prefix + "_" + to_string(sample_index) + ".bin");
         random_seed = random_engine();
         write_sample();
         cout << "Start: " << arg.start << " , End: " << arg.end << endl;
@@ -217,7 +205,7 @@ void Sampler::resume_internal_sample(int num_iters, int spacing) {
 }
 
 
-vector<double> Sampler::rescale(string filename) {
+vector<double> Sampler::rescale() {
     vector<double> times;
     if (scaling_rep == 0) {
         return times;
@@ -233,24 +221,23 @@ vector<double> Sampler::rescale(string filename) {
     for (int i = 0; i < (int) times.size(); i++) {
         times[scaler.sorted_nodes[i]->index] = scaler.times[i];
     }
-    ofstream file(filename);
-    for (double t : times) {
-        file << setprecision(numeric_limits<double>::max_digits10) << (t + arg.time_offset)*arg.Ne << "\n";
-    }
     return times;
 }
 
-void Sampler::write_mapping(string base, string index, string counts_file, const vector<double> &rescaled) {
+void Sampler::write_output(string filename) {
+    arg.number_nodes();
+    vector<Cell_row> cells = arg.cell_rows();
+    vector<double> rescaled = rescale();
     function<double(Node *)> time_of = [&](Node *n) { return n == arg.root.get() ? n->time : rescaled[n->index]; };
     const function<double(Node *)> *tp = rescaled.empty() ? nullptr : &time_of;
+    vector<map<double, vector<Mutation_row>>> draws;
     for (int r = 1; r <= mapping_rep; r++) {
-        string file = base + "_muts_" + (mapping_rep > 1 ? to_string(r) + "_" : "") + index + ".txt";
         arg.draw_mutations(tp, arg.mutations);
-        arg.write_mutations(file, arg.mutations);
+        draws.push_back(arg.mutations);
     }
     vector<double> expected, informed_bases;
     arg.mapping_counts(tp, expected, informed_bases);
-    arg.write_counts(counts_file, expected, informed_bases);
+    arg.write_sample(filename, cells, rescaled, draws, expected, informed_bases);
 }
 
 void Sampler::start_log() {
@@ -307,7 +294,7 @@ void Sampler::write_sample() {
 void Sampler::load_resume_arg() {
     arg = ARG(Ne, sequence_length);
     arg.num_samples = ploidy*(int) data.sample_names().size();
-    arg.read(output_prefix + "_nodes_" + to_string(sample_index) + ".txt", output_prefix + "_branches_" + to_string(sample_index) + ".txt", output_prefix + "_recombs_" + to_string(sample_index) + ".txt");
+    arg.read_sample(output_prefix + "_" + to_string(sample_index) + ".bin");
     arg.read_coordinates(output_prefix + "_coordinates.txt");
     vector<Node *> leaves(arg.sample_nodes.size());
     for (Node *n : arg.sample_nodes) {
@@ -329,7 +316,7 @@ void Sampler::load_resume_arg() {
     arg.compute_assayed();
     set_entries(leaves);
     if (!arg.genotype_likelihoods.empty()) {
-        arg.read_cells(output_prefix + "_cells_" + to_string(sample_index) + ".txt");
+        arg.read_cells(output_prefix + "_" + to_string(sample_index) + ".bin");
     }
 }
 

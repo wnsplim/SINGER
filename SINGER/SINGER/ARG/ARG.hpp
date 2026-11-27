@@ -45,6 +45,12 @@ struct Mutation_row {
     char informed;
 };
 
+struct Cell_row {
+    double pos;
+    int leaf[2];
+    char state[2];
+};
+
 struct Bin_gaps {
     bool built = false;
     vector<int> sample = {};
@@ -182,7 +188,7 @@ public:
 
     void write_coordinates(string filename);
 
-    void read(string node_file, string branch_file, string recomb_file);
+    void read_sample(string filename);
 
     double get_arg_length();
 
@@ -248,8 +254,6 @@ public:
 
     void expected_counts(const function<double(Node *)> *time_of, const function<void(Node *, Node *, double)> &add, vector<double> *expected, const vector<tuple<int, int, double, double>> *rows);
 
-    void write_counts(string filename, const vector<double> &expected, const vector<double> &informed_bases);
-
     void mapping_counts(const function<double(Node *)> *time_of, vector<double> &expected, vector<double> &informed_bases);
 
     vector<double> assayed = {};
@@ -283,21 +287,17 @@ public:
 
     void create_node_set();
 
-    void write_nodes(string filename);
+    void number_nodes();
 
-    void write_branches(string filename);
+    vector<Cell_row> cell_rows();
 
-    void write_recombs(string filename);
+    void write_sample(string filename, const vector<Cell_row> &cells, const vector<double> &rescaled, const vector<map<double, vector<Mutation_row>>> &draws, const vector<double> &expected, const vector<double> &informed_bases);
 
-    void write_mutations(string filename, const map<double, vector<Mutation_row>> &rows);
+    void read_nodes(const vector<double> &times);
 
-    void read_nodes(string filename);
+    void read_branches(const vector<double> &v);
 
-    void read_branches(string filename);
-
-    void read_recombs(string filename);
-
-    void write_cells(string filename);
+    void read_recombs(const vector<double> &v);
 
     void read_cells(string filename);
 
