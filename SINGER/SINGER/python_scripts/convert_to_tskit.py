@@ -5,49 +5,40 @@ import os
 import argparse
 import vcf_io
 import arg_io
-import numpy as np
-import tskit
 
-def read_ts(node_file, edge_file, counts_file):
-    node_time = np.atleast_1d(np.loadtxt(node_file))
-    edge_all = np.loadtxt(edge_file, ndmin=2)
-    keep = edge_all[:, 2] >= 0
-    edge_span = edge_all[keep, :]
-    length = max(edge_span[:, 1])
-    tables = tskit.TableCollection(sequence_length=length)
-    parents = set(edge_span[:, 2].astype(int))
-    for i, t in enumerate(node_time):
-        tables.nodes.add_row(flags=0 if i in parents else tskit.NODE_IS_SAMPLE, time=t)
-    parent_indices = np.array(edge_span[:, 2], dtype = np.int32)
-    child_indices = np.array(edge_span[:, 3], dtype = np.int32)
-    arg_io.add_edges(tables, edge_span, parent_indices, child_indices, 0.0, counts_file, keep)
-    for i in range(len(parent_indices)):
-        j = int(parent_indices[i])
-        k = int(child_indices[i])
-        if (node_time[j] < node_time[k]):
-            print(j, k, node_time[j], node_time[k])
-    return tables
 
-def read_ARG(node_file, branch_file, mutation_file, counts_file):
-    tables = read_ts(node_file, branch_file, counts_file)
-    arg_io.add_mutations(tables, mutation_file, 0.0, lambda n: n)
-    arg_io.finish_mutations(tables)
-    return tables
+def read_blocks(input_prefix):
+    """The block prefixes, their offsets and the region end from <input_prefix>.blocks (first row 'start end', then
+    one row 'index left right' per block); a run without that file is one block at offset 0 with no region end."""
+    blocks_file = f"{input_prefix}.blocks"
+    if not os.path.exists(blocks_file):
+        return [input_prefix], [0.0], 0
+    with open(blocks_file) as f:
+        rows = [line.split() for line in f if line.strip()]
+    return [f"{input_prefix}_{w[0]}" for w in rows[1:]], [float(w[1]) for w in rows[1:]], float(rows[0][1])
 
 
 def write_trees(input_prefix, output_prefix, start, end, step, vcf_file=None):
+    prefixes, offsets, length = read_blocks(input_prefix)
     for i in range(start, end, step):
-        node_file, rescaled = arg_io.nodes_file(input_prefix, i)
-        branch_file = f"{input_prefix}_branches_{i}.txt"
-        counts_file = f"{input_prefix}_counts_{i}.txt"
-        if not os.path.exists(node_file):
-            sys.exit(f"No MCMC sample {i}: {node_file} not found. -start and -end are MCMC sample indices, -end exclusive.")
-        draws = arg_io.muts_files(input_prefix, i)
+        nodes = [arg_io.nodes_file(p, i) for p in prefixes]
+        for node_file, _ in nodes:
+            if not os.path.exists(node_file):
+                sys.exit(f"No MCMC sample {i}: {node_file} not found. -start and -end are MCMC sample indices, -end exclusive.")
+        rescaled = all(r for _, r in nodes)
+        if any(r for _, r in nodes) and not rescaled:
+            sys.exit("Some blocks have rescaled node times and some do not: " + ", ".join(f for f, _ in nodes))
+        draws = arg_io.muts_files(prefixes[0], i)
         if not draws:
             print(f"Warning: no muts file for sample {i}; the tree sequence is written without sites.", file=sys.stderr)
-        for draw, mutation_file in draws or [(None, None)]:
-            tables = read_ARG(node_file, branch_file, mutation_file, counts_file)
-            arg_io.add_provenance(tables, 'convert_to_tskit.py', [input_prefix], i, draw, rescaled)
+        for draw, _ in draws or [(None, None)]:
+            if not draws:
+                mutation_files = [None for p in prefixes]
+            else:
+                mutation_files = [f"{p}_muts_{i}.txt" if draw is None else f"{p}_muts_{draw}_{i}.txt" for p in prefixes]
+            tables = arg_io.read_long_ARG([f for f, _ in nodes], [f"{p}_branches_{i}.txt" for p in prefixes], mutation_files,
+                                          offsets, [f"{p}_counts_{i}.txt" for p in prefixes], length)
+            arg_io.add_provenance(tables, 'convert_to_tskit.py', prefixes, i, draw, rescaled)
             ts = tables.tree_sequence()
             if vcf_file is not None:
                 ts = vcf_io.add_individuals_from_vcf(ts, vcf_file)
@@ -56,7 +47,7 @@ def write_trees(input_prefix, output_prefix, start, end, step, vcf_file=None):
 def main():
     parser = argparse.ArgumentParser(description='Convert to tskit format')
 
-    parser.add_argument('-input', type=str, required=True, help='Prefix of ARG files.')
+    parser.add_argument('-input', type=str, required=True, help='Prefix of ARG files. When <input>.blocks exists (a run of singer_master with -L or -blocks), the blocks it lists are stitched into one tree sequence at their chromosome positions, with no edge between them and the region end of its first row as the sequence length; delete a row to leave that block out.')
     parser.add_argument('-output', type=str, required=True, help='Prefix of output files: <output>_<i>.trees, or <output>_<r>_<i>.trees for draw r of a run with -mapping_rep above 1. The node times are the rescaled ones (<input>_rescaled_nodes_<i>.txt) when the run wrote them, else the sampled ones.')
     parser.add_argument('-start', type=int, required=True, help='Index of the first MCMC sample to convert.')
     parser.add_argument('-end', type=int, required=True, help='Index after the last MCMC sample to convert (exclusive).')

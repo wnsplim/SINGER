@@ -2,26 +2,30 @@
 
 import sys
 import os
+import bisect
+import ctypes
+import math
+import signal
 import subprocess
+import time
 import argparse
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.realpath(__file__)), d) for d in ("", "python_scripts")]
 import vcf_io
 import numpy as np
 
-def compute_average_rate(map_file, x, y):
+def compute_average_rate(map_file, blocks):
     data = np.loadtxt(map_file, ndmin=2)
-    mask = (data[:, 1] > x) & (data[:, 0] < y)
-    selected_data = data[mask]
-
     total_length = 0
     weighted_sum = 0
-    for row in selected_data:
-        bin_start, bin_end, rate = row
-        effective_start = max(bin_start, x)
-        effective_end = min(bin_end, y)
-        bin_length = effective_end - effective_start
-        total_length += bin_length
-        weighted_sum += rate * bin_length
+    for x, y in blocks:
+        mask = (data[:, 1] > x) & (data[:, 0] < y)
+        for row in data[mask]:
+            bin_start, bin_end, rate = row
+            effective_start = max(bin_start, x)
+            effective_end = min(bin_end, y)
+            bin_length = effective_end - effective_start
+            total_length += bin_length
+            weighted_sum += rate * bin_length
 
     if total_length == 0:
         return 0
@@ -86,13 +90,23 @@ def read_masks(mask_n, mask_p, chrom_n, chrom_p, start, end):
     return merged
 
 
-def calculate_diversity(vcf_prefix, start, end, mask_n=None, mask_p=None, chrom=None, chrom_n=None, chrom_p=None):
+def find_block(blocks, lefts, pos):
+    i = bisect.bisect_right(lefts, pos) - 1
+    return i if i >= 0 and pos < blocks[i][1] else -1
+
+
+def calculate_diversity(vcf_prefix, blocks, mask_n=None, mask_p=None, chrom=None, chrom_n=None, chrom_p=None):
+    chrom = chrom or vcf_io.first_chrom(vcf_prefix)
+    masked = read_masks(mask_n, mask_p, chrom_n or chrom, chrom_p or chrom, blocks[0][0], blocks[-1][1]) if mask_n or mask_p else []
+    masked_blocks = [(lo, hi + 1) for lo, hi in masked]
+    masked_lefts = [lo for lo, hi in masked]
+    lefts = [left for left, right in blocks]
     total_diversity = 0.0
-    segment_length = end - start
-    masked = []
+    segment_length = sum(right - left for left, right in blocks)
+    segment_length -= sum(max(0, min(hi, right) - max(lo, left + 1) + 1) for left, right in blocks for lo, hi in masked)
 
     # Open the VCF file and read it line by line
-    with vcf_io.open_vcf(vcf_prefix, chrom or vcf_io.first_chrom(vcf_prefix)) as vcf:
+    with vcf_io.open_vcf(vcf_prefix, chrom) as vcf:
         for line in vcf:
             # Skip header lines
             if line.startswith("#"):
@@ -101,18 +115,13 @@ def calculate_diversity(vcf_prefix, start, end, mask_n=None, mask_p=None, chrom=
             # Split the VCF record into fields
             fields = line.strip().split('\t')
             pos = int(fields[1])  # Get the position of the variant
-            
+
             # Check if the variant is within the target region
-            if (mask_n or mask_p) and not masked:
-                masked = read_masks(mask_n, mask_p, chrom_n or fields[0], chrom_p or fields[0], start, end)
-                segment_length -= sum(hi - lo + 1 for lo, hi in masked)
-            if pos < start:
-                continue
-            if pos >= end:
+            if pos >= blocks[-1][1]:
                 break
-            if any(lo <= pos <= hi for lo, hi in masked):
+            if find_block(blocks, lefts, pos) < 0 or find_block(masked_blocks, masked_lefts, pos) >= 0:
                 continue
-            
+
             # Extract genotype information for each sample (after the 9th column)
             alleles = [fields[3]] + fields[4].split(",")  # REF and ALT alleles
             allele_counts = [0] * len(alleles)
@@ -122,7 +131,7 @@ def calculate_diversity(vcf_prefix, start, end, mask_n=None, mask_p=None, chrom=
                 gt = sample_field.split(':')[0]  # Extract the genotype (e.g., "0/1")
                 if '.' in gt:  # Missing data
                     continue
-                
+
                 # Genotype fields are usually formatted like "0/1", "1/1", etc.
                 gt_alleles = gt.replace('|', '/').split('/')  # Handle phased/unphased
                 for allele in gt_alleles:
@@ -168,8 +177,8 @@ def read_tip_ages(tip_ages_file, vcf_prefix, ploidy):
         ages.append(by_name[names[i//ploidy]])
     return ages
 
-def compute_Ne(vcf_prefix, start, end, m, ploidy, ages=None, g=None, mask_n=None, mask_p=None, chrom=None, chrom_n=None, chrom_p=None):
-    diversity = calculate_diversity(vcf_prefix, start, end, mask_n, mask_p, chrom, chrom_n, chrom_p)
+def compute_Ne(vcf_prefix, blocks, m, ploidy, ages=None, g=None, mask_n=None, mask_p=None, chrom=None, chrom_n=None, chrom_p=None):
+    diversity = calculate_diversity(vcf_prefix, blocks, mask_n, mask_p, chrom, chrom_n, chrom_p)
     mean_abs_diff = 0.0
     if ages:
         gens = [a/g for a in ages]
@@ -197,38 +206,129 @@ def is_number(value):
         return False
     return True
 
-def run_singer(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips, resume, scaling=""):
-    cmd = f"{singer_path()} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end}" + (f" -polar {polar}" if polar is not None else "") + f" -n {num_iters} -thin {thin}" + (" -resume" if resume else "") + f" -ploidy {ploidy}" + tips + scaling + f" -seed {seed}"
-    print(cmd)
-    sys.exit(subprocess.run(cmd.split(), check=False).returncode)
+def singer_command(Ne, m, r, start, end, vcf_prefix, output_prefix, num_iters, thin, polar, ploidy, seed, tips, resume, scaling=""):
+    return f"{singer_path()} -Ne {Ne} -m {m} -r {r} -input {vcf_prefix} -output {output_prefix} -start {start} -end {end}" + (f" -polar {polar}" if polar is not None else "") + f" -n {num_iters} -thin {thin}" + (" -resume" if resume else "") + f" -ploidy {ploidy}" + tips + scaling + ("" if resume else f" -seed {seed}")
 
-      
+def read_blocks(blocks_file, start, end):
+    blocks = []
+    with open(blocks_file) as f:
+        for lineno, line in enumerate(f, 1):
+            w = line.split()
+            if not w:
+                continue
+            if len(w) != 2 or not all(is_number(x) for x in w):
+                sys.exit(f"Error: -blocks {blocks_file} line {lineno}: expected 'left right'.")
+            left, right = float(w[0]), float(w[1])
+            if not (left < right and left >= (blocks[-1][1] if blocks else start) and right <= end):
+                sys.exit(f"Error: -blocks {blocks_file} line {lineno}: the blocks must be sorted and non-overlapping, each with left below right, inside -start {start} and -end {end}.")
+            blocks.append((left, right))
+    return blocks
+
+def blocks_with_sites(vcf_prefix, chrom, blocks):
+    lefts = [left for left, right in blocks]
+    found = [False] * len(blocks)
+    with vcf_io.open_vcf(vcf_prefix, chrom) as vcf:
+        for line in vcf:
+            if line.startswith("#"):
+                continue
+            pos = int(line.split("\t", 2)[1])
+            if pos >= blocks[-1][1]:
+                break
+            i = find_block(blocks, lefts, pos)
+            if i >= 0:
+                found[i] = True
+    return found
+
+def terminate(running):
+    for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(s, signal.SIG_IGN)
+    for _, p in running.values():
+        os.killpg(p.pid, signal.SIGTERM)
+    end = time.monotonic() + 10
+    for _, p in running.values():
+        try:
+            p.wait(max(0, end - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            os.killpg(p.pid, signal.SIGKILL)
+            p.wait()
+
+def run_blocks(jobs, num_cores):
+    """Runs the jobs (output prefix, command, log file or None for the terminal), up to num_cores at once, each in its
+    own process group. A signal or a job exiting nonzero stops every running job and exits nonzero."""
+    parent = os.getpid()
+    prctl = ctypes.CDLL(None).prctl if sys.platform.startswith("linux") else None
+
+    def die_with_parent():
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        prctl(1, signal.SIGTERM)
+        if os.getppid() != parent:
+            os._exit(1)
+
+    def stop(signum, frame):
+        sys.exit(f"stopped by {signal.Signals(signum).name}")
+
+    for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(s, stop)
+    todo = list(jobs)
+    running = {}
+    done = set()
+    try:
+        while todo or running:
+            while todo and len(running) < num_cores:
+                output, cmd, log = todo.pop(0)
+                print(cmd, flush=True)
+                out = open(log, "w") if log else None
+                p = subprocess.Popen(cmd.split(), stdout=out, stderr=subprocess.STDOUT if log else None, start_new_session=True, preexec_fn=die_with_parent if prctl else None)
+                if out:
+                    out.close()
+                running[p.pid] = (output, p)
+            pid, status = os.wait()
+            output, p = running.pop(pid)
+            p.returncode = os.waitstatus_to_exitcode(status)
+            if p.returncode != 0:
+                print(f"{output} exited with code {p.returncode}", file=sys.stderr)
+                sys.exit(p.returncode)
+            done.add(output)
+    except SystemExit:
+        print(f"Error: not completed: {', '.join(o for o, _, _ in jobs if o not in done)}.", file=sys.stderr)
+        raise
+    finally:
+        terminate(running)
+
 def main():
     parser = argparse.ArgumentParser(description='Sample and infer ARG from genetic variation data')
 
-    parser.add_argument('-Ne', type=float, default=-1, help='Effective population size. Default: estimated from the diversity.')
-    parser.add_argument('-m', type=str, required=True, help='Mutation rate: a number, or a rate map file.')
-    parser.add_argument('-r', type=str, help='Recombination rate: a number, or a rate map file. Default: the -m value.')
-    parser.add_argument('-input', type=str, help='Input file: .vcf, .vcf.gz or .bcf.')
+    parser.add_argument('-Ne', type=float, default=-1, help='Effective population size. Default: estimated.')
+    parser.add_argument('-m', type=str, required=True, help='Mutation rate or rate map file.')
+    parser.add_argument('-r', type=str, help='Recombination rate or rate map file. Default: -m.')
+    parser.add_argument('-input', type=str, help='Input file (.vcf, .vcf.gz or .bcf).')
     parser.add_argument('-output', type=str, required=True, help='Output file prefix.')
     parser.add_argument('-start', type=float, required=True, help='Start position.')
-    parser.add_argument('-end', type=float, required=True, help='End position (exclusive).')
+    parser.add_argument('-end', type=float, required=True, help='End position.')
     parser.add_argument('-n', type=int, default=100, help='Number of MCMC samples. Default: 100.')
     parser.add_argument('-thin', type=int, default=200, help='Thinning interval length. Default: 200.')
     parser.add_argument('-polar', type=float, help='Probability of correct polarization. Default: 0.5.')
     parser.add_argument('-resume', action='store_true', help='Resume MCMC with this flag.')
     parser.add_argument('-ploidy', type=int, default=2, help="Ploidy of the vcf file (1 or 2). Default: 2.")
     parser.add_argument('-seed', type=int, default=42, help='Random seed for reproducibility. Default: 42.')
-    parser.add_argument('-tip_ages', type=str, help='File with the sample ages in years before present. Requires -g.')
+    parser.add_argument('-tip_ages', type=str, help='Sample ages file (years before present). Requires -g.')
     parser.add_argument('-g', type=float, help='Generation time in years.')
-    parser.add_argument('-mask_n', type=str, help='Negative mask: a BED file of the regions to mask.')
-    parser.add_argument('-mask_p', type=str, help='Positive mask: a BED file of the accessible regions.')
-    parser.add_argument('-chrom', type=str, help='Chromosome to read from the VCF. Default: the first one.')
-    parser.add_argument('-chrom_n', type=str, help='Chromosome of the -mask_n file. Default: -chrom.')
-    parser.add_argument('-chrom_p', type=str, help='Chromosome of the -mask_p file. Default: -chrom.')
-    parser.add_argument('-scaling_rep', type=int, help='Number of ARG rescaling rounds per sample; 0 disables. Default: 1.')
-    parser.add_argument('-scaling_bin', type=int, help='Number of time bins for ARG rescaling. Default: 100.')
-    parser.add_argument('-mapping_rep', type=int, help='Number of stochastic mapping draws per sample. Default: 1.')
+    parser.add_argument('-mask_n', type=str, help='BED file of masked regions.')
+    parser.add_argument('-mask_p', type=str, help='BED file of accessible regions.')
+    parser.add_argument('-chrom', type=str, help='Chromosome to read. Default: the first.')
+    parser.add_argument('-chrom_n', type=str, help='Chromosome of -mask_n. Default: -chrom.')
+    parser.add_argument('-chrom_p', type=str, help='Chromosome of -mask_p. Default: -chrom.')
+    parser.add_argument('-genotype_lik', action='store_true', help='Use genotype likelihoods (GL or PL).')
+    parser.add_argument('-phase', action='store_true', help='Sample the phase of heterozygous genotypes.')
+    parser.add_argument('-genotype_calls', type=str, help='VCF supplying GL or PL. Used with -genotype_lik.')
+    parser.add_argument('-scaling_rep', type=int, help='ARG rescaling rounds. Default: 1.')
+    parser.add_argument('-scaling_bin', type=int, help='Time bins for rescaling. Default: 100.')
+    parser.add_argument('-mapping_rep', type=int, help='Mapping draws per sample. Default: 1.')
+    block = parser.add_mutually_exclusive_group()
+    block.add_argument('-L', type=float, help='Block length for a run in blocks.')
+    block.add_argument('-blocks', type=str, help='File of blocks, one "left right" per line.')
+    parser.add_argument('-num_cores', type=int, default=1, help='Number of blocks run at once. Default: 1.')
+    parser.add_argument('-convert_step', type=int, default=0, help='Convert every k-th sample to .trees at the end. Default: 0.')
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -255,15 +355,52 @@ def main():
         tips += f" -chrom_n {args.chrom_n}"
     if args.chrom_p:
         tips += f" -chrom_p {args.chrom_p}"
+    if args.genotype_lik:
+        tips += " -genotype_lik"
+    if args.phase:
+        tips += " -phase"
+    if args.genotype_calls:
+        tips += f" -genotype_calls {args.genotype_calls}"
     ages = read_tip_ages(args.tip_ages, args.input, args.ploidy) if args.tip_ages else None
+    if args.L is not None and args.L <= 0:
+        parser.error("-L must be above 0")
+    if args.num_cores < 1:
+        parser.error("-num_cores must be at least 1")
+    if args.convert_step < 0:
+        parser.error("-convert_step must be 0 or above")
 
-    m = float(args.m) if is_number(args.m) else compute_average_rate(args.m, args.start, args.end)
+    if args.L is None and args.blocks is None:
+        blocks = [(args.start, args.end)]
+        outputs = [(args.output, args.seed, None)]
+    else:
+        if args.L is not None:
+            blocks = [(args.start + k * args.L, min(args.start + (k + 1) * args.L, args.end)) for k in range(math.ceil((args.end - args.start) / args.L))]
+        else:
+            blocks = read_blocks(args.blocks, args.start, args.end)
+        if not blocks:
+            parser.error("No block lies between -start and -end")
+        found = blocks_with_sites(args.input, args.chrom or vcf_io.first_chrom(args.input), blocks)
+        index = [i for i in range(len(blocks)) if found[i]]
+        if not index:
+            sys.exit("Error: no block holds a VCF record.")
+        blocks = [blocks[i] for i in index]
+        outputs = [(f"{args.output}_{i}", args.seed + i, f"{args.output}_{i}.out") for i in index]
+        with open(f"{args.output}.blocks", "w") as f:
+            f.write(f"{args.start}\t{args.end}\n")
+            for i, (left, right) in zip(index, blocks):
+                f.write(f"{i}\t{left}\t{right}\n")
+
+    m = float(args.m) if is_number(args.m) else compute_average_rate(args.m, blocks)
     if m == 0:
         parser.error("The mutation rate is set to 0")
     if args.Ne < 0:
-        args.Ne = compute_Ne(args.input, args.start, args.end, m, args.ploidy, ages, args.g, args.mask_n, args.mask_p, args.chrom, args.chrom_n, args.chrom_p)
+        args.Ne = compute_Ne(args.input, blocks, m, args.ploidy, ages, args.g, args.mask_n, args.mask_p, args.chrom, args.chrom_n, args.chrom_p)
     scaling = (f" -scaling_rep {args.scaling_rep}" if args.scaling_rep is not None else "") + (f" -scaling_bin {args.scaling_bin}" if args.scaling_bin is not None else "") + (f" -mapping_rep {args.mapping_rep}" if args.mapping_rep is not None else "")
-    run_singer(args.Ne, args.m, args.r, args.start, args.end, args.input, args.output, args.n, args.thin, polar, args.ploidy, args.seed, tips, args.resume, scaling)
+    run_blocks([(output, singer_command(args.Ne, args.m, args.r, left, right, args.input, output, args.n, args.thin, polar, args.ploidy, seed, tips, args.resume, scaling), log)
+                for (left, right), (output, seed, log) in zip(blocks, outputs)], args.num_cores)
+    if args.convert_step:
+        import convert_to_tskit
+        convert_to_tskit.write_trees(args.output, args.output, 0, args.n, args.convert_step, args.input)
 
 
 if __name__ == "__main__":

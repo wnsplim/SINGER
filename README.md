@@ -4,13 +4,13 @@ SINGER stands for **S**ampling and **IN**ference of **GE**nealogies with **R**ec
 
 ## Requirements
 
-If you want to compile the source files, then C++17 and cmake are required. Otherwise you can also used the pre-compiled binary files on various platforms. 
+If you want to compile the source files, then C++17 and htslib are required. Otherwise you can also use the pre-compiled binary files on various platforms. 
 
-The analysis on the inferred ARGs will be performed using [tskit](https://tskit.dev/tskit/docs/stable/introduction.html), and you can find the installation instructions using the link. **Note that now we support the compability with tskit version 1.0 onward, which requires python 3.10 and above (from version 0.1.9).** 
+The analysis on the inferred ARGs will be performed using [tskit](https://tskit.dev/tskit/docs/stable/introduction.html), and you can find the installation instructions using the link. **Note that now we support the compatibility with tskit version 1.0 onward, which requires python 3.10 and above (from version 0.1.9).** 
 
 ## Installations
 
-The easiser way is to directory go to the folder `releases/` and download one of the versions which work for your working platform (Linux/MacOS_Intel/MacOS_M1). After downloading, you can decompress it using:
+The easiest way is to directly go to the folder `releases/` and download one of the versions which work for your working platform (Linux/MacOS_Intel/MacOS_M1). After downloading, you can decompress it using:
 
 ```
 tar -xvzf file_name
@@ -20,13 +20,13 @@ The Python scripts read a `.bcf` input through `bcftools`, which must then be on
 
 ## Input and output
 
-SINGER takes a **.vcf**, **.vcf.gz** or **.bcf** file and outputs a **.trees** file in tskit format. The mutations are already mapped to the branches, but non-polymorphic, multi-allelic sites and structral variants are excluded from inference. The branch length should be interpreted with units of generations, for example, for homo sapiens, you would need multiply that by 28 to convert to units of years. There will also be a **.log** file for you to check the argument you ran, and the summary statistic in MCMC iterations. 
+SINGER takes a **.vcf**, **.vcf.gz** or **.bcf** file and outputs a **.trees** file in tskit format. Only single-nucleotide variants are used; other records (indels, structural variants, multi-allelic sites) are skipped, and regions covered by deletions are masked. The branch length should be interpreted with units of generations, for example, for *Homo sapiens*, you would need to multiply that by 28 to convert to units of years. There will also be a **.log** file with the summary statistics of the MCMC iterations.
 
 ## Basic usage
 
 To sample ARGs with SINGER, you can run command line like shown below. 
 
-**IMPORTANT!**:if you wish to get ARG for: **(1) a long chromosome or (2) a series of regions**, we have provided more support to help you (see the [next section: Tools](#Tools)). If you think there are other specific job pipeline which many people might want to use, please contact us and we might add it! 
+**IMPORTANT!**:if you wish to get ARG for: **(1) a long chromosome or (2) a series of regions**, we have provided more support to help you (see [Running SINGER for a long chromosome](#running-singer-for-a-long-chromosome)). If you think there are other specific job pipeline which many people might want to use, please contact us and we might add it! 
 
 ```
 path_to_singer/singer_master -m 1.25e-8
@@ -76,14 +76,7 @@ The output files will be:
 prefix_of_output_files_nodes_{i}.txt, prefix_of_output_files_branches_{i}.txt, prefix_of_output_files_muts_{i}.txt, prefix_of_output_files_recombs_{i}.txt
 ```
 
-with `i` from `0` to `num_samples - 1`, and `prefix_of_output_files_rescaled_nodes_{i}.txt` when `-scaling_rep` is above 0. `prefix_of_output_files_counts_{i}.txt` has one row for each row of the branches file: the expected number of mutations on the branch, and the number of its bases at which the data can see a mutation on it (a base where at least one sample below the branch and one sample outside it have data). Each muts row is one mutation: the position, the lower and upper node of its branch, the state after it, 1 when the data can see it at that site by the same rule and 0 otherwise, and its time in the units of the nodes file. When `-scaling_rep` is above 0, the muts and counts files are drawn at the rescaled node times. `prefix_of_output_files.ckp` holds the flags of the run. With `-genotype_lik` or `-phase`, `prefix_of_output_files_cells_{i}.txt` holds, per site, the index and the allele of each sampled haplotype. We recommend converting these files to tree sequence format in tskit, with this function:
-
-```
-path_to_singer/convert_to_tskit.py -input prefix_of_arg_files -output prefix_of_tskit_files
--start start_index -end end_index -step step_size
-```
-
-This tool converts the ARG samples with index from `start_index` to `end_index`, with interval size `step_size`, to `prefix_of_tskit_files_{i}.trees`. The node times are the rescaled ones when SINGER wrote them, else the sampled ones. With `-mapping_rep` above 1 it writes one tree sequence for each draw, `prefix_of_tskit_files_{r}_{i}.trees`. Each tree sequence carries the mapping in its mutation table (`informed` in the mutation metadata), the counts in its edge metadata (`expected_mutations`, `informed_bases`) and the flags of the run in its provenance record; call `tables.edges.drop_metadata()` before `simplify`, which tskit refuses on edges with metadata. Without a muts file the tree sequence has no mutation table. `convert_long_ARG.py` writes the same content for a chromosome run in blocks.
+with `i` from `0` to `num_samples - 1`, and `prefix_of_output_files_rescaled_nodes_{i}.txt` when `-scaling_rep` is above 0. `prefix_of_output_files_counts_{i}.txt` has one row for each row of the branches file: the expected number of mutations on the branch, and the number of its bases at which the data can see a mutation on it (a base where at least one sample below the branch and one sample outside it have data). Each muts row is one mutation: the position, the lower and upper node of its branch, the state after it, 1 when the data can see it at that site by the same rule and 0 otherwise, and its time in the units of the nodes file. When `-scaling_rep` is above 0, the muts and counts files are drawn at the rescaled node times. `prefix_of_output_files.ckp` is the checkpoint for `-resume`: it stores every flag of the run except `-resume`, `-n`, `-seed` and `-output`, and `-resume` reloads these so the run continues with the same settings. With `-genotype_lik` or `-phase`, `prefix_of_output_files_cells_{i}.txt` holds, per site, the index and the allele of each sampled haplotype.
 
 ### Rate maps
 
@@ -124,6 +117,67 @@ With **one column**, give ages positionally in VCF sample order. The same three 
 8000
 ```
 
+### Running SINGER for a long chromosome
+
+Often people would like to run the ARG inference method for the entire chromosome (or even the entire genome). For this, `singer_master` cuts the region into blocks, runs SINGER on each block, and runs several blocks at the same time. Give the block length with `-L`:
+
+```
+path_to_singer/singer_master -m 1.25e-8 -input input.vcf.gz -output prefix_of_output_file
+-start 0 -end 50e6 -L 5e6 -num_cores 10
+```
+
+Or give your own blocks in a file with `-blocks`:
+
+```
+path_to_singer/singer_master -m 1.25e-8 -input input.vcf.gz -output prefix_of_output_file
+-start 0 -end 50e6 -blocks blocks.txt -num_cores 10
+```
+
+Each line of the block file is one block: its left and its right position, in the chromosome positions of the VCF, as in a rate map. The lines are sorted, the blocks do not overlap, and all blocks are between `-start` and `-end`. Gaps between the blocks are allowed. For example, these blocks leave out a centromere from 18 Mb to 22 Mb:
+
+```
+0 6000000
+6000000 12000000
+12000000 18000000
+22000000 28000000
+```
+
+|flag|details|
+|-------------------|---|
+|**-L**|block length: `singer_master` cuts the region from `-start` to `-end` into blocks of this many bases|
+|**-blocks**|file of blocks, one `left right` line for each block|
+|**-num_cores**|the number of blocks that run at the same time, default at 1|
+
+Block `i` (counted from 0, in the order of the blocks) writes the output files of a SINGER run with the prefix `prefix_of_output_file_{i}`, and its console output to `prefix_of_output_file_{i}.out`. It runs with the seed `-seed` + `i`. A block that holds no VCF record is skipped. Without `-Ne`, `singer_master` estimates Ne one time from the diversity of all the blocks that run, with the masks applied, and gives this value to every block. All the other flags apply to every block.
+
+The file `prefix_of_output_file.blocks` lists the region and the blocks that ran. The first line has the start and the end of the region. Each other line is one block: its index, its left position and its right position. For the first command above, when the block from 15 Mb to 20 Mb holds no VCF record:
+
+```
+0.0	50000000.0
+0	0.0	5000000.0
+1	5000000.0	10000000.0
+2	10000000.0	15000000.0
+4	20000000.0	25000000.0
+......
+```
+
+`singer_master` stops all the blocks that run, and exits with an error that names the blocks that did not complete, when one block fails, or when it receives SIGINT (Ctrl-C), SIGTERM or SIGHUP. On Linux, the blocks also stop when `singer_master` is killed with SIGKILL. On macOS, the blocks keep running after a SIGKILL to `singer_master`. Stop them with `pkill -f prefix_of_output_file`.
+
+### Converting to tskit
+
+We recommend converting these files to tree sequence format in tskit, with this function:
+
+```
+path_to_singer/convert_to_tskit.py -input prefix_of_arg_files -output prefix_of_tskit_files
+-start start_index -end end_index -step step_size
+```
+
+This tool converts the ARG samples with index from `start_index` to `end_index`, with interval size `step_size`, to `prefix_of_tskit_files_{i}.trees`. The node times are the rescaled ones when SINGER wrote them, else the sampled ones. With `-mapping_rep` above 1 it writes one tree sequence for each draw, `prefix_of_tskit_files_{r}_{i}.trees`. Each tree sequence carries the mapping in its mutation table (`informed` in the mutation metadata), the counts in its edge metadata (`expected_mutations`, `informed_bases`) and the flags of the run in its provenance record; call `tables.edges.drop_metadata()` before `simplify`, which tskit refuses on edges with metadata. Without a muts file the tree sequence has no mutation table.
+
+For a run in blocks (`-L` or `-blocks`), the same command stitches the blocks into one tree sequence. When `prefix_of_output_file.blocks` is present, `convert_to_tskit.py` places each block at its chromosome position in one tree sequence. The sequence length is the end of the region. A gap between the blocks, and a block that was skipped, has no edges and no sites. To leave a block out of the tree sequence, delete its line from `prefix_of_output_file.blocks` before you convert.
+
+You can also give `-convert_step k` to `singer_master`. At the end of the run, it then converts every `k`-th sample to `prefix_of_output_file_{i}.trees` with the same content, and attaches the sample names of the input file.
+
 
 ## Tools
 
@@ -137,11 +191,11 @@ python compute_trace.py
 -start_index index_start_sample -end_index index_terminal_sample
 -output_filename output_trace_filename
 ```
-The script will calculate the aforementioned two statistics for all samples with index between the `start_index` and the `end_index`, and they will be output as the the 2 columns in the output file. The fit to the diversity landscape and the number of non-uniquely-mapped sites typically drops with more iterations of the MCMC, and when they reach to a stable stage that is usually a good sign for convergence. 
+The script will calculate the aforementioned two statistics for all samples with index between the `start_index` and the `end_index`, and they will be output as the 2 columns in the output file. The fit to the diversity landscape and the number of non-uniquely-mapped sites typically drops with more iterations of the MCMC, and when they reach to a stable stage that is usually a good sign for convergence. 
 
 ### Computing the pairwise coalescence times with respect to a particular haplotype
 
-In the manuscript we used the coalescence ratio to find introgression signals, which is based on the distribution of pairwise coalescence times between one haplytype and others, in every 10kb genome windows. Here we provide a python script tools, to compute the pairwise coalescence times between one given haplotype (indiciated by leaf node index) and others, in a windowed fashion. 
+In the manuscript we used the coalescence ratio to find introgression signals, which is based on the distribution of pairwise coalescence times between one haplotype and others, in every 10kb genome windows. Here we provide a python script tools, to compute the pairwise coalescence times between one given haplotype (indicated by leaf node index) and others, in a windowed fashion. 
 
 ```
 python compute_pairwise_coalescence_times.py
@@ -150,41 +204,10 @@ python compute_pairwise_coalescence_times.py
 ```
 Each row in the output file stands for all the pairwise coalescence times between the input leaf node index and all others. The rows are in the order of the genome windows. 
 
-### Running SINGER for a long chromosome
-
-Often people would like to run the ARG inference method for the entire chromosome (or even the entire genome). We recommend running ```singer_master``` for continous segments (such as 5Mb) and then use the following tool to merge them together. 
-
-```
-path_to_singer/singer_master -m 1.25e-8 -input input.vcf.gz -output prefix_of_output_file_0 -start 0 -end 5e6
-path_to_singer/singer_master -m 1.25e-8 -input input.vcf.gz -output prefix_of_output_file_1 -start 5e6 -end 10e6
-path_to_singer/singer_master -m 1.25e-8 -input input.vcf.gz -output prefix_of_output_file_2 -start 10e6 -end 15e6
-......
-```
-
-```
-python merge_ARG.py --file_table sub_file_table_file --output merged_ARG_filename
-```
-
-The ```sub_file_table_file``` specifies how the inferred ARG should be pieced together with an example like this:
-
-```
-prefix_of_output_file_i_nodes_0.txt prefix_of_output_file_i_branches_0.txt prefix_of_output_file_i_muts_0.txt 0 
-prefix_of_output_file_i_nodes_1.txt prefix_of_output_file_i_branches_1.txt prefix_of_output_file_i_muts_1.txt 5000000
-prefix_of_output_file_i_nodes_2.txt prefix_of_output_file_i_branches_2.txt prefix_of_output_file_i_muts_2.txt 10000000
-......
-```
-
-A row may carry the counts file before the offset, for example `prefix_of_output_file_i_nodes_0.txt prefix_of_output_file_i_branches_0.txt prefix_of_output_file_i_muts_0.txt prefix_of_output_file_i_counts_0.txt 0`. The merged tree sequence then carries the edge metadata. List the `rescaled_nodes` files to merge the rescaled times.
-
-where ```i``` is the index of the ARG sample, and the index after that is the index of the genomic windows on which parallization is performed. Note that the genomic windows do not have to be all adjacent. For example, when there is a centromeric region in the middle of the chromosome, it can be skipped by only selecting windows in the left and right arms. This will be reflected in the last column of the ```sub_file_table_file```, which indicates the starting position of each genomic window. 
-
-By doing the merging operation, you will get the ARG samples with the length of the entire chromosome rather than for each individual genomic window, which might be convenient in certain scenarios. 
-
 
 
 ## Suggestions from developer
 
 1. As a Bayesian sampling method, SINGER works best when you sample some ARGs from posterior, **only using one single sample is NOT ideal**. To this point, we highly encourage specifying **-n, -thin** flags. You can find how we run SINGER on real datasets on:
 2. It is of importance to carefully choose the parameters, such as -Ne, -m, and -r. We recommend first choosing the mutation rate m, and then based on average pairwise diversity \($\pi=4\cdot N_e \cdot m\$ under -ploidy 2, $\pi=2\cdot N \cdot m\$ under -ploidy 1), you can decide the Ne parameter. If you are not super sure about the recombination rate, you can leave out -r, and SINGER sets it equal to -m. 
-3. Unfortunately for now we only support phased, high-quality genomes, and polymorphic sites with missingness will be excluded. We are working on incorporating missingness and unphased data in the near future. ARGweaver has better support in these regards.
-4. **A frequent bug reported** is caused by running SINGER on essentially a region with no or very low sequencing data, such as centromeric regions. SINGER cannot infer the ARG when there is no data present, and will likely bug out due to underflow issues. 
+3. **A frequent bug reported** is caused by running SINGER on essentially a region with no or very low sequencing data, such as centromeric regions. SINGER cannot infer the ARG when there is no data present, and will likely bug out due to underflow issues. 

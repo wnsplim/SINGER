@@ -47,9 +47,6 @@ g++ -std=c++17 -g $(find "$BUILD_DIR/debug" -name '*.o') $LIBS -o "$VERSION_DIR/
 # Copy additional files
 cp singer_master "$VERSION_DIR/singer_master"
 cp python_scripts/convert_to_tskit.py "$VERSION_DIR/convert_to_tskit.py"
-cp python_scripts/index_vcf.py "$VERSION_DIR/index_vcf.py"
-cp python_scripts/merge_ARG.py "$VERSION_DIR/merge_ARG.py"
-cp python_scripts/convert_long_ARG.py "$VERSION_DIR/convert_long_ARG.py"
 cp python_scripts/vcf_io.py "$VERSION_DIR/vcf_io.py"
 cp python_scripts/arg_io.py "$VERSION_DIR/arg_io.py"
 cp "$SRC_DIR/../../LICENSE" "$VERSION_DIR/LICENSE"

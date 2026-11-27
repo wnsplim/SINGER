@@ -110,6 +110,43 @@ def finish_mutations(tables):
         tables.compute_mutation_times()
 
 
+def read_long_ARG(node_files, branch_files, mutation_files, block_coordinates, counts_files, sequence_length=0):
+    """The tables of the blocks placed at their absolute offsets block_coordinates; the sample nodes are shared, the
+    other nodes of each block appended. The sequence length is sequence_length or, when larger, the end of the last
+    edge; a region without a block has no edge."""
+    tables = tskit.TableCollection(sequence_length=sequence_length)
+    node_table = tables.nodes
+
+    for node_file_index, (node_file, branch_file, mutation_file, counts_file) in enumerate(zip(node_files, branch_files, mutation_files, counts_files)):
+        node_time = np.atleast_1d(np.loadtxt(node_file))
+        edge_all = np.loadtxt(branch_file, ndmin=2)
+        keep = edge_all[:, 2] >= 0
+        edge_span = edge_all[keep, :]
+        if node_file_index == 0:
+            sample_num = len(node_time) - len(set(edge_span[:, 2].astype(int)))
+            for t in node_time[:sample_num]:
+                node_table.add_row(flags=tskit.NODE_IS_SAMPLE, time=t)
+        node_num = node_table.num_rows - sample_num
+        for t in node_time[sample_num:]:
+            node_table.add_row(time=t)
+
+        length = max(edge_span[:, 1])
+        tables.sequence_length = max(tables.sequence_length, length + block_coordinates[node_file_index])
+
+        parent_indices = np.array(edge_span[:, 2], dtype=np.int32)
+        child_indices = np.array(edge_span[:, 3], dtype=np.int32)
+
+        parent_indices[parent_indices >= sample_num] += node_num
+        child_indices[child_indices >= sample_num] += node_num
+
+        add_edges(tables, edge_span, parent_indices, child_indices, block_coordinates[node_file_index], counts_file, keep)
+        add_mutations(tables, mutation_file, block_coordinates[node_file_index],
+                      lambda n, s=sample_num, k=node_num: n + k if n >= s else n)
+
+    finish_mutations(tables)
+    return tables
+
+
 def read_ckp(prefix):
     """The flags of the run from <prefix>.ckp as a dict, or {} when absent."""
     flags = {}
