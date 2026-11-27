@@ -384,7 +384,7 @@ def main():
         if not index:
             sys.exit("Error: no block holds a VCF record.")
         blocks = [blocks[i] for i in index]
-        outputs = [(f"{args.output}_{i}", args.seed + i, f"{args.output}_{i}.out") for i in index]
+        outputs = [(f"{args.output}_block{i}", args.seed + i, f"{args.output}_block{i}.out") for i in index]
         with open(f"{args.output}.blocks", "w") as f:
             f.write(f"{args.start}\t{args.end}\n")
             for i, (left, right) in zip(index, blocks):

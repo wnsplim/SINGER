@@ -43,7 +43,6 @@ struct Mutation_row {
     Branch branch;
     int state;
     char informed;
-    double time;
 };
 
 struct Bin_gaps {
@@ -235,8 +234,6 @@ public:
 
     void resample_genotypes();
 
-    void draw_mutations();
-
     void set_lengths(Flat_tree &flat, const function<double(Node *)> *time_of);
 
     void outside_messages(const Flat_tree &flat, const Tree_order &t, double unit, const Peel &p, vector<Msg> &above);
@@ -259,12 +256,6 @@ public:
     vector<pair<double, double>> masked = {};
 
     void compute_assayed();
-
-    int num_unmapped();
-
-    void check_incompatibility();
-
-    int count_flipping();
 
     void clear_remove_info();
 

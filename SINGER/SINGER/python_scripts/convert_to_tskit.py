@@ -15,7 +15,7 @@ def read_blocks(input_prefix):
         return [input_prefix], [0.0], 0
     with open(blocks_file) as f:
         rows = [line.split() for line in f if line.strip()]
-    return [f"{input_prefix}_{w[0]}" for w in rows[1:]], [float(w[1]) for w in rows[1:]], float(rows[0][1])
+    return [f"{input_prefix}_block{w[0]}" for w in rows[1:]], [float(w[1]) for w in rows[1:]], float(rows[0][1])
 
 
 def write_trees(input_prefix, output_prefix, start, end, step, vcf_file=None):
@@ -42,7 +42,9 @@ def write_trees(input_prefix, output_prefix, start, end, step, vcf_file=None):
             ts = tables.tree_sequence()
             if vcf_file is not None:
                 ts = vcf_io.add_individuals_from_vcf(ts, vcf_file)
-            ts.dump(arg_io.trees_name(output_prefix, i, draw))
+            name = arg_io.trees_name(output_prefix, i, draw)
+            ts.dump(name)
+            print(f"wrote {name}")
 
 def main():
     parser = argparse.ArgumentParser(description='Convert to tskit format')

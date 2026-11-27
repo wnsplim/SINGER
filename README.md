@@ -6,7 +6,7 @@ SINGER stands for **S**ampling and **IN**ference of **GE**nealogies with **R**ec
 
 If you want to compile the source files, then C++17 and htslib are required. Otherwise you can also use the pre-compiled binary files on various platforms. 
 
-The analysis on the inferred ARGs will be performed using [tskit](https://tskit.dev/tskit/docs/stable/introduction.html), and you can find the installation instructions using the link. **Note that now we support the compatibility with tskit version 1.0 onward, which requires python 3.10 and above (from version 0.1.9).** 
+The analysis on the inferred ARGs can be performed using [tskit](https://tskit.dev/tskit/docs/stable/introduction.html), and you can find the installation instructions using the link. **Note that now we support the compatibility with tskit version 1.0 onward, which requires python 3.10 and above (from version 0.1.9).** 
 
 ## Installations
 
@@ -20,7 +20,7 @@ The Python scripts read a `.bcf` input through `bcftools`, which must then be on
 
 ## Input and output
 
-SINGER takes a **.vcf**, **.vcf.gz** or **.bcf** file and outputs a **.trees** file in tskit format. Only single-nucleotide variants are used; other records (indels, structural variants, multi-allelic sites) are skipped, and regions covered by deletions are masked. The branch length should be interpreted with units of generations, for example, for *Homo sapiens*, you would need to multiply that by 28 to convert to units of years. There will also be a **.log** file with the summary statistics of the MCMC iterations.
+SINGER takes a **.vcf**, **.vcf.gz** or **.bcf** file and outputs a **.trees** file in tskit format. Only single-nucleotide variants are used; other records (indels, structural variants, multi-allelic sites) are skipped, and regions covered by deletions are masked. The branch length should be interpreted with units of generations (unless explicit generation time is provided via the -g flag), for example, for *Homo sapiens*, you would need to multiply that by 28 to convert to units of years. There will also be a **.log** file with the summary statistics of the MCMC iterations.
 
 ## Basic usage
 
@@ -41,7 +41,7 @@ The required flags include:
 |flag|required?|details|  
 |-------------------|-----|---|  
 |**-m**|required|per base pair per generation mutation rate: a number, or the name of a rate map file (see [Rate maps](#rate-maps))|
-|**-input**|required|input file: .vcf, .vcf.gz or .bcf. Without `-genotype_lik`, an unphased heterozygous genotype counts as missing for its sample.|
+|**-input**|required|input file: .vcf, .vcf.gz or .bcf. Without `-genotype_lik` or `-phase`, an unphased heterozygous genotype counts as missing for its sample.|
 |**-output**|required|prefix of the output .trees file name| 
 |**-start**|required|start position of the region| 
 |**-end**|required|end position of the region. SINGER reads the records with -start ≤ POS < -end.| 
@@ -51,7 +51,7 @@ The optional flags include:
 |flag|required?|details|  
 |-------------------|-----|---|  
 |**-Ne**|optional|effective population size: the diploid Ne under -ploidy 2, the haploid population size N under -ploidy 1. Without it `singer_master` estimates Ne from the diversity|
-|**-ploidy**|optional|1 or 2, the ploidy of every sample in the VCF (default 2).|
+|**-ploidy**|optional|1 or 2, the ploidy of every sample in the input file (default 2).|
 |**-r**|optional|per base pair per generation recombination rate: a number, or the name of a rate map file. If `-m` is a number, the default is the value of `-m`. If `-m` is a rate map file, `-r` is required|
 |**-n**|optional|the number of posterior samples, default at 100|
 |**-thin**|optional|the number of MCMC iterations between adjacent samples, default at 200|
@@ -64,11 +64,12 @@ The optional flags include:
 |**-mask_n**|optional|Negative mask. A BED file of the regions to mask; a row with a VCF sample name in a fourth column masks the region for that sample only.|
 |**-mask_p**|optional|Positive mask. A BED file of the accessible regions, for example the 1000 Genomes strict accessibility mask for GRCh37 ([20141020.strict_mask.whole_genome.bed](https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/supporting/accessible_genome_masks/20141020.strict_mask.whole_genome.bed)). You can use `-mask_p` together with `-mask_n`.|
 |**-genotype_lik**|optional|use the GL or PL of each genotype, from the input record or else from `-genotype_calls`.|
-|**-phase**|optional|sample the phase of each heterozygous genotype.|
+|**-phase**|optional|sample the phase of each heterozygous genotype. Without it, a genotype written phased (`0\|1`) keeps its written phase; under `-genotype_lik`, an unphased heterozygous genotype has its phase sampled regardless of `-phase`.|
 |**-genotype_calls**|optional|the caller's VCF whose GL or PL are used where the input has none, matched by position, REF, ALT and sample name. Read only with `-genotype_lik`.|
-|**-chrom**|optional|the chromosome to read from the input file (default: the first chromosome in the file)|
-|**-chrom_n**|optional|the chromosome to read from the `-mask_n` file (default: the `-chrom` chromosome)|
-|**-chrom_p**|optional|the chromosome to read from the `-mask_p` file (default: the `-chrom` chromosome)|
+|**-chrom**|optional|the chromosome name to read from the input file (default: the first chromosome in the file)|
+|**-chrom_n**|optional|the chromosome name to read from the `-mask_n` file (default: the `-chrom` chromosome)|
+|**-chrom_p**|optional|the chromosome name to read from the `-mask_p` file (default: the `-chrom` chromosome)|
+|**-resume**|optional|resume the interrupted run with the same `-output`. `-n` is the total number of posterior samples: the run continues from its last sample until `-n` samples exist. All other settings, including `-thin`, must match the original run.|
 
 The output files will be:
 
@@ -76,11 +77,11 @@ The output files will be:
 prefix_of_output_files_nodes_{i}.txt, prefix_of_output_files_branches_{i}.txt, prefix_of_output_files_muts_{i}.txt, prefix_of_output_files_recombs_{i}.txt
 ```
 
-with `i` from `0` to `num_samples - 1`, and `prefix_of_output_files_rescaled_nodes_{i}.txt` when `-scaling_rep` is above 0. `prefix_of_output_files_counts_{i}.txt` has one row for each row of the branches file: the expected number of mutations on the branch, and the number of its bases at which the data can see a mutation on it (a base where at least one sample below the branch and one sample outside it have data). Each muts row is one mutation: the position, the lower and upper node of its branch, the state after it, 1 when the data can see it at that site by the same rule and 0 otherwise, and its time in the units of the nodes file. When `-scaling_rep` is above 0, the muts and counts files are drawn at the rescaled node times. `prefix_of_output_files.ckp` is the checkpoint for `-resume`: it stores every flag of the run except `-resume`, `-n`, `-seed` and `-output`, and `-resume` reloads these so the run continues with the same settings. With `-genotype_lik` or `-phase`, `prefix_of_output_files_cells_{i}.txt` holds, per site, the index and the allele of each sampled haplotype.
+with `i` from `0` to `num_samples - 1`, and `prefix_of_output_files_rescaled_nodes_{i}.txt` when `-scaling_rep` is above 0. `prefix_of_output_files_counts_{i}.txt` has one row for each row of the branches file: the expected number of mutations on the branch, and the number of its bases at which the data can see a mutation on it (a base where at least one sample below the branch and one sample outside it have data). Each muts row corresponds to one mutation: the position, the lower and upper node of its branch, the state after it (1 when the data can see it at that site by the same rule and 0 otherwise). When `-scaling_rep` is above 0, the muts and counts files are drawn at the rescaled node times.
 
 ### Rate maps
 
-`-m` and `-r` take a number or the name of a rate map file. A value that is a number is a constant rate. Any other value is the name of a rate map file. The two flags are independent, so you can give a recombination map with a constant mutation rate, or the opposite.
+`-m` and `-r` take a number or the name of a rate map file. The two flags are independent, so you can give a recombination map with a constant mutation rate, or the opposite.
 
 A rate map file has one segment on each line, with three numbers: the left position, the right position, and the rate per base pair per generation in that segment. The positions are chromosome positions, the same as in the VCF. Each segment must start where the previous segment ends. A rate of 0 is allowed. The map must cover the region from `-start` to `-end`. Example:
 
@@ -119,7 +120,7 @@ With **one column**, give ages positionally in VCF sample order. The same three 
 
 ### Running SINGER for a long chromosome
 
-Often people would like to run the ARG inference method for the entire chromosome (or even the entire genome). For this, `singer_master` cuts the region into blocks, runs SINGER on each block, and runs several blocks at the same time. Give the block length with `-L`:
+Often people would like to run the ARG inference method for the entire chromosome (or even the entire genome). For this, `singer_master` cuts the region into blocks, runs SINGER on each block, and runs several blocks at the same time in parallel. Give the block length with `-L`:
 
 ```
 path_to_singer/singer_master -m 1.25e-8 -input input.vcf.gz -output prefix_of_output_file
@@ -133,7 +134,7 @@ path_to_singer/singer_master -m 1.25e-8 -input input.vcf.gz -output prefix_of_ou
 -start 0 -end 50e6 -blocks blocks.txt -num_cores 10
 ```
 
-Each line of the block file is one block: its left and its right position, in the chromosome positions of the VCF, as in a rate map. The lines are sorted, the blocks do not overlap, and all blocks are between `-start` and `-end`. Gaps between the blocks are allowed. For example, these blocks leave out a centromere from 18 Mb to 22 Mb:
+Each line of the block file is one block: its left and its right position, in the chromosome positions of the VCF, as in a rate map. The lines are sorted, the blocks do not overlap, and all blocks are between `-start` and `-end`. Gaps between the blocks are allowed. For example, these blocks leave out a region from 18 Mb to 22 Mb:
 
 ```
 0 6000000
@@ -148,7 +149,7 @@ Each line of the block file is one block: its left and its right position, in th
 |**-blocks**|file of blocks, one `left right` line for each block|
 |**-num_cores**|the number of blocks that run at the same time, default at 1|
 
-Block `i` (counted from 0, in the order of the blocks) writes the output files of a SINGER run with the prefix `prefix_of_output_file_{i}`, and its console output to `prefix_of_output_file_{i}.out`. It runs with the seed `-seed` + `i`. A block that holds no VCF record is skipped. Without `-Ne`, `singer_master` estimates Ne one time from the diversity of all the blocks that run, with the masks applied, and gives this value to every block. All the other flags apply to every block.
+Block `b` (counted from 0, in the order of the blocks) writes the output files of a SINGER run with the prefix `prefix_of_output_file_block{b}`, and its console output to `prefix_of_output_file_block{b}.out`. It runs with the seed `-seed` + `b`. In a file name such as `prefix_of_output_file_block{b}_nodes_{i}.txt`, `b` is the block index and `i` is the sample index; the converted `prefix_of_output_file_{i}.trees` is sample `i` of the whole region. A block that holds no VCF record is skipped. Without `-Ne`, `singer_master` estimates Ne one time from the diversity of all the blocks that run, with the masks applied, and gives this value to every block. All the other flags apply to every block.
 
 The file `prefix_of_output_file.blocks` lists the region and the blocks that ran. The first line has the start and the end of the region. Each other line is one block: its index, its left position and its right position. For the first command above, when the block from 15 Mb to 20 Mb holds no VCF record:
 
@@ -161,8 +162,6 @@ The file `prefix_of_output_file.blocks` lists the region and the blocks that ran
 ......
 ```
 
-`singer_master` stops all the blocks that run, and exits with an error that names the blocks that did not complete, when one block fails, or when it receives SIGINT (Ctrl-C), SIGTERM or SIGHUP. On Linux, the blocks also stop when `singer_master` is killed with SIGKILL. On macOS, the blocks keep running after a SIGKILL to `singer_master`. Stop them with `pkill -f prefix_of_output_file`.
-
 ### Converting to tskit
 
 We recommend converting these files to tree sequence format in tskit, with this function:
@@ -172,7 +171,23 @@ path_to_singer/convert_to_tskit.py -input prefix_of_arg_files -output prefix_of_
 -start start_index -end end_index -step step_size
 ```
 
-This tool converts the ARG samples with index from `start_index` to `end_index`, with interval size `step_size`, to `prefix_of_tskit_files_{i}.trees`. The node times are the rescaled ones when SINGER wrote them, else the sampled ones. With `-mapping_rep` above 1 it writes one tree sequence for each draw, `prefix_of_tskit_files_{r}_{i}.trees`. Each tree sequence carries the mapping in its mutation table (`informed` in the mutation metadata), the counts in its edge metadata (`expected_mutations`, `informed_bases`) and the flags of the run in its provenance record; call `tables.edges.drop_metadata()` before `simplify`, which tskit refuses on edges with metadata. Without a muts file the tree sequence has no mutation table.
+|flag|details|
+|-------------------|---|
+|**-input**|the `-output` prefix of the SINGER run|
+|**-output**|prefix of the .trees files to write|
+|**-start**|index of the first posterior sample to convert|
+|**-end**|index "after" the last posterior sample to convert|
+|**-step**|spacing between the converted sample indices, default at 1; for example `-start 0 -end 100 -step 10` converts samples 0, 10, ..., 90|
+|**-vcf**|optional: the input VCF of the run, whose sample names are attached to the tree sequence as individuals|
+
+Sample `i` is written to `prefix_of_tskit_files_{i}.trees`. With `-mapping_rep` above 1 the tool writes one tree sequence for each draw, `prefix_of_tskit_files_{r}_{i}.trees`. The tool prints the name of each file it writes.
+
+Each tree sequence holds:
+
+- the ARG of the sample, with the rescaled node times when SINGER wrote them, else the sampled ones;
+- the mutations of the muts file, with the `informed` flag in the mutation metadata; their times are computed by tskit (`compute_mutation_times`). Without a muts file the tree sequence will not carry any mutation table;
+- the counts in its edge metadata (`expected_mutations`, `informed_bases`). Call `tables.edges.drop_metadata()` before `simplify`, which tskit refuses on edges with metadata;
+- the flags of the run in its provenance record.
 
 For a run in blocks (`-L` or `-blocks`), the same command stitches the blocks into one tree sequence. When `prefix_of_output_file.blocks` is present, `convert_to_tskit.py` places each block at its chromosome position in one tree sequence. The sequence length is the end of the region. A gap between the blocks, and a block that was skipped, has no edges and no sites. To leave a block out of the tree sequence, delete its line from `prefix_of_output_file.blocks` before you convert.
 
@@ -203,8 +218,6 @@ python compute_pairwise_coalescence_times.py
 --interval_size size_of_genome_window --output_file output_file_name
 ```
 Each row in the output file stands for all the pairwise coalescence times between the input leaf node index and all others. The rows are in the order of the genome windows. 
-
-
 
 ## Suggestions from developer
 

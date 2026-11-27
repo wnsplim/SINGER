@@ -136,9 +136,6 @@ void Sampler::iterative_start() {
         threader.thread(arg, *it);
         it++;
         random_seed = random_engine();
-        arg.draw_mutations();
-        arg.check_incompatibility();
-        cout << "Number of flippings: " << arg.count_flipping() << endl;
         write_iterative_start();
         int placed = (int) arg.sample_nodes.size();
         if ((placed & (placed - 1)) == 0 or it == ordered_sample_nodes.end()) {
@@ -189,7 +186,6 @@ void Sampler::internal_sample(int num_iters, int spacing) {
             moves += 1;
             arg.clear_remove_info();
         }
-        arg.resample_genotypes();
         arg.release_dead_nodes();
         arg.write_nodes(output_prefix + "_nodes_" + to_string(sample_index) + ".txt");
         arg.write_branches(output_prefix + "_branches_" + to_string(sample_index) + ".txt");
@@ -200,11 +196,9 @@ void Sampler::internal_sample(int num_iters, int spacing) {
         write_mapping(output_prefix, to_string(sample_index), output_prefix + "_counts_" + to_string(sample_index) + ".txt", rescale(output_prefix + "_rescaled_nodes_" + to_string(sample_index) + ".txt"));
         random_seed = random_engine();
         write_sample();
-        arg.check_incompatibility();
         cout << "Start: " << arg.start << " , End: " << arg.end << endl;
         sample_index += 1;
         cout << "Number of trees: " << arg.recombinations.size() << endl;
-        cout << "Number of flippings: " << arg.count_flipping() << endl;
     }
 }
 
@@ -218,10 +212,7 @@ void Sampler::resume_internal_sample(int num_iters, int spacing) {
     sample_index += 1;
     arg.penalty = penalty;
     arg.ancestral_prob = polar;
-    arg.draw_mutations();
-    arg.check_incompatibility();
     cout << "Number of trees: " << arg.recombinations.size() << endl;
-    cout << "Number of flippings: " << arg.count_flipping() << endl;
     internal_sample(num_iters, spacing);
 }
 
@@ -273,7 +264,6 @@ void Sampler::start_log() {
     << "Iteration:" << "\t"
     << "Threading_type" << "\t"
     << "#Recombinations" << "\t"
-    << "#Mutations_not_uniquely_mapped" << "\t"
     << "Last_updated_pos" << "\t"
     << "Random_seed" << "\t"
     << "Counter" << endl;
@@ -291,7 +281,6 @@ void Sampler::write_iterative_start() {
     << arg.sample_nodes.size() << "\t"
     << "initial_thread" << "\t"
     << arg.recombinations.size() - 2 << "\t"
-    << arg.num_unmapped() << "\t"
     << setprecision(numeric_limits<double>::max_digits10)
     << arg.end << "\t"
     << random_seed << "\t"
@@ -309,7 +298,6 @@ void Sampler::write_sample() {
     << sample_index << "\t"
     << "rethread" << "\t"
     << arg.recombinations.size() - 2 << "\t"
-    << arg.num_unmapped() << "\t"
     << setprecision(numeric_limits<double>::max_digits10)
     << arg.end << "\t"
     << random_seed << "\t"

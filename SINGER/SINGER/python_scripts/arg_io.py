@@ -81,8 +81,8 @@ def add_edges(tables, edge_span, parent, child, offset, counts_file, keep):
 
 
 def add_mutations(tables, mutation_file, offset, node_map):
-    """The muts rows as sites and mutations; the fifth column, when present, as the mutation's informed flag, the
-    sixth as its time. Without a file, no site."""
+    """The muts rows as sites and mutations; the fifth column, when present, as the mutation's informed flag.
+    Without a file, no site."""
     tables.mutations.metadata_schema = MUTATION_SCHEMA
     if mutation_file is None:
         return
@@ -97,8 +97,7 @@ def add_mutations(tables, mutation_file, offset, node_map):
         for row in rows:
             meta = {'informed': int(row[4])} if len(row) >= 5 else {}
             state = str(int(row[3]))
-            time = row[5] if len(row) >= 6 else tskit.UNKNOWN_TIME
-            tables.mutations.add_row(site=site, node=node_map(int(row[1])), derived_state=state, metadata=meta, time=time)
+            tables.mutations.add_row(site=site, node=node_map(int(row[1])), derived_state=state, metadata=meta, time=tskit.UNKNOWN_TIME)
 
 
 def finish_mutations(tables):

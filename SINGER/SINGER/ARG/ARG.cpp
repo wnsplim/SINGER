@@ -501,34 +501,6 @@ void ARG::compute_assayed() {
     }
 }
 
-int ARG::num_unmapped() {
-    int count = 0;
-    for (auto &x : mutations) {
-        int below_top = 0;
-        for (auto &m : x.second) {
-            below_top += m.branch.upper_node != root.get();
-        }
-        count += below_top > 1;
-    }
-    return count;
-}
-
-void ARG::check_incompatibility() {
-    cout << "Number of incompatibilities: " << num_unmapped() << endl;
-}
-
-int ARG::count_flipping() {
-    int count = 0;
-    for (auto &x : mutations) {
-        bool at_top = false;
-        for (auto &m : x.second) {
-            at_top = at_top or m.branch.upper_node == root.get();
-        }
-        count += at_top and x.second.size() > 1;
-    }
-    return count;
-}
-
 void ARG::clear_remove_info() {
     removed_branches.clear();
     joining_branches.clear();
@@ -1007,10 +979,6 @@ void ARG::resample_entries(Node *leaf, double x, double y) {
     }
 }
 
-void ARG::draw_mutations() {
-    draw_mutations(nullptr, mutations);
-}
-
 void ARG::set_lengths(Flat_tree &flat, const function<double(Node *)> *time_of) {
     if (time_of == nullptr) {
         return;
@@ -1029,7 +997,6 @@ void ARG::draw_mutations(const function<double(Node *)> *time_of, map<double, ve
     vector<Msg> above;
     vector<double> differs;
     vector<char> informed_tip;
-    auto time_at = [&](Node *n) { return time_of == nullptr ? n->time : (*time_of)(n); };
     auto r_it = recombinations.begin();
     bool stale = true;
     int bin = 0;
@@ -1058,9 +1025,7 @@ void ARG::draw_mutations(const function<double(Node *)> *time_of, map<double, ve
             if (p.missing[k] or k == t.top or state[t.up[k]] == state[k]) {
                 continue;
             }
-            Node *lower = flat.parents[k].first, *upper = flat.parents[k].second;
-            double tau = uniform_random()*(unit*flat.lengths[k]);
-            rows.push_back({Branch(lower, upper), state[k], informed_tip[k], time_at(upper) - tau/unit});
+            rows.push_back({Branch(flat.parents[k].first, flat.parents[k].second), state[k], informed_tip[k]});
         }
     }
 }
@@ -1904,7 +1869,7 @@ void ARG::write_mutations(string filename, const map<double, vector<Mutation_row
     file.precision(numeric_limits<double>::max_digits10);
     for (auto &x : rows) {
         for (auto &m : x.second) {
-            file << x.first << " " << m.branch.lower_node->index << " " << m.branch.upper_node->index << " " << m.state << " " << (int) m.informed << " " << (m.time + time_offset)*Ne << "\n";
+            file << x.first << " " << m.branch.lower_node->index << " " << m.branch.upper_node->index << " " << m.state << " " << (int) m.informed << "\n";
         }
     }
 }
