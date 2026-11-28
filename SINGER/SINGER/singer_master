@@ -326,9 +326,7 @@ def main():
     parser.add_argument('-scaling_rep', type=int, help='ARG rescaling rounds. Default: 1.')
     parser.add_argument('-scaling_bin', type=int, help='Time bins for rescaling. Default: 100.')
     parser.add_argument('-mapping_rep', type=int, help='Mapping draws per sample. Default: 1.')
-    block = parser.add_mutually_exclusive_group()
-    block.add_argument('-L', type=float, help='Block length for a run in blocks.')
-    block.add_argument('-blocks', type=str, help='File of blocks, one "left right" per line.')
+    parser.add_argument('-blocks', type=str, help='Block length in Mb, or a file of blocks with one "left right" per line.')
     parser.add_argument('-num_cores', type=int, default=1, help='Number of blocks run at once. Default: 1.')
     parser.add_argument('-convert_step', type=int, default=0, help='Convert every k-th sample to .trees at the end. Default: 0.')
 
@@ -366,19 +364,20 @@ def main():
     if args.penalty is not None:
         tips += f" -penalty {args.penalty}"
     ages = read_tip_ages(args.tip_ages, args.input, args.ploidy) if args.tip_ages else None
-    if args.L is not None and args.L <= 0:
-        parser.error("-L must be above 0")
+    if args.blocks is not None and is_number(args.blocks) and float(args.blocks) <= 0:
+        parser.error("-blocks must be above 0")
     if args.num_cores < 1:
         parser.error("-num_cores must be at least 1")
     if args.convert_step < 0:
         parser.error("-convert_step must be 0 or above")
 
-    if args.L is None and args.blocks is None:
+    if args.blocks is None:
         blocks = [(args.start, args.end)]
         outputs = [(args.output, args.seed, None)]
     else:
-        if args.L is not None:
-            blocks = [(args.start + k * args.L, min(args.start + (k + 1) * args.L, args.end)) for k in range(math.ceil((args.end - args.start) / args.L))]
+        if is_number(args.blocks):
+            length = float(args.blocks) * 1e6
+            blocks = [(args.start + k * length, min(args.start + (k + 1) * length, args.end)) for k in range(math.ceil((args.end - args.start) / length))]
         else:
             blocks = read_blocks(args.blocks, args.start, args.end)
         if not blocks:

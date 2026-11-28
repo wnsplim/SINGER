@@ -126,11 +126,11 @@ With **one column**, give ages positionally in VCF sample order. The same three 
 
 ### Running SINGER for a long chromosome
 
-Often people would like to run the ARG inference method for the entire chromosome (or even the entire genome). For this, `singer_master` cuts the region into blocks, runs SINGER on each block, and runs several blocks at the same time in parallel. Give the block length with `-L`:
+Often people would like to run the ARG inference method for the entire chromosome (or even the entire genome). For this, `singer_master` cuts the region into blocks, runs SINGER on each block, and runs several blocks at the same time in parallel. Give the block length in Mb with `-blocks`:
 
 ```
 path_to_singer/singer_master -m 1.25e-8 -input input.vcf.gz -output prefix_of_output_file
--start 0 -end 50e6 -L 5e6 -num_cores 10
+-start 0 -end 50e6 -blocks 5 -num_cores 10
 ```
 
 Or give your own blocks in a file with `-blocks`:
@@ -151,8 +151,7 @@ Each line of the block file is one block: its left and its right position, in th
 
 |flag|details|
 |-------------------|---|
-|**-L**|block length: `singer_master` cuts the region from `-start` to `-end` into blocks of this many bases|
-|**-blocks**|file of blocks, one `left right` line for each block|
+|**-blocks**|block length in Mb: `singer_master` cuts the region from `-start` to `-end` into blocks of this length; or a file of blocks, one `left right` line for each block|
 |**-num_cores**|the number of blocks that run at the same time, default at 1|
 
 Block `b` (counted from 0, in the order of the blocks) writes the output files of a SINGER run with the prefix `prefix_of_output_file_block{b}`, and its console output to `prefix_of_output_file_block{b}.out`. It runs with the seed `-seed` + `b`. In a file name such as `prefix_of_output_file_block{b}_{i}.bin`, `b` is the block index and `i` is the sample index; the converted `prefix_of_output_file_{i}.trees` is sample `i` of the whole region. A block that holds no VCF record is skipped. Without `-Ne`, `singer_master` estimates Ne one time from the diversity of all the blocks that run, with the masks applied, and gives this value to every block. All the other flags apply to every block.
@@ -195,7 +194,7 @@ Each tree sequence holds:
 - the counts in its edge metadata (`expected_mutations`, `informed_bases`). Call `tables.edges.drop_metadata()` before `simplify`, which tskit refuses on edges with metadata;
 - the flags of the run in its provenance record.
 
-For a run in blocks (`-L` or `-blocks`), the same command with `-input prefix_of_output_file.blocks` stitches the blocks into one tree sequence. `convert_to_tskit.py` places each block at its chromosome position in one tree sequence. The sequence length is the end of the region. A gap between the blocks, and a block that was skipped, has no edges and no sites. To leave a block out of the tree sequence, delete its line from `prefix_of_output_file.blocks` before you convert.
+For a run in blocks (`-blocks`), the same command with `-input prefix_of_output_file.blocks` stitches the blocks into one tree sequence. `convert_to_tskit.py` places each block at its chromosome position in one tree sequence. The sequence length is the end of the region. A gap between the blocks, and a block that was skipped, has no edges and no sites. To leave a block out of the tree sequence, delete its line from `prefix_of_output_file.blocks` before you convert.
 
 You can also give `-convert_step k` to `singer_master`. At the end of the run, it then converts every `k`-th sample to `prefix_of_output_file_{i}.trees` with the same content, and attaches the sample names of the input file.
 
